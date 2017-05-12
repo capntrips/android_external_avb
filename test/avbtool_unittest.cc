@@ -700,8 +700,7 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
                    "--algorithm SHA256_RSA2048 "
                    "--key test/data/testkey_rsa2048.pem "
                    "--output_vbmeta_image %s "
-                   "--internal_release_string \"\" "
-                   "--do_not_generate_fec",
+                   "--internal_release_string \"\"",
                    rootfs_path.value().c_str(),
                    (int)partition_size,
                    ext_vbmeta_path.value().c_str());
@@ -915,8 +914,7 @@ void AvbToolTest::AddHashtreeFooterTest(bool sparse_image) {
                  "--algorithm SHA256_RSA2048 "
                  "--key test/data/testkey_rsa2048.pem "
                  "--output_vbmeta %s_2nd_run --do_not_append_vbmeta_image "
-                 "--internal_release_string \"\" "
-                 "--do_not_generate_fec",
+                 "--internal_release_string \"\"",
                  rootfs_path.value().c_str(),
                  (int)partition_size,
                  ext_vbmeta_path.value().c_str());
@@ -970,6 +968,7 @@ void AvbToolTest::AddHashtreeFooterFECTest(bool sparse_image) {
     EXPECT_COMMAND(0,
                    "./avbtool add_hashtree_footer --salt d00df00d --image %s "
                    "--partition_size %d --partition_name foobar "
+                   "--generate_fec "
                    "--algorithm SHA256_RSA2048 "
                    "--key test/data/testkey_rsa2048.pem "
                    "--internal_release_string \"\"",
@@ -1150,8 +1149,7 @@ TEST_F(AvbToolTest, AddHashtreeFooterCalcMaxImageSize) {
 
   EXPECT_COMMAND(0,
                  "./avbtool add_hashtree_footer "
-                 "--partition_size %zd --calc_max_image_size "
-                 "--do_not_generate_fec > %s",
+                 "--partition_size %zd --calc_max_image_size > %s",
                  partition_size,
                  output_path.value().c_str());
   std::string max_image_size_data;
@@ -1174,8 +1172,7 @@ TEST_F(AvbToolTest, AddHashtreeFooterCalcMaxImageSize) {
                  " --salt deadbeef"
                  " --algorithm SHA512_RSA4096 "
                  " --key test/data/testkey_rsa4096.pem"
-                 " --internal_release_string \"\" "
-                 "--do_not_generate_fec",
+                 " --internal_release_string \"\"",
                  system_path.value().c_str(),
                  partition_size);
 }
@@ -1186,7 +1183,8 @@ TEST_F(AvbToolTest, AddHashtreeFooterCalcMaxImageSizeWithFEC) {
 
   EXPECT_COMMAND(0,
                  "./avbtool add_hashtree_footer "
-                 "--partition_size %zd --calc_max_image_size > %s",
+                 "--partition_size %zd --generate_fec "
+                 "--calc_max_image_size > %s",
                  partition_size,
                  output_path.value().c_str());
   std::string max_image_size_data;
@@ -1207,6 +1205,7 @@ TEST_F(AvbToolTest, AddHashtreeFooterCalcMaxImageSizeWithFEC) {
                  " --partition_name system"
                  " --partition_size %zd"
                  " --salt deadbeef"
+                 " --generate_fec "
                  " --algorithm SHA512_RSA4096 "
                  " --key test/data/testkey_rsa4096.pem"
                  " --internal_release_string \"\"",

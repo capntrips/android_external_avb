@@ -201,8 +201,7 @@ class AvbABFlowTest : public BaseAvbToolTest {
                    " --partition_size %zd"
                    " --salt deadbeef"
                    " --algorithm SHA512_RSA4096 "
-                   " --key test/data/testkey_rsa4096.pem"
-                   " --do_not_generate_fec",
+                   " --key test/data/testkey_rsa4096.pem",
                    odm_path.value().c_str(),
                    rollback_odm,
                    odm_partition_size);
