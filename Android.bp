@@ -116,7 +116,7 @@ cc_library_static {
     srcs: [
         "libavb/avb_sysdeps_posix.c",
         "libavb_ab/avb_ab_flow.c",
-        "libavb_user/avb_ops_user.c",
+        "libavb_user/avb_ops_user.cpp",
         "libavb_user/avb_user_verity.c",
         "libavb_user/avb_user_verification.c",
     ],
@@ -195,7 +195,6 @@ cc_test_host {
         "test/fake_avb_ops.cc",
         "test/avb_sysdeps_posix_testing.cc",
     ],
-    host_ldlibs: ["-lrt"],
 }
 
 cc_library_host_static {
