@@ -75,7 +75,9 @@ static int module_markBootSuccessful(boot_control_module_t* module) {
 
 static int module_setActiveBootSlot(boot_control_module_t* module,
                                     unsigned int slot) {
-  if (avb_ab_mark_slot_active(ops->ab_ops, slot) == AVB_IO_RESULT_OK) {
+  if (slot >= module_getNumberSlots(module)) {
+    return -EINVAL;
+  } else if (avb_ab_mark_slot_active(ops->ab_ops, slot) == AVB_IO_RESULT_OK) {
     return 0;
   } else {
     return -EIO;
@@ -84,7 +86,10 @@ static int module_setActiveBootSlot(boot_control_module_t* module,
 
 static int module_setSlotAsUnbootable(struct boot_control_module* module,
                                       unsigned int slot) {
-  if (avb_ab_mark_slot_unbootable(ops->ab_ops, slot) == AVB_IO_RESULT_OK) {
+  if (slot >= module_getNumberSlots(module)) {
+    return -EINVAL;
+  } else if (avb_ab_mark_slot_unbootable(ops->ab_ops, slot) ==
+             AVB_IO_RESULT_OK) {
     return 0;
   } else {
     return -EIO;
@@ -98,7 +103,9 @@ static int module_isSlotBootable(struct boot_control_module* module,
 
   avb_assert(slot < 2);
 
-  if (avb_ab_data_read(ops->ab_ops, &ab_data) != AVB_IO_RESULT_OK) {
+  if (slot >= module_getNumberSlots(module)) {
+    return -EINVAL;
+  } else if (avb_ab_data_read(ops->ab_ops, &ab_data) != AVB_IO_RESULT_OK) {
     return -EIO;
   }
 
@@ -116,7 +123,9 @@ static int module_isSlotMarkedSuccessful(struct boot_control_module* module,
 
   avb_assert(slot < 2);
 
-  if (avb_ab_data_read(ops->ab_ops, &ab_data) != AVB_IO_RESULT_OK) {
+  if (slot >= module_getNumberSlots(module)) {
+    return -EINVAL;
+  } else if (avb_ab_data_read(ops->ab_ops, &ab_data) != AVB_IO_RESULT_OK) {
     return -EIO;
   }
 
