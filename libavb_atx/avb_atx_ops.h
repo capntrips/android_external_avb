@@ -32,7 +32,7 @@
 
 #include <libavb/libavb.h>
 
-#include "libavb_atx/avb_atx_types.h"
+#include "avb_atx_types.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -30,8 +30,8 @@
 #ifndef AVB_ATX_VALIDATE_H_
 #define AVB_ATX_VALIDATE_H_
 
-#include "libavb_atx/avb_atx_ops.h"
-#include "libavb_atx/avb_atx_types.h"
+#include "avb_atx_ops.h"
+#include "avb_atx_types.h"
 
 #ifdef __cplusplus
 extern "C" {
