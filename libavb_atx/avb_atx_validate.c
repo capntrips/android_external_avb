@@ -22,12 +22,12 @@
  * SOFTWARE.
  */
 
-#include "libavb_atx/avb_atx_validate.h"
+#include "avb_atx_validate.h"
 
-#include "libavb/avb_rsa.h"
-#include "libavb/avb_sha.h"
-#include "libavb/avb_sysdeps.h"
-#include "libavb/avb_util.h"
+#include <libavb/avb_rsa.h>
+#include <libavb/avb_sha.h>
+#include <libavb/avb_sysdeps.h>
+#include <libavb/avb_util.h>
 
 /* Computes the SHA256 |hash| of |length| bytes of |data|. */
 static void sha256(const uint8_t* data,
