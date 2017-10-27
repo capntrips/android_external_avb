@@ -47,6 +47,47 @@ std::set<std::string> FakeAvbOps::get_partition_names_read_from() {
   return partition_names_read_from_;
 }
 
+bool FakeAvbOps::preload_partition(const std::string& partition,
+                                   const base::FilePath& path) {
+  if (preloaded_partitions_.count(partition) > 0) {
+    fprintf(stderr, "Partition '%s' already preloaded\n", partition.c_str());
+    return false;
+  }
+
+  int64_t file_size;
+  if (!base::GetFileSize(path, &file_size)) {
+    fprintf(stderr,
+            "Error getting size of file '%s'\n",
+            path.value().c_str());
+    return false;
+  }
+
+  int fd = open(path.value().c_str(), O_RDONLY);
+  if (fd < 0) {
+    fprintf(stderr,
+            "Error opening file '%s': %s\n",
+            path.value().c_str(),
+            strerror(errno));
+    return false;
+  }
+
+  uint8_t* buffer = static_cast<uint8_t*>(malloc(file_size));
+  ssize_t num_read = read(fd, buffer, file_size);
+  if (num_read != file_size) {
+    fprintf(stderr,
+            "Error reading %zd bytes from file '%s': %s\n",
+            file_size,
+            path.value().c_str(),
+            strerror(errno));
+    free(buffer);
+    return false;
+  }
+  close(fd);
+
+  preloaded_partitions_[partition] = buffer;
+  return true;
+}
+
 AvbIOResult FakeAvbOps::read_from_partition(const char* partition,
                                             int64_t offset,
                                             size_t num_bytes,
@@ -105,6 +146,32 @@ AvbIOResult FakeAvbOps::read_from_partition(const char* partition,
     *out_num_read = num_read;
   }
 
+  return AVB_IO_RESULT_OK;
+}
+
+AvbIOResult FakeAvbOps::get_preloaded_partition(
+    const char* partition, size_t num_bytes, uint8_t** out_pointer,
+    size_t* out_num_bytes_preloaded) {
+  std::map<std::string, uint8_t*>::iterator it =
+      preloaded_partitions_.find(std::string(partition));
+  if (it == preloaded_partitions_.end()) {
+    *out_pointer = NULL;
+    *out_num_bytes_preloaded = 0;
+    return AVB_IO_RESULT_OK;
+  }
+
+  uint64_t size;
+  AvbIOResult result = get_size_of_partition(
+      avb_ops(), partition, &size);
+  if (result != AVB_IO_RESULT_OK) {
+    return result;
+  }
+  if (size != num_bytes) {
+    return AVB_IO_RESULT_ERROR_IO;
+  }
+
+  *out_num_bytes_preloaded = num_bytes;
+  *out_pointer = it->second;
   return AVB_IO_RESULT_OK;
 }
 
@@ -280,6 +347,17 @@ static AvbIOResult my_ops_read_from_partition(AvbOps* ops,
       ->read_from_partition(partition, offset, num_bytes, buffer, out_num_read);
 }
 
+static AvbIOResult my_ops_get_preloaded_partition(AvbOps* ops,
+                                           const char* partition,
+                                           size_t num_bytes,
+                                           uint8_t** out_pointer,
+                                           size_t* out_num_bytes_preloaded) {
+  return FakeAvbOps::GetInstanceFromAvbOps(ops)
+      ->delegate()
+      ->get_preloaded_partition(partition, num_bytes, out_pointer,
+                                out_num_bytes_preloaded);
+}
+
 static AvbIOResult my_ops_write_to_partition(AvbOps* ops,
                                              const char* partition,
                                              int64_t offset,
@@ -369,6 +447,7 @@ static void my_ops_set_key_version(AvbAtxOps* atx_ops,
 }
 
 FakeAvbOps::FakeAvbOps() {
+  memset(&avb_ops_, 0, sizeof(avb_ops_));
   avb_ops_.ab_ops = &avb_ab_ops_;
   avb_ops_.atx_ops = &avb_atx_ops_;
   avb_ops_.user_data = this;
@@ -395,6 +474,16 @@ FakeAvbOps::FakeAvbOps() {
   delegate_ = this;
 }
 
-FakeAvbOps::~FakeAvbOps() {}
+FakeAvbOps::~FakeAvbOps() {
+  std::map<std::string, uint8_t*>::iterator it;
+  for (it = preloaded_partitions_.begin();
+       it != preloaded_partitions_.end(); it++) {
+    free(it->second);
+  }
+}
+
+void FakeAvbOps::enable_get_preloaded_partition() {
+  avb_ops_.get_preloaded_partition = my_ops_get_preloaded_partition;
+}
 
 }  // namespace avb
