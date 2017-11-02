@@ -884,8 +884,6 @@ class ImageHandler(object):
       offset: Offset to seek to from the beginning of the file.
     """
     self._file_pos = offset
-    if offset < 0:
-      raise RuntimeError("Negative offset: %d" % offset)
 
   def read(self, size):
     """Reads data from the unsparsified file.
@@ -2804,10 +2802,8 @@ class Avb(object):
     # If there's already a footer, truncate the image to its original
     # size. This way 'avbtool add_hash_footer' is idempotent (modulo
     # salts).
-
+    image.seek(image.image_size - AvbFooter.SIZE)
     try:
-      if image.image_size > AvbFooter.SIZE:
-        image.seek(image.image_size - AvbFooter.SIZE)
       footer = AvbFooter(image.read(AvbFooter.SIZE))
       # Existing footer found. Just truncate.
       original_image_size = footer.original_image_size
