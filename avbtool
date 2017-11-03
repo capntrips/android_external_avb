@@ -883,6 +883,8 @@ class ImageHandler(object):
     Arguments:
       offset: Offset to seek to from the beginning of the file.
     """
+    if offset < 0:
+      raise RuntimeError("Seeking with negative offset: %d" % offset)
     self._file_pos = offset
 
   def read(self, size):
@@ -2014,10 +2016,10 @@ class Avb(object):
       vbmeta_end_offset += image.block_size - (vbmeta_end_offset % image.block_size)
 
     if partition_size < vbmeta_end_offset + 1*image.block_size:
-        raise AvbError('Requested size of {} is too small for an image '
-                       'of size {}.'
-                       .format(partition_size,
-                               vbmeta_end_offset + 1*image.block_size))
+      raise AvbError('Requested size of {} is too small for an image '
+                     'of size {}.'
+                     .format(partition_size,
+                             vbmeta_end_offset + 1*image.block_size))
 
     # Cut at the end of the vbmeta blob and insert a DONT_CARE chunk
     # with enough bytes such that the final Footer block is at the end
@@ -2670,13 +2672,17 @@ class Avb(object):
 
     # If there's already a footer, truncate the image to its original
     # size. This way 'avbtool append_vbmeta_image' is idempotent.
-    image.seek(image.image_size - AvbFooter.SIZE)
-    try:
-      footer = AvbFooter(image.read(AvbFooter.SIZE))
-      # Existing footer found. Just truncate.
-      original_image_size = footer.original_image_size
-      image.truncate(footer.original_image_size)
-    except (LookupError, struct.error):
+    if image.image_size >= AvbFooter.SIZE:
+      image.seek(image.image_size - AvbFooter.SIZE)
+      try:
+        footer = AvbFooter(image.read(AvbFooter.SIZE))
+        # Existing footer found. Just truncate.
+        original_image_size = footer.original_image_size
+        image.truncate(footer.original_image_size)
+      except (LookupError, struct.error):
+        original_image_size = image.image_size
+    else:
+      # Image size is too small to possibly contain a footer.
       original_image_size = image.image_size
 
     # If anything goes wrong from here-on, restore the image back to
@@ -2785,6 +2791,10 @@ class Avb(object):
     # this size + metadata (footer + vbmeta struct) fits in
     # |partition_size|.
     max_metadata_size = self.MAX_VBMETA_SIZE + self.MAX_FOOTER_SIZE
+    if partition_size < max_metadata_size:
+      raise AvbError('Parition size of {} is too small. '
+                     'Needs to be at least {}'.format(
+                         partition_size, max_metadata_size))
     max_image_size = partition_size - max_metadata_size
 
     # If we're asked to only calculate the maximum image size, we're done.
@@ -2802,13 +2812,17 @@ class Avb(object):
     # If there's already a footer, truncate the image to its original
     # size. This way 'avbtool add_hash_footer' is idempotent (modulo
     # salts).
-    image.seek(image.image_size - AvbFooter.SIZE)
-    try:
-      footer = AvbFooter(image.read(AvbFooter.SIZE))
-      # Existing footer found. Just truncate.
-      original_image_size = footer.original_image_size
-      image.truncate(footer.original_image_size)
-    except (LookupError, struct.error):
+    if image.image_size >= AvbFooter.SIZE:
+      image.seek(image.image_size - AvbFooter.SIZE)
+      try:
+        footer = AvbFooter(image.read(AvbFooter.SIZE))
+        # Existing footer found. Just truncate.
+        original_image_size = footer.original_image_size
+        image.truncate(footer.original_image_size)
+      except (LookupError, struct.error):
+        original_image_size = image.image_size
+    else:
+      # Image size is too small to possibly contain a footer.
       original_image_size = image.image_size
 
     # If anything goes wrong from here-on, restore the image back to
@@ -2858,28 +2872,30 @@ class Avb(object):
           signing_helper_with_files, release_string,
           append_to_release_string)
 
-      # If the image isn't sparse, its size might not be a multiple of
-      # the block size. This will screw up padding later so just grow it.
-      if image.image_size % image.block_size != 0:
-        assert not image.is_sparse
-        padding_needed = image.block_size - (image.image_size%image.block_size)
-        image.truncate(image.image_size + padding_needed)
-
-      # The append_raw() method requires content with size being a
-      # multiple of |block_size| so add padding as needed. Also record
-      # where this is written to since we'll need to put that in the
-      # footer.
-      vbmeta_offset = image.image_size
-      padding_needed = (round_to_multiple(len(vbmeta_blob), image.block_size) -
-                        len(vbmeta_blob))
-      vbmeta_blob_with_padding = vbmeta_blob + '\0'*padding_needed
-
       # Write vbmeta blob, if requested.
       if output_vbmeta_image:
         output_vbmeta_image.write(vbmeta_blob)
 
       # Append vbmeta blob and footer, unless requested not to.
       if not do_not_append_vbmeta_image:
+        # If the image isn't sparse, its size might not be a multiple of
+        # the block size. This will screw up padding later so just grow it.
+        if image.image_size % image.block_size != 0:
+          assert not image.is_sparse
+          padding_needed = image.block_size - (
+              image.image_size % image.block_size)
+          image.truncate(image.image_size + padding_needed)
+
+        # The append_raw() method requires content with size being a
+        # multiple of |block_size| so add padding as needed. Also record
+        # where this is written to since we'll need to put that in the
+        # footer.
+        vbmeta_offset = image.image_size
+        padding_needed = (
+            round_to_multiple(len(vbmeta_blob), image.block_size) -
+            len(vbmeta_blob))
+        vbmeta_blob_with_padding = vbmeta_blob + '\0' * padding_needed
+
         image.append_raw(vbmeta_blob_with_padding)
         vbmeta_end_offset = vbmeta_offset + len(vbmeta_blob_with_padding)
 
@@ -3002,13 +3018,17 @@ class Avb(object):
     # If there's already a footer, truncate the image to its original
     # size. This way 'avbtool add_hashtree_footer' is idempotent
     # (modulo salts).
-    image.seek(image.image_size - AvbFooter.SIZE)
-    try:
-      footer = AvbFooter(image.read(AvbFooter.SIZE))
-      # Existing footer found. Just truncate.
-      original_image_size = footer.original_image_size
-      image.truncate(footer.original_image_size)
-    except (LookupError, struct.error):
+    if image.image_size >= AvbFooter.SIZE:
+      image.seek(image.image_size - AvbFooter.SIZE)
+      try:
+        footer = AvbFooter(image.read(AvbFooter.SIZE))
+        # Existing footer found. Just truncate.
+        original_image_size = footer.original_image_size
+        image.truncate(footer.original_image_size)
+      except (LookupError, struct.error):
+        original_image_size = image.image_size
+    else:
+      # Image size is too small to possibly contain a footer.
       original_image_size = image.image_size
 
     # If anything goes wrong from here-on, restore the image back to
