@@ -1363,6 +1363,40 @@ TEST_F(AvbToolTest, KernelCmdlineDescriptor) {
                         d.kernel_cmdline_length));
 }
 
+TEST_F(AvbToolTest, AddHashFooterSmallImageWithExternalVbmeta) {
+  const size_t image_size = 37;
+  const size_t partition_size = 20 * 4096;
+
+  std::vector<uint8_t> image(image_size, 0);
+  for (size_t n = 0; n < image_size; n++) {
+    image[n] = uint8_t(n);
+  }
+
+  base::FilePath ext_vbmeta_path = testdir_.Append("ext_vbmeta.bin");
+  base::FilePath image_path = testdir_.Append("kernel.bin");
+  EXPECT_EQ(image_size, static_cast<const size_t>(
+      base::WriteFile(image_path, reinterpret_cast<const char*>(image.data()),
+                      image.size())));
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer --salt d00df00d "
+                 "--hash_algorithm sha256 --image %s "
+                 "--partition_size %zu --partition_name kernel "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--output_vbmeta %s "
+                 "--do_not_append_vbmeta_image "
+                 "--internal_release_string \"\"",
+                 image_path.value().c_str(),
+                 partition_size,
+                 ext_vbmeta_path.value().c_str());
+
+  // It is not this unit test's job to check the vbmeta content.
+
+  int64_t file_size;
+  ASSERT_TRUE(base::GetFileSize(image_path, &file_size));
+  EXPECT_EQ(static_cast<size_t>(file_size), image_size);
+}
+
 TEST_F(AvbToolTest, IncludeDescriptor) {
   base::FilePath vbmeta1_path = testdir_.Append("vbmeta_id1.bin");
   base::FilePath vbmeta2_path = testdir_.Append("vbmeta_id2.bin");
