@@ -1002,8 +1002,7 @@ static size_t uint64_to_base10(uint64_t value,
   size_t n, num_digits;
 
   for (num_digits = 0; num_digits < AVB_MAX_DIGITS_UINT64 - 1;) {
-    rev_digits[num_digits++] = (value % 10) + '0';
-    value /= 10;
+    rev_digits[num_digits++] = avb_div_by_10(&value) + '0';
     if (value == 0) {
       break;
     }
