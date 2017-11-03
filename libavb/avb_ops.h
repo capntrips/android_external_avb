@@ -117,6 +117,27 @@ struct AvbOps {
                                      void* buffer,
                                      size_t* out_num_read);
 
+  /* Gets the starting pointer of a partition that is pre-loaded in memory, and
+   * save it to |out_pointer|. The preloaded partition is expected to be
+   * |num_bytes|, where the actual preloaded byte count is returned in
+   * |out_num_bytes_preloaded|. |out_num_bytes_preloaded| must be no larger than
+   * |num_bytes|.
+   *
+   * This provides an alternative way to access a partition that is preloaded
+   * into memory without a full memory copy. When this function pointer is not
+   * set (has value NULL), or when the |out_pointer| is set to NULL as a result,
+   * |read_from_partition| will be used as the fallback. This function is mainly
+   * used for accessing the entire partition content to calculate its hash.
+   *
+   * Preloaded partition data must outlive the lifespan of the
+   * |AvbSlotVerifyData| structure that |avb_slot_verify| outputs.
+   */
+  AvbIOResult (*get_preloaded_partition)(AvbOps* ops,
+                                         const char* partition,
+                                         size_t num_bytes,
+                                         uint8_t** out_pointer,
+                                         size_t* out_num_bytes_preloaded);
+
   /* Writes |num_bytes| from |bffer| at offset |offset| to partition
    * with name |partition| (NUL-terminated UTF-8 string). If |offset|
    * is negative, its absolute value should be interpreted as the
