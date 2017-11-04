@@ -47,16 +47,22 @@ AVBTOOL=$(dirname "$0")/../avbtool
 
 echo AVBTOOL = ${AVBTOOL}
 
-# Get a random product ID.
-head -c 16 /dev/urandom > atx_product_id.bin
+# Get a zero product ID.
+echo 00000000000000000000000000000000 | xxd -r -p - atx_product_id.bin
 
 # Generate key pairs.
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -outform PEM \
-  -out testkey_atx_prk.pem
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -outform PEM \
-  -out testkey_atx_pik.pem
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -outform PEM \
-  -out testkey_atx_psk.pem
+if [ ! -f testkey_atx_prk.pem ]; then
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -outform PEM \
+    -out testkey_atx_prk.pem
+fi
+if [ ! -f testkey_atx_pik.pem ]; then
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -outform PEM \
+    -out testkey_atx_pik.pem
+fi
+if [ ! -f testkey_atx_psk.pem ]; then
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -outform PEM \
+    -out testkey_atx_psk.pem
+fi
 
 # Construct permanent attributes.
 ${AVBTOOL} make_atx_permanent_attributes --output=atx_permanent_attributes.bin \
