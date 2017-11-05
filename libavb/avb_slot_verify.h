@@ -114,7 +114,10 @@ const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result);
 /* AvbPartitionData contains data loaded from partitions when using
  * avb_slot_verify(). The |partition_name| field contains the name of
  * the partition (without A/B suffix), |data| points to the loaded
- * data which is |data_size| bytes long.
+ * data which is |data_size| bytes long. If |preloaded| is set to true,
+ * this structure dose not own |data|. The caller of |avb_slot_verify|
+ * needs to make sure that the preloaded data outlives this
+ * |AvbPartitionData| structure.
  *
  * Note that this is strictly less than the partition size - it's only
  * the image stored there, not the entire partition nor any of the
@@ -124,6 +127,7 @@ typedef struct {
   char* partition_name;
   uint8_t* data;
   size_t data_size;
+  bool preloaded;
 } AvbPartitionData;
 
 /* AvbVBMetaData contains a vbmeta struct loaded from a partition when

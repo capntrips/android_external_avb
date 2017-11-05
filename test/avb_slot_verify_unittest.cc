@@ -46,7 +46,7 @@ class AvbSlotVerifyTest : public BaseAvbToolTest {
 
   void CmdlineWithHashtreeVerification(bool hashtree_verification_on);
   void CmdlineWithChainedHashtreeVerification(bool hashtree_verification_on);
-  void VerificationDisabled(bool use_avbctl);
+  void VerificationDisabled(bool use_avbctl, bool preload);
 
   FakeAvbOps ops_;
 };
@@ -150,6 +150,30 @@ TEST_F(AvbSlotVerifyTest, BasicUnlocked) {
       "androidboot.vbmeta.invalidate_on_error=yes "
       "androidboot.veritymode=enforcing",
       std::string(slot_data->cmdline));
+  avb_slot_verify_data_free(slot_data);
+}
+
+TEST_F(AvbSlotVerifyTest, PreloadedEnabledButNotUsed) {
+  GenerateVBMetaImage("vbmeta_a.img",
+                      "SHA256_RSA2048",
+                      0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      "--internal_release_string \"\"");
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+  ops_.enable_get_preloaded_partition();
+
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"boot", NULL};
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
   avb_slot_verify_data_free(slot_data);
 }
 
@@ -550,6 +574,84 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMeta) {
   for (size_t n = 1; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS; n++) {
     EXPECT_EQ(0UL, slot_data->rollback_indexes[n]);
   }
+  avb_slot_verify_data_free(slot_data);
+}
+
+TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMetaWithPreloadedPartition) {
+  const size_t boot_partition_size = 16 * 1024 * 1024;
+  const size_t boot_image_size = 5 * 1024 * 1024;
+  base::FilePath boot_path = GenerateImage("boot_a.img", boot_image_size);
+
+  EXPECT_COMMAND(
+      0,
+      "./avbtool add_hash_footer"
+      " --image %s"
+      " --rollback_index 0"
+      " --partition_name boot"
+      " --partition_size %zd"
+      " --kernel_cmdline 'cmdline in hash footer $(ANDROID_SYSTEM_PARTUUID)'"
+      " --salt deadbeef"
+      " --internal_release_string \"\"",
+      boot_path.value().c_str(),
+      boot_partition_size);
+
+  GenerateVBMetaImage(
+      "vbmeta_a.img",
+      "SHA256_RSA2048",
+      4,
+      base::FilePath("test/data/testkey_rsa2048.pem"),
+      base::StringPrintf(
+          "--include_descriptors_from_image %s"
+          " --kernel_cmdline 'cmdline in vbmeta $(ANDROID_BOOT_PARTUUID)'"
+          " --internal_release_string \"\"",
+          boot_path.value().c_str()));
+
+  EXPECT_COMMAND(0,
+                 "./avbtool erase_footer"
+                 " --image %s",
+                 boot_path.value().c_str());
+
+  // With no footer, 'avbtool info_image' should fail (exit status 1).
+  EXPECT_COMMAND(
+      1, "./avbtool info_image --image %s", boot_path.value().c_str());
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+  ops_.enable_get_preloaded_partition();
+  EXPECT_TRUE(ops_.preload_partition("boot_a", boot_path));
+
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"boot", NULL};
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+
+  // Now verify the slot data. The vbmeta data should match our
+  // vbmeta_image_ member.
+  EXPECT_EQ(size_t(1), slot_data->num_vbmeta_images);
+  EXPECT_EQ("vbmeta", std::string(slot_data->vbmeta_images[0].partition_name));
+  EXPECT_EQ(slot_data->vbmeta_images[0].vbmeta_size, vbmeta_image_.size());
+  EXPECT_EQ(0,
+            memcmp(vbmeta_image_.data(),
+                   slot_data->vbmeta_images[0].vbmeta_data,
+                   slot_data->vbmeta_images[0].vbmeta_size));
+
+  // The boot image data should match what is generated above with
+  // GenerateImage().
+  EXPECT_EQ(size_t(1), slot_data->num_loaded_partitions);
+  EXPECT_EQ("boot",
+            std::string(slot_data->loaded_partitions[0].partition_name));
+  EXPECT_EQ(boot_image_size, slot_data->loaded_partitions[0].data_size);
+  for (size_t n = 0; n < slot_data->loaded_partitions[0].data_size; n++) {
+    EXPECT_EQ(slot_data->loaded_partitions[0].data[n], uint8_t(n));
+  }
+  EXPECT_TRUE(slot_data->loaded_partitions[0].preloaded);
+
   avb_slot_verify_data_free(slot_data);
 }
 
@@ -1678,7 +1780,8 @@ TEST_F(AvbSlotVerifyTest, CmdlineWithChainedHashtreeVerificationOn) {
   CmdlineWithChainedHashtreeVerification(true);
 }
 
-void AvbSlotVerifyTest::VerificationDisabled(bool use_avbctl) {
+void AvbSlotVerifyTest::VerificationDisabled(
+    bool use_avbctl, bool preload_boot) {
   const size_t boot_part_size = 32 * 1024 * 1024;
   const size_t dtbo_part_size = 4 * 1024 * 1024;
   const size_t rootfs_size = 1028 * 1024;
@@ -1775,6 +1878,11 @@ void AvbSlotVerifyTest::VerificationDisabled(bool use_avbctl) {
                   &flags_data));
   }
 
+  if (preload_boot) {
+    ops_.enable_get_preloaded_partition();
+    EXPECT_TRUE(ops_.preload_partition("boot_a", boot_path));
+  }
+
   // Check that avb_slot_verify() doesn't return any of the
   // descriptors and instead return a kernel command-line with
   // root=PARTUUID=<whatever_for_system_a> and none of the
@@ -1808,6 +1916,8 @@ void AvbSlotVerifyTest::VerificationDisabled(bool use_avbctl) {
   for (size_t n = 0; n < boot_part_size; n++) {
     EXPECT_EQ(uint8_t(n), slot_data->loaded_partitions[0].data[n]);
   }
+  EXPECT_EQ(preload_boot, slot_data->loaded_partitions[0].preloaded);
+
   EXPECT_EQ("dtbo",
             std::string(slot_data->loaded_partitions[1].partition_name));
   EXPECT_EQ(dtbo_part_size, slot_data->loaded_partitions[1].data_size);
@@ -1815,15 +1925,25 @@ void AvbSlotVerifyTest::VerificationDisabled(bool use_avbctl) {
     EXPECT_EQ(uint8_t(n + DTBO_DATA_OFFSET),
               slot_data->loaded_partitions[1].data[n]);
   }
+  EXPECT_FALSE(slot_data->loaded_partitions[1].preloaded);
+
   avb_slot_verify_data_free(slot_data);
 }
 
 TEST_F(AvbSlotVerifyTest, VerificationDisabledUnmodified) {
-  VerificationDisabled(false);  // use_avbctl
+  VerificationDisabled(false, false);  // use_avbctl
 }
 
 TEST_F(AvbSlotVerifyTest, VerificationDisabledModified) {
-  VerificationDisabled(true);  // use_avbctl
+  VerificationDisabled(true, false);  // use_avbctl
+}
+
+TEST_F(AvbSlotVerifyTest, VerificationDisabledUnmodifiedPreloadBoot) {
+  VerificationDisabled(false, true);  // use_avbctl
+}
+
+TEST_F(AvbSlotVerifyTest, VerificationDisabledModifiedPreloadBoot) {
+  VerificationDisabled(true, true);  // use_avbctl
 }
 
 // In the event that there's no vbmeta partition, we treat the vbmeta
