@@ -52,6 +52,7 @@ cc_defaults {
     name: "avb_sources",
     srcs: [
         "libavb/avb_chain_partition_descriptor.c",
+        "libavb/avb_cmdline.c",
         "libavb/avb_crc32.c",
         "libavb/avb_crypto.c",
         "libavb/avb_descriptor.c",
@@ -161,6 +162,13 @@ cc_library_host_static {
     srcs: ["libavb/avb_sysdeps_posix.c"],
 }
 
+cc_library_host_static {
+    name: "libavb_things_example",
+    defaults: ["avb_defaults"],
+    export_include_dirs: ["."],
+    srcs: ["examples/things/avb_atx_slot_verify.c"],
+}
+
 cc_test_host {
     name: "libavb_host_unittest",
     defaults: ["avb_defaults"],
@@ -173,6 +181,7 @@ cc_test_host {
         "libavb",
         "libavb_ab_host",
         "libavb_atx_host",
+        "libavb_things_example",
         "libgmock_host",
         "libgtest_host",
     ],
@@ -187,6 +196,7 @@ cc_test_host {
     srcs: [
         "test/avb_ab_flow_unittest.cc",
         "test/avb_atx_validate_unittest.cc",
+        "test/avb_atx_slot_verify_unittest.cc",
         "test/avb_slot_verify_unittest.cc",
         "test/avb_unittest_util.cc",
         "test/avb_util_unittest.cc",
