@@ -27,6 +27,7 @@ cc_defaults {
         "-Wmissing-prototypes",
         "-Wno-psabi",
         "-Wno-unused-parameter",
+        "-Wno-format",
         "-ffunction-sections",
         "-fstack-protector-strong",
         "-g",
