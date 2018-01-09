@@ -26,6 +26,7 @@ Verified Boot 2.0. Usually AVB is used to refer to this codebase.
     + [Recommended Bootflow](#Recommended-Bootflow)
     + [Handling dm-verity Errors](#Handling-dm_verity-Errors)
     + [Android Specific Integration](#Android-Specific-Integration)
+    + [Device Specific Notes](Device-Specific-Notes)
 
 # What is it?
 
@@ -520,6 +521,9 @@ to embed a blob (`AVB_pkmd` in the following) that can be used to
 e.g. derive `AVB_pk`. Both `AVB_pk` and `AVB_pkmd` are passed to the
 `validate_vbmeta_public_key()` operation when verifying a slot.
 
+Some devices may support the end-user configuring the root of trust to use, see
+the [Device Specific Notes](Device-Specific-Notes) section for details.
+
 To prevent rollback attacks, the rollback index should be increased on
 a regular basis. The rollback index can be set with the
 `BOARD_AVB_ROLLBACK_INDEX` variable:
@@ -830,3 +834,29 @@ to indicate the boot state. It shall use the following values:
 * **green**: If in LOCKED state and the key used for verification was not set by the end user.
 * **yellow**: If in LOCKED state and the key used for verification was set by the end user.
 * **orange**: If in the UNLOCKED state.
+
+## Device Specific Notes
+
+This section contains information about how AVB is integrated into specific
+devices. This is not an exhaustive list.
+
+### Pixel 2
+
+On the Pixel 2 and Pixel 2 XL the boot loader supports a virtual partition with
+the name `avb_custom_key`. Flashing and erasing this partition only works in the
+UNLOCKED state. Setting the custom key is done like this:
+
+    avbtool extract_public_key --key key.pem --output pkmd.bin
+    fastboot flash avb_custom_key pkmd.bin
+
+Erasing the key is done by erasing the virtual partition:
+
+    fastboot erase avb_custom_key
+
+When the custom key is set and the device is in the LOCKED state it will boot
+images signed with both the built-in key as well as the custom key. All other
+security features (including rollback-protection) are in effect, e.g. the
+**only** difference is the root of trust to use.
+
+When booting an image signed with a custom key, a yellow screen will be shown as
+part of the boot process to remind the user that the custom key is in use.
