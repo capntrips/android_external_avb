@@ -37,6 +37,7 @@
 #include <base/files/file_util.h>
 #include <base/strings/string_util.h>
 #include <base/strings/stringprintf.h>
+#include <openssl/rand.h>
 #include <openssl/sha.h>
 
 #include "fake_avb_ops.h"
@@ -362,6 +363,13 @@ void FakeAvbOps::set_key_version(size_t rollback_index_location,
   verified_rollback_indexes_[rollback_index_location] = key_version;
 }
 
+AvbIOResult FakeAvbOps::get_random(size_t num_bytes, uint8_t* output) {
+  if (!RAND_bytes(output, num_bytes)) {
+    return AVB_IO_RESULT_ERROR_IO;
+  }
+  return AVB_IO_RESULT_OK;
+}
+
 static AvbIOResult my_ops_read_from_partition(AvbOps* ops,
                                               const char* partition,
                                               int64_t offset,
@@ -493,6 +501,14 @@ static void my_ops_set_key_version(AvbAtxOps* atx_ops,
       ->set_key_version(rollback_index_location, key_version);
 }
 
+static AvbIOResult my_ops_get_random(AvbAtxOps* atx_ops,
+                                     size_t num_bytes,
+                                     uint8_t* output) {
+  return FakeAvbOps::GetInstanceFromAvbOps(atx_ops->ops)
+      ->delegate()
+      ->get_random(num_bytes, output);
+}
+
 FakeAvbOps::FakeAvbOps() {
   memset(&avb_ops_, 0, sizeof(avb_ops_));
   avb_ops_.ab_ops = &avb_ab_ops_;
@@ -519,6 +535,7 @@ FakeAvbOps::FakeAvbOps() {
   avb_atx_ops_.read_permanent_attributes_hash =
       my_ops_read_permanent_attributes_hash;
   avb_atx_ops_.set_key_version = my_ops_set_key_version;
+  avb_atx_ops_.get_random = my_ops_get_random;
 
   delegate_ = this;
 }
