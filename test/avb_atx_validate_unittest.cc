@@ -173,6 +173,21 @@ class AvbAtxValidateTest : public ::testing::Test,
     return AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION;
   }
 
+  AvbIOResult read_persistent_value(const char* name,
+                                    size_t buffer_size,
+                                    uint8_t* out_buffer,
+                                    size_t* out_num_bytes_read) override {
+    // Expect method not used.
+    return AVB_IO_RESULT_ERROR_NO_SUCH_VALUE;
+  }
+
+  AvbIOResult write_persistent_value(const char* name,
+                                     size_t value_size,
+                                     const uint8_t* value) override {
+    // Expect method not used.
+    return AVB_IO_RESULT_ERROR_NO_SUCH_VALUE;
+  }
+
   AvbIOResult read_permanent_attributes(
       AvbAtxPermanentAttributes* attributes) override {
     if (fail_read_permanent_attributes_) {

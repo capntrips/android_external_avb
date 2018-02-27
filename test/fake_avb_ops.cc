@@ -56,9 +56,7 @@ bool FakeAvbOps::preload_partition(const std::string& partition,
 
   int64_t file_size;
   if (!base::GetFileSize(path, &file_size)) {
-    fprintf(stderr,
-            "Error getting size of file '%s'\n",
-            path.value().c_str());
+    fprintf(stderr, "Error getting size of file '%s'\n", path.value().c_str());
     return false;
   }
 
@@ -150,7 +148,9 @@ AvbIOResult FakeAvbOps::read_from_partition(const char* partition,
 }
 
 AvbIOResult FakeAvbOps::get_preloaded_partition(
-    const char* partition, size_t num_bytes, uint8_t** out_pointer,
+    const char* partition,
+    size_t num_bytes,
+    uint8_t** out_pointer,
     size_t* out_num_bytes_preloaded) {
   std::map<std::string, uint8_t*>::iterator it =
       preloaded_partitions_.find(std::string(partition));
@@ -161,8 +161,7 @@ AvbIOResult FakeAvbOps::get_preloaded_partition(
   }
 
   uint64_t size;
-  AvbIOResult result = get_size_of_partition(
-      avb_ops(), partition, &size);
+  AvbIOResult result = get_size_of_partition(avb_ops(), partition, &size);
   if (result != AVB_IO_RESULT_OK) {
     return result;
   }
@@ -311,6 +310,33 @@ AvbIOResult FakeAvbOps::get_size_of_partition(AvbOps* ops,
   return AVB_IO_RESULT_OK;
 }
 
+AvbIOResult FakeAvbOps::read_persistent_value(const char* name,
+                                              size_t buffer_size,
+                                              uint8_t* out_buffer,
+                                              size_t* out_num_bytes_read) {
+  if (out_buffer == NULL && buffer_size > 0) {
+    return AVB_IO_RESULT_ERROR_INVALID_VALUE_SIZE;
+  }
+  if (stored_values_.count(name) == 0) {
+    return AVB_IO_RESULT_ERROR_NO_SUCH_VALUE;
+  }
+  if (stored_values_[name].size() > buffer_size) {
+    *out_num_bytes_read = stored_values_[name].size();
+    return AVB_IO_RESULT_ERROR_INSUFFICIENT_SPACE;
+  }
+  memcpy(out_buffer, stored_values_[name].data(), stored_values_[name].size());
+  *out_num_bytes_read = stored_values_[name].size();
+  return AVB_IO_RESULT_OK;
+}
+
+AvbIOResult FakeAvbOps::write_persistent_value(const char* name,
+                                               size_t value_size,
+                                               const uint8_t* value) {
+  stored_values_[name] =
+      std::string(reinterpret_cast<const char*>(value), value_size);
+  return AVB_IO_RESULT_OK;
+}
+
 AvbIOResult FakeAvbOps::read_permanent_attributes(
     AvbAtxPermanentAttributes* attributes) {
   *attributes = permanent_attributes_;
@@ -347,15 +373,16 @@ static AvbIOResult my_ops_read_from_partition(AvbOps* ops,
       ->read_from_partition(partition, offset, num_bytes, buffer, out_num_read);
 }
 
-static AvbIOResult my_ops_get_preloaded_partition(AvbOps* ops,
-                                           const char* partition,
-                                           size_t num_bytes,
-                                           uint8_t** out_pointer,
-                                           size_t* out_num_bytes_preloaded) {
+static AvbIOResult my_ops_get_preloaded_partition(
+    AvbOps* ops,
+    const char* partition,
+    size_t num_bytes,
+    uint8_t** out_pointer,
+    size_t* out_num_bytes_preloaded) {
   return FakeAvbOps::GetInstanceFromAvbOps(ops)
       ->delegate()
-      ->get_preloaded_partition(partition, num_bytes, out_pointer,
-                                out_num_bytes_preloaded);
+      ->get_preloaded_partition(
+          partition, num_bytes, out_pointer, out_num_bytes_preloaded);
 }
 
 static AvbIOResult my_ops_write_to_partition(AvbOps* ops,
@@ -424,6 +451,26 @@ static AvbIOResult my_ops_get_size_of_partition(AvbOps* ops,
       ->get_size_of_partition(ops, partition, out_size);
 }
 
+static AvbIOResult my_ops_read_persistent_value(AvbOps* ops,
+                                                const char* name,
+                                                size_t buffer_size,
+                                                uint8_t* out_buffer,
+                                                size_t* out_num_bytes_read) {
+  return FakeAvbOps::GetInstanceFromAvbOps(ops)
+      ->delegate()
+      ->read_persistent_value(
+          name, buffer_size, out_buffer, out_num_bytes_read);
+}
+
+static AvbIOResult my_ops_write_persistent_value(AvbOps* ops,
+                                                 const char* name,
+                                                 size_t value_size,
+                                                 const uint8_t* value) {
+  return FakeAvbOps::GetInstanceFromAvbOps(ops)
+      ->delegate()
+      ->write_persistent_value(name, value_size, value);
+}
+
 static AvbIOResult my_ops_read_permanent_attributes(
     AvbAtxOps* atx_ops, AvbAtxPermanentAttributes* attributes) {
   return FakeAvbOps::GetInstanceFromAvbOps(atx_ops->ops)
@@ -459,6 +506,8 @@ FakeAvbOps::FakeAvbOps() {
   avb_ops_.read_is_device_unlocked = my_ops_read_is_device_unlocked;
   avb_ops_.get_unique_guid_for_partition = my_ops_get_unique_guid_for_partition;
   avb_ops_.get_size_of_partition = my_ops_get_size_of_partition;
+  avb_ops_.read_persistent_value = my_ops_read_persistent_value;
+  avb_ops_.write_persistent_value = my_ops_write_persistent_value;
 
   // Just use the built-in A/B metadata read/write routines.
   avb_ab_ops_.ops = &avb_ops_;
@@ -476,8 +525,8 @@ FakeAvbOps::FakeAvbOps() {
 
 FakeAvbOps::~FakeAvbOps() {
   std::map<std::string, uint8_t*>::iterator it;
-  for (it = preloaded_partitions_.begin();
-       it != preloaded_partitions_.end(); it++) {
+  for (it = preloaded_partitions_.begin(); it != preloaded_partitions_.end();
+       it++) {
     free(it->second);
   }
 }
