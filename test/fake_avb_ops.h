@@ -86,6 +86,15 @@ class FakeAvbOpsDelegate {
                                             const char* partition,
                                             uint64_t* out_size) = 0;
 
+  virtual AvbIOResult read_persistent_value(const char* name,
+                                            size_t buffer_size,
+                                            uint8_t* out_buffer,
+                                            size_t* out_num_bytes_read) = 0;
+
+  virtual AvbIOResult write_persistent_value(const char* name,
+                                             size_t value_size,
+                                             const uint8_t* value) = 0;
+
   virtual AvbIOResult read_permanent_attributes(
       AvbAtxPermanentAttributes* attributes) = 0;
 
@@ -222,6 +231,15 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
                                     const char* partition,
                                     uint64_t* out_size) override;
 
+  AvbIOResult read_persistent_value(const char* name,
+                                    size_t buffer_size,
+                                    uint8_t* out_buffer,
+                                    size_t* out_num_bytes_read) override;
+
+  AvbIOResult write_persistent_value(const char* name,
+                                     size_t value_size,
+                                     const uint8_t* value) override;
+
   AvbIOResult read_permanent_attributes(
       AvbAtxPermanentAttributes* attributes) override;
 
@@ -253,6 +271,8 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
 
   std::set<std::string> partition_names_read_from_;
   std::map<std::string, uint8_t*> preloaded_partitions_;
+
+  std::map<std::string, std::string> stored_values_;
 };
 
 // A delegate implementation that calls FakeAvbOps by default.
@@ -327,6 +347,20 @@ class FakeAvbOpsDelegateWithDefaults : public FakeAvbOpsDelegate {
                                     const char* partition,
                                     uint64_t* out_size) override {
     return ops_.get_size_of_partition(ops, partition, out_size);
+  }
+
+  AvbIOResult read_persistent_value(const char* name,
+                                    size_t buffer_size,
+                                    uint8_t* out_buffer,
+                                    size_t* out_num_bytes_read) override {
+    return ops_.read_persistent_value(
+        name, buffer_size, out_buffer, out_num_bytes_read);
+  }
+
+  AvbIOResult write_persistent_value(const char* name,
+                                     size_t value_size,
+                                     const uint8_t* value) override {
+    return ops_.write_persistent_value(name, value_size, value);
   }
 
   AvbIOResult read_permanent_attributes(

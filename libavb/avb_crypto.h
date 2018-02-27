@@ -44,6 +44,9 @@ extern "C" {
 /* Size of a RSA-8192 signature. */
 #define AVB_RSA8192_NUM_BYTES 1024
 
+/* Size in bytes of a SHA-1 digest. */
+#define AVB_SHA1_DIGEST_SIZE 20
+
 /* Size in bytes of a SHA-256 digest. */
 #define AVB_SHA256_DIGEST_SIZE 32
 
