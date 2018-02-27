@@ -49,7 +49,7 @@ namespace avb {
 // relevant locations).
 class AvbAtxSlotVerifyExampleTest
     : public BaseAvbToolTest,
-      public FakeAvbOpsDelegate,
+      public FakeAvbOpsDelegateWithDefaults,
       public ::testing::WithParamInterface<uint64_t> {
  public:
   ~AvbAtxSlotVerifyExampleTest() override = default;
@@ -63,33 +63,7 @@ class AvbAtxSlotVerifyExampleTest
     ops_.set_stored_is_device_unlocked(false);
   }
 
-  // FakeAvbOpsDelegate methods. All forward to FakeAvbOps default except for
-  // validate_vbmeta_public_key().
-  AvbIOResult read_from_partition(const char* partition,
-                                  int64_t offset,
-                                  size_t num_bytes,
-                                  void* buffer,
-                                  size_t* out_num_read) override {
-    return ops_.read_from_partition(
-        partition, offset, num_bytes, buffer, out_num_read);
-  }
-
-  AvbIOResult get_preloaded_partition(
-      const char* partition,
-      size_t num_bytes,
-      uint8_t** out_pointer,
-      size_t* out_num_bytes_preloaded) override {
-    return ops_.get_preloaded_partition(
-        partition, num_bytes, out_pointer, out_num_bytes_preloaded);
-  }
-
-  AvbIOResult write_to_partition(const char* partition,
-                                 int64_t offset,
-                                 size_t num_bytes,
-                                 const void* buffer) override {
-    return ops_.write_to_partition(partition, offset, num_bytes, buffer);
-  }
-
+  // FakeAvbOpsDelegate overrides.
   AvbIOResult validate_vbmeta_public_key(AvbOps* ops,
                                          const uint8_t* public_key_data,
                                          size_t public_key_length,
@@ -106,47 +80,11 @@ class AvbAtxSlotVerifyExampleTest
                                               out_key_is_trusted);
   }
 
-  AvbIOResult read_rollback_index(AvbOps* ops,
-                                  size_t rollback_index_slot,
-                                  uint64_t* out_rollback_index) override {
-    return ops_.read_rollback_index(
-        ops, rollback_index_slot, out_rollback_index);
-  }
-
   AvbIOResult write_rollback_index(AvbOps* ops,
                                    size_t rollback_index_slot,
                                    uint64_t rollback_index) override {
     num_write_rollback_calls_++;
     return ops_.write_rollback_index(ops, rollback_index_slot, rollback_index);
-  }
-
-  AvbIOResult read_is_device_unlocked(AvbOps* ops,
-                                      bool* out_is_device_unlocked) override {
-    return ops_.read_is_device_unlocked(ops, out_is_device_unlocked);
-  }
-
-  AvbIOResult get_unique_guid_for_partition(AvbOps* ops,
-                                            const char* partition,
-                                            char* guid_buf,
-                                            size_t guid_buf_size) override {
-    return ops_.get_unique_guid_for_partition(
-        ops, partition, guid_buf, guid_buf_size);
-  }
-
-  AvbIOResult get_size_of_partition(AvbOps* ops,
-                                    const char* partition,
-                                    uint64_t* out_size) override {
-    return ops_.get_size_of_partition(ops, partition, out_size);
-  }
-
-  AvbIOResult read_permanent_attributes(
-      AvbAtxPermanentAttributes* attributes) override {
-    return ops_.read_permanent_attributes(attributes);
-  }
-
-  AvbIOResult read_permanent_attributes_hash(
-      uint8_t hash[AVB_SHA256_DIGEST_SIZE]) override {
-    return ops_.read_permanent_attributes_hash(hash);
   }
 
   void set_key_version(size_t rollback_index_location,
@@ -229,7 +167,6 @@ class AvbAtxSlotVerifyExampleTest
   }
 
  protected:
-  FakeAvbOps ops_;
   AvbAtxPermanentAttributes attributes_;
   int num_atx_calls_ = 0;
   int num_key_version_calls_ = 0;
