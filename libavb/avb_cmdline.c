@@ -269,13 +269,11 @@ AvbSlotVerifyResult avb_append_options(
     case AVB_ALGORITHM_TYPE_SHA256_RSA2048:
     case AVB_ALGORITHM_TYPE_SHA256_RSA4096:
     case AVB_ALGORITHM_TYPE_SHA256_RSA8192: {
-      AvbSHA256Ctx ctx;
       size_t n, total_size = 0;
-      avb_sha256_init(&ctx);
+      uint8_t vbmeta_digest[AVB_SHA256_DIGEST_SIZE];
+      avb_slot_verify_data_calculate_vbmeta_digest(
+          slot_data, AVB_DIGEST_TYPE_SHA256, vbmeta_digest);
       for (n = 0; n < slot_data->num_vbmeta_images; n++) {
-        avb_sha256_update(&ctx,
-                          slot_data->vbmeta_images[n].vbmeta_data,
-                          slot_data->vbmeta_images[n].vbmeta_size);
         total_size += slot_data->vbmeta_images[n].vbmeta_size;
       }
       if (!cmdline_append_option(
@@ -284,7 +282,7 @@ AvbSlotVerifyResult avb_append_options(
               slot_data, "androidboot.vbmeta.size", total_size) ||
           !cmdline_append_hex(slot_data,
                               "androidboot.vbmeta.digest",
-                              avb_sha256_final(&ctx),
+                              vbmeta_digest,
                               AVB_SHA256_DIGEST_SIZE)) {
         ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
         goto out;
@@ -294,13 +292,11 @@ AvbSlotVerifyResult avb_append_options(
     case AVB_ALGORITHM_TYPE_SHA512_RSA2048:
     case AVB_ALGORITHM_TYPE_SHA512_RSA4096:
     case AVB_ALGORITHM_TYPE_SHA512_RSA8192: {
-      AvbSHA512Ctx ctx;
       size_t n, total_size = 0;
-      avb_sha512_init(&ctx);
+      uint8_t vbmeta_digest[AVB_SHA512_DIGEST_SIZE];
+      avb_slot_verify_data_calculate_vbmeta_digest(
+          slot_data, AVB_DIGEST_TYPE_SHA512, vbmeta_digest);
       for (n = 0; n < slot_data->num_vbmeta_images; n++) {
-        avb_sha512_update(&ctx,
-                          slot_data->vbmeta_images[n].vbmeta_data,
-                          slot_data->vbmeta_images[n].vbmeta_size);
         total_size += slot_data->vbmeta_images[n].vbmeta_size;
       }
       if (!cmdline_append_option(
@@ -309,7 +305,7 @@ AvbSlotVerifyResult avb_append_options(
               slot_data, "androidboot.vbmeta.size", total_size) ||
           !cmdline_append_hex(slot_data,
                               "androidboot.vbmeta.digest",
-                              avb_sha512_final(&ctx),
+                              vbmeta_digest,
                               AVB_SHA512_DIGEST_SIZE)) {
         ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
         goto out;
