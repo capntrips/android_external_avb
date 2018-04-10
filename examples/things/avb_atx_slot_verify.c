@@ -133,7 +133,6 @@ AvbSlotVerifyResult avb_atx_slot_verify(
   const char* partitions_without_oem[] = {"boot", NULL};
   const char* partitions_with_oem[] = {"boot", "oem_bootloader", NULL};
   AvbSlotVerifyResult result = AVB_SLOT_VERIFY_RESULT_OK;
-  AvbSHA256Ctx ctx;
   size_t i = 0;
   AvbAtxOpsWithContext ops_with_context;
 
@@ -155,13 +154,8 @@ AvbSlotVerifyResult avb_atx_slot_verify(
   }
 
   /* Compute the Android Things Verified Boot Hash (VBH) extension. */
-  avb_sha256_init(&ctx);
-  for (i = 0; i < (*verify_data)->num_vbmeta_images; i++) {
-    avb_sha256_update(&ctx,
-                      (*verify_data)->vbmeta_images[i].vbmeta_data,
-                      (*verify_data)->vbmeta_images[i].vbmeta_size);
-  }
-  avb_memcpy(vbh_extension, avb_sha256_final(&ctx), AVB_SHA256_DIGEST_SIZE);
+  avb_slot_verify_data_calculate_vbmeta_digest(
+      *verify_data, AVB_DIGEST_TYPE_SHA256, vbh_extension);
 
   /* Increase rollback index values to match the verified slot. */
   if (slot_state == AVB_ATX_SLOT_MARKED_SUCCESSFUL) {

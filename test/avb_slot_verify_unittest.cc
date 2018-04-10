@@ -81,6 +81,11 @@ TEST_F(AvbSlotVerifyTest, Basic) {
       "androidboot.vbmeta.invalidate_on_error=yes "
       "androidboot.veritymode=enforcing",
       std::string(slot_data->cmdline));
+  uint8_t vbmeta_digest[AVB_SHA256_DIGEST_SIZE];
+  avb_slot_verify_data_calculate_vbmeta_digest(
+      slot_data, AVB_DIGEST_TYPE_SHA256, vbmeta_digest);
+  EXPECT_EQ("4161a7e655eabe16c3fe714de5d43736e7c0a190cf08d36c946d2509ce071e4d",
+            mem_to_hexstring(vbmeta_digest, AVB_SHA256_DIGEST_SIZE));
   avb_slot_verify_data_free(slot_data);
 }
 
@@ -115,6 +120,13 @@ TEST_F(AvbSlotVerifyTest, BasicSha512) {
       "androidboot.vbmeta.invalidate_on_error=yes "
       "androidboot.veritymode=enforcing",
       std::string(slot_data->cmdline));
+  uint8_t vbmeta_digest[AVB_SHA512_DIGEST_SIZE];
+  avb_slot_verify_data_calculate_vbmeta_digest(
+      slot_data, AVB_DIGEST_TYPE_SHA512, vbmeta_digest);
+  EXPECT_EQ(
+      "cb913d2f1a884f4e04c1db5bb181f3133fd16ac02fb367a20ef0776c0b07b3656ad1f081"
+      "e01932cf70f38b8960877470b448f1588dff022808387cc52fa77e77",
+      mem_to_hexstring(vbmeta_digest, AVB_SHA512_DIGEST_SIZE));
   avb_slot_verify_data_free(slot_data);
 }
 

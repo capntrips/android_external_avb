@@ -1344,3 +1344,42 @@ const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result) {
 
   return ret;
 }
+
+void avb_slot_verify_data_calculate_vbmeta_digest(AvbSlotVerifyData* data,
+                                                  AvbDigestType digest_type,
+                                                  uint8_t* out_digest) {
+  bool ret = false;
+  size_t n;
+
+  switch (digest_type) {
+    case AVB_DIGEST_TYPE_SHA256: {
+      AvbSHA256Ctx ctx;
+      avb_sha256_init(&ctx);
+      for (n = 0; n < data->num_vbmeta_images; n++) {
+        avb_sha256_update(&ctx,
+                          data->vbmeta_images[n].vbmeta_data,
+                          data->vbmeta_images[n].vbmeta_size);
+      }
+      avb_memcpy(out_digest, avb_sha256_final(&ctx), AVB_SHA256_DIGEST_SIZE);
+      ret = true;
+    } break;
+
+    case AVB_DIGEST_TYPE_SHA512: {
+      AvbSHA512Ctx ctx;
+      avb_sha512_init(&ctx);
+      for (n = 0; n < data->num_vbmeta_images; n++) {
+        avb_sha512_update(&ctx,
+                          data->vbmeta_images[n].vbmeta_data,
+                          data->vbmeta_images[n].vbmeta_size);
+      }
+      avb_memcpy(out_digest, avb_sha512_final(&ctx), AVB_SHA512_DIGEST_SIZE);
+      ret = true;
+    } break;
+
+      /* Do not add a 'default:' case here because of -Wswitch. */
+  }
+
+  if (!ret) {
+    avb_fatal("Unknown digest type");
+  }
+}
