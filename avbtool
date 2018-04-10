@@ -2577,6 +2577,7 @@ class Avb(object):
 
     # Add descriptors from other images.
     if include_descriptors_from_image:
+      descriptors_dict = dict()
       for image in include_descriptors_from_image:
         image_handler = ImageHandler(image.name)
         (_, image_vbmeta_header, image_descriptors, _) = self._parse_image(
@@ -2585,7 +2586,18 @@ class Avb(object):
         h.bump_required_libavb_version_minor(
             image_vbmeta_header.required_libavb_version_minor)
         for desc in image_descriptors:
-          encoded_descriptors.extend(desc.encode())
+          # The --include_descriptors_from_image option is used in some setups
+          # with images A and B where both A and B contain a descriptor
+          # for a partition with the same name. Since it's not meaningful
+          # to include both descriptors, only include the last seen descriptor.
+          # See bug 76386656 for details.
+          if hasattr(desc, 'partition_name'):
+            key = type(desc).__name__ + '_' + desc.partition_name
+            descriptors_dict[key] = desc.encode()
+          else:
+            encoded_descriptors.extend(desc.encode())
+      for key in sorted(descriptors_dict.keys()):
+        encoded_descriptors.extend(descriptors_dict[key])
 
     # Load public key metadata blob, if requested.
     pkmd_blob = []
