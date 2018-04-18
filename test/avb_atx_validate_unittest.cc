@@ -44,6 +44,10 @@ const char kPermanentAttributesPath[] =
     "test/data/atx_permanent_attributes.bin";
 const char kPRKPrivateKeyPath[] = "test/data/testkey_atx_prk.pem";
 const char kPIKPrivateKeyPath[] = "test/data/testkey_atx_pik.pem";
+const char kPSKPrivateKeyPath[] = "test/data/testkey_atx_psk.pem";
+const char kPUKPrivateKeyPath[] = "test/data/testkey_atx_puk.pem";
+const char kUnlockChallengePath[] = "test/data/atx_unlock_challenge.bin";
+const char kUnlockCredentialPath[] = "test/data/atx_unlock_credential.bin";
 
 class ScopedRSA {
  public:
@@ -204,6 +208,22 @@ class AvbAtxValidateTest : public ::testing::Test,
     return ops_.read_permanent_attributes_hash(hash);
   }
 
+  void set_key_version(size_t rollback_index_location,
+                       uint64_t key_version) override {
+    ops_.set_key_version(rollback_index_location, key_version);
+  }
+
+  AvbIOResult get_random(size_t num_bytes, uint8_t* output) override {
+    if (fail_get_random_) {
+      return AVB_IO_RESULT_ERROR_IO;
+    }
+    if (fake_random_.size() >= num_bytes) {
+      memcpy(output, fake_random_.data(), num_bytes);
+      return AVB_IO_RESULT_OK;
+    }
+    return ops_.get_random(num_bytes, output);
+  }
+
  protected:
   virtual AvbIOResult Validate(bool* is_trusted) {
     return avb_atx_validate_vbmeta_public_key(
@@ -213,6 +233,11 @@ class AvbAtxValidateTest : public ::testing::Test,
         reinterpret_cast<const uint8_t*>(&metadata_),
         sizeof(metadata_),
         is_trusted);
+  }
+
+  AvbIOResult ValidateUnlock(bool* is_trusted) {
+    return avb_atx_validate_unlock_credential(
+        ops_.avb_atx_ops(), &unlock_credential_, is_trusted);
   }
 
   void SignPIKCertificate() {
@@ -236,12 +261,55 @@ class AvbAtxValidateTest : public ::testing::Test,
                          metadata_.product_signing_key_certificate.signature));
   }
 
+  void SignUnlockCredentialPIKCertificate() {
+    memset(unlock_credential_.product_intermediate_key_certificate.signature,
+           0,
+           AVB_RSA4096_NUM_BYTES);
+    ScopedRSA key(kPRKPrivateKeyPath);
+    ASSERT_TRUE(key.Sign(
+        &unlock_credential_.product_intermediate_key_certificate.signed_data,
+        sizeof(AvbAtxCertificateSignedData),
+        unlock_credential_.product_intermediate_key_certificate.signature));
+  }
+
+  void SignUnlockCredentialPUKCertificate() {
+    memset(unlock_credential_.product_unlock_key_certificate.signature,
+           0,
+           AVB_RSA4096_NUM_BYTES);
+    ScopedRSA key(kPIKPrivateKeyPath);
+    ASSERT_TRUE(
+        key.Sign(&unlock_credential_.product_unlock_key_certificate.signed_data,
+                 sizeof(AvbAtxCertificateSignedData),
+                 unlock_credential_.product_unlock_key_certificate.signature));
+  }
+
+  void SignUnlockCredentialChallenge(const char* key_path) {
+    memset(unlock_credential_.challenge_signature, 0, AVB_RSA4096_NUM_BYTES);
+    ScopedRSA key(key_path);
+    ASSERT_TRUE(key.Sign(unlock_challenge_.data(),
+                         unlock_challenge_.size(),
+                         unlock_credential_.challenge_signature));
+  }
+
+  bool PrepareUnlockCredential() {
+    // Stage a challenge to be remembered as the 'most recent challenge'. Then
+    // the next call to unlock with |unlock_credential_| is expected to succeed.
+    fake_random_ = unlock_challenge_;
+    AvbAtxUnlockChallenge challenge;
+    return (AVB_IO_RESULT_OK ==
+            avb_atx_generate_unlock_challenge(ops_.avb_atx_ops(), &challenge));
+  }
+
   AvbAtxPermanentAttributes attributes_;
   AvbAtxPublicKeyMetadata metadata_;
   bool fail_read_permanent_attributes_{false};
   bool fail_read_permanent_attributes_hash_{false};
   bool fail_read_pik_rollback_index_{false};
   bool fail_read_psk_rollback_index_{false};
+  bool fail_get_random_{false};
+  std::string fake_random_;
+  AvbAtxUnlockCredential unlock_credential_;
+  std::string unlock_challenge_;
 
  private:
   void ReadDefaultData() {
@@ -253,6 +321,13 @@ class AvbAtxValidateTest : public ::testing::Test,
         base::ReadFileToString(base::FilePath(kPermanentAttributesPath), &tmp));
     ASSERT_EQ(tmp.size(), sizeof(AvbAtxPermanentAttributes));
     memcpy(&attributes_, tmp.data(), tmp.size());
+    ASSERT_TRUE(base::ReadFileToString(base::FilePath(kUnlockChallengePath),
+                                       &unlock_challenge_));
+    ASSERT_EQ(size_t(AVB_ATX_UNLOCK_CHALLENGE_SIZE), unlock_challenge_.size());
+    ASSERT_TRUE(
+        base::ReadFileToString(base::FilePath(kUnlockCredentialPath), &tmp));
+    ASSERT_EQ(tmp.size(), sizeof(AvbAtxUnlockCredential));
+    memcpy(&unlock_credential_, tmp.data(), tmp.size());
   }
 };
 
@@ -560,6 +635,310 @@ TEST_F(AvbAtxValidateTest, PSKMismatch) {
                 reinterpret_cast<const uint8_t*>(&metadata_),
                 sizeof(metadata_),
                 &is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, GenerateUnlockChallenge) {
+  fake_random_ = std::string(AVB_ATX_UNLOCK_CHALLENGE_SIZE, 'C');
+  AvbAtxUnlockChallenge challenge;
+  EXPECT_EQ(AVB_IO_RESULT_OK,
+            avb_atx_generate_unlock_challenge(ops_.avb_atx_ops(), &challenge));
+  EXPECT_EQ(1UL, challenge.version);
+  EXPECT_EQ(0,
+            memcmp(fake_random_.data(),
+                   challenge.challenge,
+                   AVB_ATX_UNLOCK_CHALLENGE_SIZE));
+  uint8_t expected_pid_hash[AVB_SHA256_DIGEST_SIZE];
+  SHA256(attributes_.product_id, AVB_ATX_PRODUCT_ID_SIZE, expected_pid_hash);
+  EXPECT_EQ(0,
+            memcmp(expected_pid_hash,
+                   challenge.product_id_hash,
+                   AVB_SHA256_DIGEST_SIZE));
+}
+
+TEST_F(AvbAtxValidateTest, GenerateUnlockChallenge_NoAttributes) {
+  fail_read_permanent_attributes_ = true;
+  AvbAtxUnlockChallenge challenge;
+  EXPECT_NE(AVB_IO_RESULT_OK,
+            avb_atx_generate_unlock_challenge(ops_.avb_atx_ops(), &challenge));
+}
+
+TEST_F(AvbAtxValidateTest, GenerateUnlockChallenge_NoRNG) {
+  fail_get_random_ = true;
+  AvbAtxUnlockChallenge challenge;
+  EXPECT_NE(AVB_IO_RESULT_OK,
+            avb_atx_generate_unlock_challenge(ops_.avb_atx_ops(), &challenge));
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_TRUE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_UnsupportedVersion) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.version++;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_NoAttributes) {
+  PrepareUnlockCredential();
+  fail_read_permanent_attributes_ = true;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_ERROR_IO, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_NoAttributesHash) {
+  PrepareUnlockCredential();
+  fail_read_permanent_attributes_hash_ = true;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_ERROR_IO, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest,
+       ValidateUnlockCredential_UnsupportedAttributesVersion) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  attributes_.version = 25;
+  ops_.set_permanent_attributes(attributes_);
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_AttributesHashMismatch) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  ops_.set_permanent_attributes_hash("bad_hash");
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_FailReadPIKRollbackIndex) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  fail_read_pik_rollback_index_ = true;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_ERROR_IO, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest,
+       ValidateUnlockCredential_UnsupportedPIKCertificateVersion) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_intermediate_key_certificate.signed_data.version =
+      25;
+  SignUnlockCredentialPIKCertificate();
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest,
+       ValidateUnlockCredential_BadPIKCert_ModifiedSubjectPublicKey) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_intermediate_key_certificate.signed_data
+      .public_key[0] ^= 1;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest,
+       ValidateUnlockCredential_BadPIKCert_ModifiedSubject) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_intermediate_key_certificate.signed_data
+      .subject[0] ^= 1;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_BadPIKCert_ModifiedUsage) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_intermediate_key_certificate.signed_data
+      .usage[0] ^= 1;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest,
+       ValidateUnlockCredential_BadPIKCert_ModifiedKeyVersion) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_intermediate_key_certificate.signed_data
+      .key_version ^= 1;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_BadPIKCert_BadSignature) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_intermediate_key_certificate.signature[0] ^= 1;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_PIKCertSubjectIgnored) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_intermediate_key_certificate.signed_data
+      .subject[0] ^= 1;
+  SignUnlockCredentialPIKCertificate();
+  bool is_trusted = false;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_TRUE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_PIKCertUnexpectedUsage) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_intermediate_key_certificate.signed_data
+      .usage[0] ^= 1;
+  SignUnlockCredentialPIKCertificate();
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_PIKRollback) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  ops_.set_stored_rollback_indexes(
+      {{AVB_ATX_PIK_VERSION_LOCATION,
+        unlock_credential_.product_intermediate_key_certificate.signed_data
+                .key_version +
+            1},
+       {AVB_ATX_PSK_VERSION_LOCATION, 0}});
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_FailReadPSKRollbackIndex) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  fail_read_psk_rollback_index_ = true;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_ERROR_IO, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest,
+       ValidateUnlockCredential_UnsupportedPUKCertificateVersion) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_unlock_key_certificate.signed_data.version = 25;
+  SignUnlockCredentialPUKCertificate();
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest,
+       ValidateUnlockCredential_BadPUKCert_ModifiedSubjectPublicKey) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_unlock_key_certificate.signed_data.public_key[0] ^=
+      1;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest,
+       ValidateUnlockCredential_BadPUKCert_ModifiedSubject) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_unlock_key_certificate.signed_data.subject[0] ^= 1;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_BadPUKCert_ModifiedUsage) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_unlock_key_certificate.signed_data.usage[0] ^= 1;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest,
+       ValidateUnlockCredential_BadPUKCert_ModifiedKeyVersion) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_unlock_key_certificate.signed_data.key_version ^=
+      1;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_BadPUKCert_BadSignature) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_unlock_key_certificate.signature[0] ^= 1;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_PUKCertUnexpectedSubject) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_unlock_key_certificate.signed_data.subject[0] ^= 1;
+  SignUnlockCredentialPUKCertificate();
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_PUKCertUnexpectedUsage) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.product_unlock_key_certificate.signed_data.usage[0] ^= 1;
+  SignUnlockCredentialPUKCertificate();
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_PUKRollback) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  ops_.set_stored_rollback_indexes(
+      {{AVB_ATX_PIK_VERSION_LOCATION, 0},
+       {AVB_ATX_PSK_VERSION_LOCATION,
+        unlock_credential_.product_unlock_key_certificate.signed_data
+                .key_version +
+            1}});
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_BadChallengeSignature) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_credential_.challenge_signature[10] ^= 1;
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_ChallengeMismatch) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  unlock_challenge_ = "bad";
+  SignUnlockCredentialChallenge(kPUKPrivateKeyPath);
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_UnlockWithPSK) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  // Copy the PSK cert as the PUK cert.
+  memcpy(&unlock_credential_.product_unlock_key_certificate,
+         &metadata_.product_signing_key_certificate,
+         sizeof(AvbAtxCertificate));
+  // Sign the challenge with the PSK instead of the PUK.
+  SignUnlockCredentialChallenge(kPSKPrivateKeyPath);
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
   EXPECT_FALSE(is_trusted);
 }
 

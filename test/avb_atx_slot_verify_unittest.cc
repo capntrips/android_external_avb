@@ -93,6 +93,10 @@ class AvbAtxSlotVerifyExampleTest
     return ops_.set_key_version(rollback_index_location, key_version);
   }
 
+  AvbIOResult get_random(size_t num_bytes, uint8_t* output) override {
+    return ops_.get_random(num_bytes, output);
+  }
+
   void RunSlotVerify() {
     ops_.set_stored_rollback_indexes(
         {{0, initial_rollback_value_},
