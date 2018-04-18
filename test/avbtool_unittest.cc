@@ -2396,6 +2396,30 @@ TEST_F(AvbToolTest, MakeAtxPskCertificate) {
                  output_path.value().c_str());
 }
 
+TEST_F(AvbToolTest, MakeAtxPukCertificate) {
+  base::FilePath pubkey_path = testdir_.Append("tmp_pubkey.pem");
+  EXPECT_COMMAND(
+      0,
+      "openssl pkey -pubout -in test/data/testkey_atx_puk.pem -out %s",
+      pubkey_path.value().c_str());
+
+  base::FilePath output_path = testdir_.Append("tmp_certificate.bin");
+  EXPECT_COMMAND(0,
+                 "./avbtool make_atx_certificate"
+                 " --subject test/data/atx_product_id.bin"
+                 " --subject_key %s"
+                 " --subject_key_version 42"
+                 " --usage com.google.android.things.vboot.unlock"
+                 " --authority_key test/data/testkey_atx_pik.pem"
+                 " --output %s",
+                 pubkey_path.value().c_str(),
+                 output_path.value().c_str());
+
+  EXPECT_COMMAND(0,
+                 "diff test/data/atx_puk_certificate.bin %s",
+                 output_path.value().c_str());
+}
+
 TEST_F(AvbToolTest, MakeAtxPermanentAttributes) {
   base::FilePath pubkey_path = testdir_.Append("tmp_pubkey.pem");
   EXPECT_COMMAND(
@@ -2430,6 +2454,24 @@ TEST_F(AvbToolTest, MakeAtxMetadata) {
 
   EXPECT_COMMAND(
       0, "diff test/data/atx_metadata.bin %s", output_path.value().c_str());
+}
+
+TEST_F(AvbToolTest, MakeAtxUnlockCredential) {
+  base::FilePath output_path = testdir_.Append("tmp_credential.bin");
+
+  EXPECT_COMMAND(
+      0,
+      "./avbtool make_atx_unlock_credential"
+      " --intermediate_key_certificate test/data/atx_pik_certificate.bin"
+      " --unlock_key_certificate test/data/atx_puk_certificate.bin"
+      " --challenge test/data/atx_unlock_challenge.bin"
+      " --unlock_key test/data/testkey_atx_puk.pem"
+      " --output %s",
+      output_path.value().c_str());
+
+  EXPECT_COMMAND(0,
+                 "diff test/data/atx_unlock_credential.bin %s",
+                 output_path.value().c_str());
 }
 
 }  // namespace avb

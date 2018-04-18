@@ -63,6 +63,10 @@ if [ ! -f testkey_atx_psk.pem ]; then
   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -outform PEM \
     -out testkey_atx_psk.pem
 fi
+if [ ! -f testkey_atx_puk.pem ]; then
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -outform PEM \
+    -out testkey_atx_puk.pem
+fi
 
 # Construct permanent attributes.
 ${AVBTOOL} make_atx_permanent_attributes --output=atx_permanent_attributes.bin \
@@ -85,3 +89,17 @@ ${AVBTOOL} make_atx_metadata --output=atx_metadata.bin \
   --intermediate_key_certificate=atx_pik_certificate.bin \
   --product_key_certificate=atx_psk_certificate.bin
 
+# Generate a random unlock challenge.
+head -c 16 /dev/urandom > atx_unlock_challenge.bin
+
+# Construct a PUK certificate.
+${AVBTOOL} make_atx_certificate --output=atx_puk_certificate.bin \
+  --subject=atx_product_id.bin --subject_key=testkey_atx_puk.pem \
+  --usage=com.google.android.things.vboot.unlock --subject_key_version 42 \
+  --authority_key=testkey_atx_pik.pem
+
+# Construct an unlock credential.
+${AVBTOOL} make_atx_unlock_credential --output=atx_unlock_credential.bin \
+  --intermediate_key_certificate=atx_pik_certificate.bin \
+  --unlock_key_certificate=atx_puk_certificate.bin \
+  --challenge=atx_unlock_challenge.bin --unlock_key=testkey_atx_puk.pem
