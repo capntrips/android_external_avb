@@ -33,3 +33,12 @@ std::string mem_to_hexstring(const uint8_t* data, size_t len) {
   }
   return ret;
 }
+
+std::string string_trim(const std::string& str) {
+  size_t first = str.find_first_not_of(" \t\n");
+  if (first == std::string::npos) {
+    return str;
+  }
+  size_t last = str.find_last_not_of(" \t\n");
+  return str.substr(first, (last - first + 1));
+}
