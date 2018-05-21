@@ -87,6 +87,9 @@ TEST_F(AvbSlotVerifyTest, Basic) {
   EXPECT_EQ("4161a7e655eabe16c3fe714de5d43736e7c0a190cf08d36c946d2509ce071e4d",
             mem_to_hexstring(vbmeta_digest, AVB_SHA256_DIGEST_SIZE));
   avb_slot_verify_data_free(slot_data);
+
+  EXPECT_EQ("4161a7e655eabe16c3fe714de5d43736e7c0a190cf08d36c946d2509ce071e4d",
+            CalcVBMetaDigest("vbmeta_a.img", "sha256"));
 }
 
 TEST_F(AvbSlotVerifyTest, BasicSha512) {
@@ -128,6 +131,11 @@ TEST_F(AvbSlotVerifyTest, BasicSha512) {
       "e01932cf70f38b8960877470b448f1588dff022808387cc52fa77e77",
       mem_to_hexstring(vbmeta_digest, AVB_SHA512_DIGEST_SIZE));
   avb_slot_verify_data_free(slot_data);
+
+  EXPECT_EQ(
+      "cb913d2f1a884f4e04c1db5bb181f3133fd16ac02fb367a20ef0776c0b07b3656ad1f081"
+      "e01932cf70f38b8960877470b448f1588dff022808387cc52fa77e77",
+      CalcVBMetaDigest("vbmeta_a.img", "sha512"));
 }
 
 TEST_F(AvbSlotVerifyTest, BasicUnlocked) {
@@ -743,7 +751,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMetaCorruptBoot) {
 TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
   size_t boot_partition_size = 16 * 1024 * 1024;
   const size_t boot_image_size = 5 * 1024 * 1024;
-  base::FilePath boot_path = GenerateImage("boot_a.img", boot_image_size);
+  base::FilePath boot_path = GenerateImage("boot.img", boot_image_size);
   const char* requested_partitions[] = {"boot", NULL};
 
   EXPECT_COMMAND(0,
@@ -768,7 +776,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
       pk_path.value().c_str());
 
   GenerateVBMetaImage(
-      "vbmeta_a.img",
+      "vbmeta.img",
       "SHA256_RSA2048",
       11,
       base::FilePath("test/data/testkey_rsa2048.pem"),
@@ -833,7 +841,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
   EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
             avb_slot_verify(ops_.avb_ops(),
                             requested_partitions,
-                            "_a",
+                            "",
                             AVB_SLOT_VERIFY_FLAGS_NONE,
                             AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
@@ -896,7 +904,7 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
   // This should match the two cmdlines with a space (U+0020) between them.
   EXPECT_EQ(
       "cmdline2 in hash footer cmdline2 in vbmeta "
-      "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
+      "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta "
       "androidboot.vbmeta.avb_version=1.1 "
       "androidboot.vbmeta.device_state=locked "
       "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=4416 "
@@ -910,7 +918,15 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
   for (size_t n = 2; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS; n++) {
     EXPECT_EQ(0UL, slot_data->rollback_indexes[n]);
   }
+  uint8_t vbmeta_digest[AVB_SHA256_DIGEST_SIZE];
+  avb_slot_verify_data_calculate_vbmeta_digest(
+      slot_data, AVB_DIGEST_TYPE_SHA256, vbmeta_digest);
+  EXPECT_EQ("4a45faa9adfeb94e9154fe682c11fef1a1a3d829b67cbf1a12ac7f0aa4f8e2e4",
+            mem_to_hexstring(vbmeta_digest, AVB_SHA256_DIGEST_SIZE));
   avb_slot_verify_data_free(slot_data);
+
+  EXPECT_EQ("4a45faa9adfeb94e9154fe682c11fef1a1a3d829b67cbf1a12ac7f0aa4f8e2e4",
+            CalcVBMetaDigest("vbmeta.img", "sha256"));
 }
 
 TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionCorruptBoot) {

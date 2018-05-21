@@ -10,6 +10,7 @@ Verified Boot 2.0. Usually AVB is used to refer to this codebase.
     + [The VBMeta struct](#The-VBMeta-struct)
     + [Rollback Protection](#Rollback-Protection)
     + [A/B Support](#A_B-Support)
+    + [The VBMeta Digest](#The-VBMeta-Digest)
 * [Tools and Libraries](#Tools-and-Libraries)
     + [avbtool and libavb](#avbtool-and-libavb)
     + [Files and Directories](#Files-and-Directories)
@@ -129,6 +130,27 @@ In version 1.1 or later, avbtool supports `--do_not_use_ab` for
 possible to work with a partition that does not use A/B and should
 never have the prefix. This corresponds to the
 `AVB_HASH[TREE]_DESCRIPTOR_FLAGS_DO_NOT_USE_AB` flags.
+
+## The VBMeta Digest
+
+The VBMeta digest is a digest over all VBMeta structs including the root struct
+(e.g. in the `vbmeta` partition) and all VBMeta structs in chained
+partitions. This digest can be calculated at build time using `avbtool
+calculate_vbmeta_digest` and also at runtime using the
+`avb_slot_verify_data_calculate_vbmeta_digest()` function. It is also set on the
+kernel command-line as `androidboot.vbmeta.digest`, see the `avb_slot_verify()`
+documentation for exact details.
+
+This digest can be used together with `libavb` in userspace inside the loaded
+operating system to verify authenticity of the loaded vbmeta structs. This is
+useful if the root-of-trust and/or stored rollback indexes are only available
+while running in the boot loader.
+
+Additionally, if the VBMeta digest is included in [hardware-backed attestation
+data](https://developer.android.com/training/articles/security-key-attestation)
+a relying party can extract the digest and compare it with list of digests for
+known good operating systems which, if found, provides additional assurance
+about the device the application is running on.
 
 # Tools and Libraries
 
@@ -502,6 +524,22 @@ hash and hashtree images.
 
 The `verify_image` command can also be used to check that a custom
 signing helper works as intended.
+
+The `calculate_vbmeta_digest` command can be used to calculate the vbmeta digest
+of several image files at the same time. The result is printed as a hexadecimal
+string either on `STDOUT` or a supplied path (using the `--output` option).
+
+    $ avbtool calculate_vbmeta_digest \
+         --hash_algorithm sha256 \
+         --image /path/to/vbmeta.img
+    a20fdd01a6638c55065fe08497186acde350d6797d59a55d70ffbcf41e95c2f5
+
+In this example the `calculate_vbmeta_digest` command loads the `vbmeta.img`
+file. If this image has one or more chain partition descriptors, the same logic
+as the `verify_image` command is used to load files for these (e.g. it assumes
+the same directory and file extension as the given image). Once all vbmeta
+structs have been loaded, the digest is calculated (using the hash algorithm
+given by the `--hash_algorithm` option) and printed out.
 
 ## Build System Integration
 
