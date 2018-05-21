@@ -36,6 +36,9 @@
 // Encodes |len| bytes of |data| as a lower-case hex-string.
 std::string mem_to_hexstring(const uint8_t* data, size_t len);
 
+// Trims whitespace from start and end of |str|.
+std::string string_trim(const std::string& str);
+
 /* Utility macro to run the command expressed by the printf()-style string
  * |command_format| using the system(3) utility function. Will assert unless
  * the command exits normally with exit status |expected_exit_status|.
@@ -62,6 +65,24 @@ class BaseAvbToolTest : public ::testing::Test {
 
  protected:
   virtual ~BaseAvbToolTest() {}
+
+  /* Calculates the vbmeta digest using 'avbtool calc_vbmeta_digest' command. */
+  std::string CalcVBMetaDigest(const std::string& vbmeta_image,
+                               const std::string& digest_alg) {
+    base::FilePath vbmeta_path = testdir_.Append(vbmeta_image);
+    base::FilePath vbmeta_digest_path = testdir_.Append("vbmeta_digest");
+    EXPECT_COMMAND(
+        0,
+        "./avbtool calculate_vbmeta_digest --image %s --hash_algorithm %s"
+        " --output %s",
+        vbmeta_path.value().c_str(),
+        digest_alg.c_str(),
+        vbmeta_digest_path.value().c_str());
+    std::string vbmeta_digest_data;
+    EXPECT_TRUE(
+        base::ReadFileToString(vbmeta_digest_path, &vbmeta_digest_data));
+    return string_trim(vbmeta_digest_data);
+  }
 
   /* Generates a vbmeta image, using avbtoool, with file name
    * |image_name|. The generated vbmeta image will written to disk,
