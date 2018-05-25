@@ -89,6 +89,7 @@ cc_library_static {
         "avb_sources",
     ],
     host_supported: true,
+    recovery_available: true,
     export_include_dirs: ["."],
     target: {
         android: {
@@ -109,6 +110,7 @@ cc_library_static {
         "avb_defaults",
         "avb_sources",
     ],
+    recovery_available: true,
     export_include_dirs: ["."],
     shared_libs: ["libbase"],
     static_libs: ["libfs_mgr"],
