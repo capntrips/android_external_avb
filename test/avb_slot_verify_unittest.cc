@@ -2671,6 +2671,12 @@ TEST_F(AvbSlotVerifyTestWithPersistentDigest, Basic_WithAB) {
   Verify(false /* expect_success */);
 }
 
+TEST_F(AvbSlotVerifyTestWithPersistentDigest, Basic_WithAutoInit) {
+  SetupWithHashDescriptor();
+  // Explicitly do not write any digest as a persistent value.
+  Verify(true /* expect_success */);
+}
+
 class AvbSlotVerifyTestWithPersistentDigest_InvalidDigestLength
     : public AvbSlotVerifyTestWithPersistentDigest,
       public ::testing::WithParamInterface<size_t> {};
@@ -2693,7 +2699,18 @@ INSTANTIATE_TEST_CASE_P(
 
 class AvbSlotVerifyTestWithPersistentDigest_InvalidPersistentValueName
     : public AvbSlotVerifyTestWithPersistentDigest,
-      public ::testing::WithParamInterface<const char*> {};
+      public ::testing::WithParamInterface<const char*> {
+  // FakeAvbOpsDelegate override.
+  AvbIOResult write_persistent_value(const char* name,
+                                     size_t value_size,
+                                     const uint8_t* value) override {
+    // Fail attempted initialization with any name not under test.
+    if (std::string(name) != GetParam()) {
+      return AVB_IO_RESULT_ERROR_NO_SUCH_VALUE;
+    }
+    return ops_.write_persistent_value(name, value_size, value);
+  }
+};
 
 TEST_P(AvbSlotVerifyTestWithPersistentDigest_InvalidPersistentValueName,
        Param) {
@@ -2708,26 +2725,30 @@ INSTANTIATE_TEST_CASE_P(
     AvbSlotVerifyTestWithPersistentDigest_InvalidPersistentValueName,
     ::testing::Values(
         "",
-        "AVBPD_factory0",
-        "AVBPD_factor",
+        "avb.persistent_digest.factory0",
+        "avb.persistent_digest.factor",
         "loooooooooooooooooooooooooooooooooooooooooooooongvalue"));
 
 class AvbSlotVerifyTestWithPersistentDigest_ReadDigestFailure
     : public AvbSlotVerifyTestWithPersistentDigest,
       public ::testing::WithParamInterface<AvbIOResult> {
-  // FakeAvbOpsDelegate override.
+  // FakeAvbOpsDelegate overrides.
   AvbIOResult read_persistent_value(const char* name,
                                     size_t buffer_size,
                                     uint8_t* out_buffer,
                                     size_t* out_num_bytes_read) override {
     return GetParam();
   }
+  AvbIOResult write_persistent_value(const char* name,
+                                     size_t value_size,
+                                     const uint8_t* value) override {
+    // Fail any attempted initialization in response to the read error.
+    return GetParam();
+  }
 };
 
 TEST_P(AvbSlotVerifyTestWithPersistentDigest_ReadDigestFailure, Param) {
   SetupWithHashDescriptor();
-  ops_.write_persistent_value(
-      kPersistentValueName, AVB_SHA256_DIGEST_SIZE, kDigest);
   switch (GetParam()) {
     case AVB_IO_RESULT_ERROR_OOM:
       expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
@@ -2847,6 +2868,13 @@ TEST_F(AvbSlotVerifyTestWithPersistentDigest, Basic_Hashtree_WithAB) {
                         0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA};
   ops_.write_persistent_value(
       kPersistentValueName, AVB_SHA1_DIGEST_SIZE, fake_digest);
+  Verify(false /* expect_success */);
+}
+
+TEST_F(AvbSlotVerifyTestWithPersistentDigest, Basic_Hashtree_NoAutoInit) {
+  verity_hash_algorithm_ = "sha1";
+  SetupWithHashtreeDescriptor();
+  // Explicitly do not store any persistent digest.
   Verify(false /* expect_success */);
 }
 
