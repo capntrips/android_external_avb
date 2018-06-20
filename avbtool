@@ -3969,7 +3969,7 @@ class AvbTool(object):
                                   'certificate'),
                             action='store_true')
     sub_parser.add_argument('--usage',
-                            help=('Override usage with a hash of the provided'
+                            help=('Override usage with a hash of the provided '
                                   'string'),
                             required=False)
     sub_parser.add_argument('--authority_key',
