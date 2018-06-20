@@ -717,7 +717,7 @@ digest in the case of a hashtree) is not stored in the descriptor but
 is stored in a named persistent value. This allows configuration data
 which may differ from device to device to be verified by AVB. It must
 not be possible to modify the persistent digest when the device is in
-the LOCKED state.
+the LOCKED state, except if a digest does not exist it may be initialized.
 
 To specify that a descriptor should use a persistent digest, use the
 `--use_persistent_digest` option for the `add_hash_footer` or
