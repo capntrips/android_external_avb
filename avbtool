@@ -65,8 +65,7 @@ class AvbError(Exception):
 class Algorithm(object):
   """Contains details about an algorithm.
 
-  See the avb_vbmeta_header.h file for more details about
-  algorithms.
+  See the avb_vbmeta_image.h file for more details about algorithms.
 
   The constant |ALGORITHMS| is a dictionary from human-readable
   names (e.g 'SHA256_RSA2048') to instances of this class.
@@ -1820,8 +1819,8 @@ class AvbVBMetaHeader(object):
   """A class for parsing and writing AVB vbmeta images.
 
   Attributes:
-    The attributes correspond to the |AvbVBMetaHeader| struct
-    defined in avb_vbmeta_header.h.
+    The attributes correspond to the |AvbVBMetaImageHeader| struct defined in
+    avb_vbmeta_image.h.
   """
 
   SIZE = 256
