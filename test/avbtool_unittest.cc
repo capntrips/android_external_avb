@@ -641,7 +641,9 @@ static std::string RemoveLinesStartingWith(const std::string& str,
   return ret;
 }
 
-TEST_F(AvbToolTest, AddHashFooterSparseWithHoleAtTheEnd) {
+// NOTE: make_ext4fs was removed and there is no replacement for how we use
+// it... so this is currently disabled..
+TEST_F(AvbToolTest, DISABLED_AddHashFooterSparseWithHoleAtTheEnd) {
   const size_t partition_size = 10 * 1024 * 1024;
   const size_t metadata_size = 128 * 1024;
 
