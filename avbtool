@@ -631,6 +631,7 @@ class ImageHandler(object):
   of the block size.
 
   Attributes:
+    filename: Name of file.
     is_sparse: Whether the file being operated on is sparse.
     block_size: The block size, typically 4096.
     image_size: The size of the unsparsified file.
@@ -653,7 +654,7 @@ class ImageHandler(object):
     Raises:
       ValueError: If data in the file is invalid.
     """
-    self._image_filename = image_filename
+    self.filename = image_filename
     self._read_header()
 
   def _read_header(self):
@@ -668,7 +669,7 @@ class ImageHandler(object):
     self.is_sparse = False
     self.block_size = 4096
     self._file_pos = 0
-    self._image = open(self._image_filename, 'r+b')
+    self._image = open(self.filename, 'r+b')
     self._image.seek(0, os.SEEK_END)
     self.image_size = self._image.tell()
 
@@ -1959,6 +1960,33 @@ class Avb(object):
   MAX_VBMETA_SIZE = 64 * 1024
   MAX_FOOTER_SIZE = 4096
 
+  def extract_vbmeta_image(self, output, image_filename, padding_size):
+    """Implements the 'extract_vbmeta_image' command.
+
+    Arguments:
+      output: Write vbmeta struct to this file.
+      image_filename: File to extract vbmeta data from (with a footer).
+      padding_size: If not 0, pads output so size is a multiple of the number.
+
+    Raises:
+      AvbError: If there's no footer in the image.
+    """
+    image = ImageHandler(image_filename)
+
+    (footer, _, _, _) = self._parse_image(image)
+
+    if not footer:
+      raise AvbError('Given image does not have a footer.')
+
+    image.seek(footer.vbmeta_offset)
+    vbmeta_blob = image.read(footer.vbmeta_size)
+    output.write(vbmeta_blob)
+
+    if padding_size > 0:
+      padded_size = round_to_multiple(len(vbmeta_blob), padding_size)
+      padding_needed = padded_size - len(vbmeta_blob)
+      output.write('\0' * padding_needed)
+
   def erase_footer(self, image_filename, keep_hashtree):
     """Implements the 'erase_footer' command.
 
@@ -2172,11 +2200,11 @@ class Avb(object):
     offset = 0
     if footer:
       offset = footer.vbmeta_offset
-    size = (header.SIZE + header.authentication_data_block_size +
-            header.auxiliary_data_block_size)
+
     image.seek(offset)
-    vbmeta_blob = image.read(size)
-    h = AvbVBMetaHeader(vbmeta_blob[0:AvbVBMetaHeader.SIZE])
+    vbmeta_blob = image.read(header.SIZE + header.authentication_data_block_size +
+                             header.auxiliary_data_block_size)
+
     alg_name, _ = lookup_algorithm_by_type(header.algorithm_type)
     if not verify_vbmeta_signature(header, vbmeta_blob):
       raise AvbError('Signature check failed for {} vbmeta struct {}'
@@ -2185,22 +2213,40 @@ class Avb(object):
     if key_blob:
       # The embedded public key is in the auxiliary block at an offset.
       key_offset = AvbVBMetaHeader.SIZE
-      key_offset += h.authentication_data_block_size
-      key_offset += h.public_key_offset
-      key_blob_in_vbmeta = vbmeta_blob[key_offset:key_offset + h.public_key_size]
+      key_offset += header.authentication_data_block_size
+      key_offset += header.public_key_offset
+      key_blob_in_vbmeta = vbmeta_blob[key_offset:key_offset + header.public_key_size]
       if key_blob != key_blob_in_vbmeta:
         raise AvbError('Embedded public key does not match given key.')
 
     if footer:
       print ('vbmeta: Successfully verified footer and {} vbmeta struct in {}'
-             .format(alg_name, image_filename))
+             .format(alg_name, image.filename))
     else:
       print ('vbmeta: Successfully verified {} vbmeta struct in {}'
-             .format(alg_name, image_filename))
+             .format(alg_name, image.filename))
 
     for desc in descriptors:
       if not desc.verify(image_dir, image_ext, expected_chain_partitions_map):
         raise AvbError('Error verifying descriptor.')
+      # Note how AvbDescriptor.verify() method verifies only the descriptor
+      # contents which in the case of chain descriptors means checking only its
+      # contents matches what is in |expected_chain_partitions_map|.
+      #
+      # Specifically AvbHashtreeDescriptor.verify(), doesn't follow chain
+      # descriptors e.g. if it's a chain descriptor for 'system' it will not try
+      # to verify system.img. Why?  Because the whole idea of chain descriptors
+      # is separate organizations. That is, when they are used it's assumed that
+      # all you have is the public key, not an actual image (because if you had
+      # the image you wouldn't need to use a chain partition in the first
+      # place).
+      #
+      # However in certain situations you do have the image so it would be nice
+      # to add something like a --follow_chain_descriptors option for 'avbtool
+      # verify_image' which will look for and follow images specified by chain
+      # descriptors. Maybe it should be on a per-partition basis and specificied
+      # as part of the --expected_chain_partition paramter, maybe if the
+      # partition name ends with a '+' or something. Something to think about.
 
 
   def calculate_vbmeta_digest(self, image_filename, hash_algorithm, output):
@@ -2234,10 +2280,10 @@ class Avb(object):
         ch_image = ImageHandler(ch_image_filename)
         (ch_footer, ch_header, ch_descriptors, ch_image_size) = self._parse_image(ch_image)
         ch_offset = 0
+        ch_size = (ch_header.SIZE + ch_header.authentication_data_block_size +
+                   ch_header.auxiliary_data_block_size)
         if ch_footer:
           ch_offset = ch_footer.vbmeta_offset
-          ch_size = (ch_header.SIZE + ch_header.authentication_data_block_size +
-                     ch_header.auxiliary_data_block_size)
         ch_image.seek(ch_offset)
         ch_vbmeta_blob = ch_image.read(ch_size)
         hasher.update(ch_vbmeta_blob)
@@ -3871,6 +3917,23 @@ class AvbTool(object):
                             action='store_true')
     sub_parser.set_defaults(func=self.erase_footer)
 
+    sub_parser = subparsers.add_parser('extract_vbmeta_image',
+                                       help='Extracts vbmeta from an image with a footer.')
+    sub_parser.add_argument('--image',
+                            help='Image with footer',
+                            type=argparse.FileType('rb'),
+                            required=True)
+    sub_parser.add_argument('--output',
+                            help='Output file name',
+                            type=argparse.FileType('wb'))
+    sub_parser.add_argument('--padding_size',
+                            metavar='NUMBER',
+                            help='If non-zero, pads output with NUL bytes so '
+                                 'its size is a multiple of NUMBER (default: 0)',
+                            type=parse_number,
+                            default=0)
+    sub_parser.set_defaults(func=self.extract_vbmeta_image)
+
     sub_parser = subparsers.add_parser('resize_image',
                                        help='Resize image with a footer.')
     sub_parser.add_argument('--image',
@@ -4154,6 +4217,11 @@ class AvbTool(object):
   def erase_footer(self, args):
     """Implements the 'erase_footer' sub-command."""
     self.avb.erase_footer(args.image.name, args.keep_hashtree)
+
+  def extract_vbmeta_image(self, args):
+    """Implements the 'extract_vbmeta_image' sub-command."""
+    self.avb.extract_vbmeta_image(args.output, args.image.name,
+                                  args.padding_size)
 
   def resize_image(self, args):
     """Implements the 'resize_image' sub-command."""
