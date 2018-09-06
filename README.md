@@ -852,7 +852,8 @@ be handled through the `hashtree_error_mode` parameter in the
   will invalidate the current slot and restart. On devices with A/B
   this would lead to attempting to boot the other slot (if it's marked
   as bootable) or it could lead to a mode where no OS can be booted
-  (e.g. some form of repair mode).
+  (e.g. some form of repair mode). In Linux this requires a kernel
+  built with `CONFIG_DM_VERITY_AVB`.
 
 * `AVB_HASHTREE_ERROR_MODE_RESTART` means that the OS will restart
   without the current slot being invalidated. Be careful using this
@@ -862,49 +863,53 @@ be handled through the `hashtree_error_mode` parameter in the
 * `AVB_HASHTREE_ERROR_MODE_EIO` means that an `EIO` error will be
   returned to the application.
 
+* `AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO` means that either the **RESTART**
+  or **EIO** mode is used, depending on state. This mode implements a state
+  machine whereby **RESTART** is used by default and when the
+  `AVB_SLOT_VERIFY_FLAGS_RESTART_CAUSED_BY_HASHTREE_CORRUPTION` is passed to
+  `avb_slot_verify()` the mode transitions to **EIO**. When a new OS has been
+  detected the device transitions back to the **RESTART** mode.
+    + To do this persistent storage is needed - specifically this means that the
+      passed in `AvbOps` will need to have the `read_persistent_value()` and
+      `write_persistent_value()` operations implemented. The name of the
+      persistent value used is **avb.managed_verity_mode** and 32 bytes of storage
+      is needed.
+
 * `AVB_HASHTREE_ERROR_MODE_LOGGING` means that errors will be logged
    and corrupt data may be returned to applications. This mode should
    be used for **ONLY** diagnostics and debugging. It cannot be used
    unless verification errors are allowed.
 
-The value passed in `hashtree_error_mode` is essentially just passed
-on through to the HLOS through the the `androidboot.veritymode` and
-`androidboot.vbmeta.invalidate_on_error` kernel command-line
-parameters. The HLOS - including the Linux kernel when using
-`CONFIG_DM_VERITY_AVB` - will then act upon hashtree verification
-errors as specified.
+The value passed in `hashtree_error_mode` is essentially just passed on through
+to the HLOS through the the `androidboot.veritymode`,
+`androidboot.veritymode.managed`, and `androidboot.vbmeta.invalidate_on_error`
+kernel command-line parameters in the following way:
+
+|      | `androidboot.veritymode` | `androidboot.veritymode.managed` | `androidboot.vbmeta.invalidate_on_error` |
+|------|:------------------------:|:--------------------------------:|:----------------------------------------:|
+| `AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE` | **enforcing** | (unset) | **yes** |
+| `AVB_HASHTREE_ERROR_MODE_RESTART` | **enforcing** | (unset) | (unset) |
+| `AVB_HASHTREE_ERROR_MODE_EIO` | **eio** | (unset) | (unset) |
+| `AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO` | **eio** or **enforcing** | **yes** | (unset) |
+| `AVB_HASHTREE_ERROR_MODE_LOGGING` | **ignore_corruption** | (unset) | (unset) |
+
+The only exception to this table is that if the
+`AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED` flag is set in the top-level vbmeta,
+then `androidboot.veritymode` is set to **disabled** and
+`androidboot.veritymode.managed` and `androidboot.vbmeta.invalidate_on_error`
+are unset.
 
 ### Which mode should I use for my device?
 
 This depends entirely on the device, how the device is intended to be
 used, and the desired user experience.
 
-For example, consider
-the
-[EIO mode in an earlier version of Android Verified Boot](https://source.android.com/security/verifiedboot/verified-boot) (see
-the "Recovering from dm-verity errors" section). In a nutshell this
-mode uses `AVB_HASHTREE_ERROR_MODE_RESTART` mode until an error is
-encounted and then it switches to `AVB_HASHTREE_ERROR_MODE_EIO` mode
-on the reboot. Additionally when in `AVB_HASHTREE_ERROR_MODE_EIO` mode
-the user is informed that the device experienced corruption and then
-asked to click through a screen to continue.
+For Android devices the `AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO` mode
+should be used. Also see the [Boot Flow section on source.android.com](https://source.android.com/security/verifiedboot/boot-flow) for the kind of UX and UI the boot loader should implement.
 
-To implement this mode in a boot loader, a combination of the
-`AVB_HASHTREE_ERROR_MODE_RESTART` mode and
-`AVB_HASHTREE_ERROR_MODE_EIO` mode could be used along with persistent
-storage recording what mode the bootloader is currently in. This would
-need to include transition rules e.g. if the kernel indicates that it
-rebooted because of a `dm-verity` error the bootloader would need to
-transition from the `AVB_HASHTREE_ERROR_MODE_RESTART` mode to the
-`AVB_HASHTREE_ERROR_MODE_EIO` mode. Ditto, when the slot is updated
-the bootloader needs to transition from the
-`AVB_HASHTREE_ERROR_MODE_EIO` mode back to the
-`AVB_HASHTREE_ERROR_MODE_RESTART` mode so the user doesn't have to
-click through a screen on every boot.
-
-On the other hand, if the device doesn't have a screen or if the HLOS
-supports multiple bootable slots simultaneously it may make more sense
-to just use `AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE`.
+If the device doesn't have a screen or if the HLOS supports multiple bootable
+slots simultaneously it may make more sense to just use
+`AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE`.
 
 ## Android Specific Integration
 

@@ -1127,6 +1127,101 @@ out:
   return ret;
 }
 
+static AvbIOResult avb_manage_hashtree_error_mode(
+    AvbOps* ops,
+    AvbSlotVerifyFlags flags,
+    AvbSlotVerifyData* data,
+    AvbHashtreeErrorMode* out_hashtree_error_mode) {
+  AvbHashtreeErrorMode ret = AVB_HASHTREE_ERROR_MODE_RESTART;
+  AvbIOResult io_ret = AVB_IO_RESULT_OK;
+  uint8_t vbmeta_digest_sha256[AVB_SHA256_DIGEST_SIZE];
+  uint8_t stored_vbmeta_digest_sha256[AVB_SHA256_DIGEST_SIZE];
+  size_t num_bytes_read;
+
+  avb_assert(out_hashtree_error_mode != NULL);
+  avb_assert(ops->read_persistent_value != NULL);
+  avb_assert(ops->write_persistent_value != NULL);
+
+  // If we're rebooting because of dm-verity corruption, make a note of
+  // the vbmeta hash so we can stay in 'eio' mode until things change.
+  if (flags & AVB_SLOT_VERIFY_FLAGS_RESTART_CAUSED_BY_HASHTREE_CORRUPTION) {
+    avb_debug(
+        "Rebooting because of dm-verity corruption - "
+        "recording OS instance and using 'eio' mode.\n");
+    avb_slot_verify_data_calculate_vbmeta_digest(
+        data, AVB_DIGEST_TYPE_SHA256, vbmeta_digest_sha256);
+    io_ret = ops->write_persistent_value(ops,
+                                         AVB_NPV_MANAGED_VERITY_MODE,
+                                         AVB_SHA256_DIGEST_SIZE,
+                                         vbmeta_digest_sha256);
+    if (io_ret != AVB_IO_RESULT_OK) {
+      avb_error("Error writing to " AVB_NPV_MANAGED_VERITY_MODE ".\n");
+      goto out;
+    }
+    ret = AVB_HASHTREE_ERROR_MODE_EIO;
+    io_ret = AVB_IO_RESULT_OK;
+    goto out;
+  }
+
+  // See if we're in 'eio' mode.
+  io_ret = ops->read_persistent_value(ops,
+                                      AVB_NPV_MANAGED_VERITY_MODE,
+                                      AVB_SHA256_DIGEST_SIZE,
+                                      stored_vbmeta_digest_sha256,
+                                      &num_bytes_read);
+  if (io_ret == AVB_IO_RESULT_ERROR_NO_SUCH_VALUE ||
+      (io_ret == AVB_IO_RESULT_OK && num_bytes_read == 0)) {
+    // This is the usual case ('eio' mode not set).
+    avb_debug("No dm-verity corruption - using in 'restart' mode.\n");
+    ret = AVB_HASHTREE_ERROR_MODE_RESTART;
+    io_ret = AVB_IO_RESULT_OK;
+    goto out;
+  } else if (io_ret != AVB_IO_RESULT_OK) {
+    avb_error("Error reading from " AVB_NPV_MANAGED_VERITY_MODE ".\n");
+    goto out;
+  }
+  if (num_bytes_read != AVB_SHA256_DIGEST_SIZE) {
+    avb_error(
+        "Unexpected number of bytes read from " AVB_NPV_MANAGED_VERITY_MODE
+        ".\n");
+    io_ret = AVB_IO_RESULT_ERROR_IO;
+    goto out;
+  }
+
+  // OK, so we're currently in 'eio' mode and the vbmeta digest of the OS
+  // that caused this is in |stored_vbmeta_digest_sha256| ... now see if
+  // the OS we're dealing with now is the same.
+  avb_slot_verify_data_calculate_vbmeta_digest(
+      data, AVB_DIGEST_TYPE_SHA256, vbmeta_digest_sha256);
+  if (avb_memcmp(vbmeta_digest_sha256,
+                 stored_vbmeta_digest_sha256,
+                 AVB_SHA256_DIGEST_SIZE) == 0) {
+    // It's the same so we're still in 'eio' mode.
+    avb_debug("Same OS instance detected - staying in 'eio' mode.\n");
+    ret = AVB_HASHTREE_ERROR_MODE_EIO;
+    io_ret = AVB_IO_RESULT_OK;
+  } else {
+    // It did change!
+    avb_debug(
+        "New OS instance detected - changing from 'eio' to 'restart' mode.\n");
+    io_ret =
+        ops->write_persistent_value(ops,
+                                    AVB_NPV_MANAGED_VERITY_MODE,
+                                    0,  // This clears the persistent property.
+                                    vbmeta_digest_sha256);
+    if (io_ret != AVB_IO_RESULT_OK) {
+      avb_error("Error clearing " AVB_NPV_MANAGED_VERITY_MODE ".\n");
+      goto out;
+    }
+    ret = AVB_HASHTREE_ERROR_MODE_RESTART;
+    io_ret = AVB_IO_RESULT_OK;
+  }
+
+out:
+  *out_hashtree_error_mode = ret;
+  return io_ret;
+}
+
 AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
                                     const char* const* requested_partitions,
                                     const char* ab_suffix,
@@ -1165,6 +1260,21 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
       !allow_verification_error) {
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT;
     goto fail;
+  }
+
+  /* Make sure passed-in AvbOps support persistent values if
+   * asking for libavb to manage verity state.
+   */
+  if (hashtree_error_mode == AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO) {
+    if (ops->read_persistent_value == NULL ||
+        ops->write_persistent_value == NULL) {
+      avb_error(
+          "Persistent values required for "
+          "AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO "
+          "but are not implemented in given AvbOps.\n");
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT;
+      goto fail;
+    }
   }
 
   slot_data = avb_calloc(sizeof(AvbSlotVerifyData));
@@ -1245,14 +1355,31 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
         goto fail;
       }
     } else {
-      /* Add options - any failure in avb_append_options() is either an
-       * I/O or OOM error.
-       */
-      AvbSlotVerifyResult sub_ret = avb_append_options(ops,
-                                                       slot_data,
-                                                       &toplevel_vbmeta,
-                                                       algorithm_type,
-                                                       hashtree_error_mode);
+      /* If requested, manage dm-verity mode... */
+      AvbHashtreeErrorMode resolved_hashtree_error_mode = hashtree_error_mode;
+      if (hashtree_error_mode ==
+          AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO) {
+        AvbIOResult io_ret;
+        io_ret = avb_manage_hashtree_error_mode(
+            ops, flags, slot_data, &resolved_hashtree_error_mode);
+        if (io_ret != AVB_IO_RESULT_OK) {
+          ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+          if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+            ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+          }
+          goto fail;
+        }
+      }
+      slot_data->resolved_hashtree_error_mode = resolved_hashtree_error_mode;
+
+      /* Add options... */
+      AvbSlotVerifyResult sub_ret;
+      sub_ret = avb_append_options(ops,
+                                   slot_data,
+                                   &toplevel_vbmeta,
+                                   algorithm_type,
+                                   hashtree_error_mode,
+                                   resolved_hashtree_error_mode);
       if (sub_ret != AVB_SLOT_VERIFY_RESULT_OK) {
         ret = sub_ret;
         goto fail;
