@@ -2966,4 +2966,166 @@ INSTANTIATE_TEST_CASE_P(
                       AVB_IO_RESULT_ERROR_INVALID_VALUE_SIZE,
                       AVB_IO_RESULT_ERROR_INSUFFICIENT_SPACE));
 
+TEST_F(AvbSlotVerifyTest, ManagedVerityMode) {
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      "--internal_release_string \"\"");
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"boot", NULL};
+
+  // run 1: initial boot -> should be in non-'eio' mode
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(AVB_HASHTREE_ERROR_MODE_RESTART,
+            slot_data->resolved_hashtree_error_mode);
+  EXPECT_TRUE(strstr(slot_data->cmdline, "androidboot.veritymode=enforcing") !=
+              nullptr);
+  EXPECT_TRUE(strstr(slot_data->cmdline,
+                     "androidboot.veritymode.managed=yes") != nullptr);
+  avb_slot_verify_data_free(slot_data);
+
+  // run 2: second boot without dm-verity error -> should still be in non-'eio'
+  // mode
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(AVB_HASHTREE_ERROR_MODE_RESTART,
+            slot_data->resolved_hashtree_error_mode);
+  EXPECT_TRUE(strstr(slot_data->cmdline, "androidboot.veritymode=enforcing") !=
+              nullptr);
+  EXPECT_TRUE(strstr(slot_data->cmdline,
+                     "androidboot.veritymode.managed=yes") != nullptr);
+  avb_slot_verify_data_free(slot_data);
+
+  // run 3: Reboot after dm-verity error -> should be in 'eio' mode
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(
+                ops_.avb_ops(),
+                requested_partitions,
+                "",
+                AVB_SLOT_VERIFY_FLAGS_RESTART_CAUSED_BY_HASHTREE_CORRUPTION,
+                AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO,
+                &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(AVB_HASHTREE_ERROR_MODE_EIO,
+            slot_data->resolved_hashtree_error_mode);
+  EXPECT_TRUE(strstr(slot_data->cmdline, "androidboot.veritymode=eio") !=
+              nullptr);
+  EXPECT_TRUE(strstr(slot_data->cmdline,
+                     "androidboot.veritymode.managed=yes") != nullptr);
+  avb_slot_verify_data_free(slot_data);
+
+  // run 4: Reboot again.. no dm-verity error but check still in 'eio' mode
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(AVB_HASHTREE_ERROR_MODE_EIO,
+            slot_data->resolved_hashtree_error_mode);
+  EXPECT_TRUE(strstr(slot_data->cmdline, "androidboot.veritymode=eio") !=
+              nullptr);
+  EXPECT_TRUE(strstr(slot_data->cmdline,
+                     "androidboot.veritymode.managed=yes") != nullptr);
+  avb_slot_verify_data_free(slot_data);
+
+  // run 5: Reboot again.. with dm-verity error, check still in 'eio' mode
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(
+                ops_.avb_ops(),
+                requested_partitions,
+                "",
+                AVB_SLOT_VERIFY_FLAGS_RESTART_CAUSED_BY_HASHTREE_CORRUPTION,
+                AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO,
+                &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(AVB_HASHTREE_ERROR_MODE_EIO,
+            slot_data->resolved_hashtree_error_mode);
+  EXPECT_TRUE(strstr(slot_data->cmdline, "androidboot.veritymode=eio") !=
+              nullptr);
+  EXPECT_TRUE(strstr(slot_data->cmdline,
+                     "androidboot.veritymode.managed=yes") != nullptr);
+  avb_slot_verify_data_free(slot_data);
+
+  // run 6: Reboot again.. no dm-verity error but check still in 'eio' mode
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(AVB_HASHTREE_ERROR_MODE_EIO,
+            slot_data->resolved_hashtree_error_mode);
+  EXPECT_TRUE(strstr(slot_data->cmdline, "androidboot.veritymode=eio") !=
+              nullptr);
+  EXPECT_TRUE(strstr(slot_data->cmdline,
+                     "androidboot.veritymode.managed=yes") != nullptr);
+  avb_slot_verify_data_free(slot_data);
+
+  // This simulates changing the OS underneath!
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      "--internal_release_string \"\" --prop key:value");
+
+  // run 7: Reboot again, but this time the OS changed underneath.. check
+  // that we go back to non-'eio' mode.
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(AVB_HASHTREE_ERROR_MODE_RESTART,
+            slot_data->resolved_hashtree_error_mode);
+  EXPECT_TRUE(strstr(slot_data->cmdline, "androidboot.veritymode=enforcing") !=
+              nullptr);
+  EXPECT_TRUE(strstr(slot_data->cmdline,
+                     "androidboot.veritymode.managed=yes") != nullptr);
+  avb_slot_verify_data_free(slot_data);
+
+  // run 8: subsequent boot without dm-verity error -> should still be in
+  // non-'eio' mode
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(AVB_HASHTREE_ERROR_MODE_RESTART,
+            slot_data->resolved_hashtree_error_mode);
+  EXPECT_TRUE(strstr(slot_data->cmdline, "androidboot.veritymode=enforcing") !=
+              nullptr);
+  EXPECT_TRUE(strstr(slot_data->cmdline,
+                     "androidboot.veritymode.managed=yes") != nullptr);
+  avb_slot_verify_data_free(slot_data);
+}
+
 }  // namespace avb
