@@ -929,6 +929,196 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartition) {
             CalcVBMetaDigest("vbmeta.img", "sha256"));
 }
 
+TEST_F(AvbSlotVerifyTest, HashDescriptorInOtherVBMetaPartition) {
+  size_t boot_partition_size = 16 * 1024 * 1024;
+  const size_t boot_image_size = 5 * 1024 * 1024;
+  base::FilePath boot_path = GenerateImage("boot.img", boot_image_size);
+  base::FilePath other_vbmeta_path = testdir_.Append("vbmeta_google.img");
+  const char* requested_partitions[] = {"boot", NULL};
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer"
+                 " --image %s"
+                 " --kernel_cmdline 'cmdline2 in hash footer'"
+                 " --rollback_index 12"
+                 " --partition_name boot"
+                 " --partition_size %zd"
+                 " --algorithm SHA256_RSA4096"
+                 " --key test/data/testkey_rsa4096.pem"
+                 " --salt deadbeef"
+                 " --internal_release_string \"\"",
+                 boot_path.value().c_str(),
+                 boot_partition_size);
+
+  // Extract the vbmeta blob from the footer in boot.img, put it into
+  // vbmeta_google.img, and erase the footer from boot.img
+  EXPECT_COMMAND(0,
+                 "./avbtool extract_vbmeta_image"
+                 " --image %s"
+                 " --output %s",
+                 boot_path.value().c_str(),
+                 other_vbmeta_path.value().c_str());
+  EXPECT_COMMAND(0,
+                 "./avbtool erase_footer"
+                 " --image %s",
+                 boot_path.value().c_str());
+
+  base::FilePath pk_path = testdir_.Append("testkey_rsa4096.avbpubkey");
+  EXPECT_COMMAND(
+      0,
+      "./avbtool extract_public_key --key test/data/testkey_rsa4096.pem"
+      " --output %s",
+      pk_path.value().c_str());
+
+  GenerateVBMetaImage(
+      "vbmeta.img",
+      "SHA256_RSA2048",
+      11,
+      base::FilePath("test/data/testkey_rsa2048.pem"),
+      base::StringPrintf("--chain_partition vbmeta_google:1:%s"
+                         " --kernel_cmdline 'cmdline2 in vbmeta'"
+                         " --internal_release_string \"\"",
+                         pk_path.value().c_str()));
+
+  EXPECT_EQ(
+      "Minimum libavb version:   1.0\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     320 bytes\n"
+      "Auxiliary Block:          1728 bytes\n"
+      "Algorithm:                SHA256_RSA2048\n"
+      "Rollback Index:           11\n"
+      "Flags:                    0\n"
+      "Release String:           ''\n"
+      "Descriptors:\n"
+      "    Chain Partition descriptor:\n"
+      "      Partition Name:          vbmeta_google\n"
+      "      Rollback Index Location: 1\n"
+      "      Public key (sha1):       "
+      "2597c218aae470a130f61162feaae70afd97f011\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
+      "      Kernel Cmdline:        'cmdline2 in vbmeta'\n",
+      InfoImage(vbmeta_image_path_));
+
+  EXPECT_EQ(
+      "Minimum libavb version:   1.0\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     576 bytes\n"
+      "Auxiliary Block:          1280 bytes\n"
+      "Algorithm:                SHA256_RSA4096\n"
+      "Rollback Index:           12\n"
+      "Flags:                    0\n"
+      "Release String:           ''\n"
+      "Descriptors:\n"
+      "    Hash descriptor:\n"
+      "      Image Size:            5242880 bytes\n"
+      "      Hash Algorithm:        sha256\n"
+      "      Partition Name:        boot\n"
+      "      Salt:                  deadbeef\n"
+      "      Digest:                "
+      "184cb36243adb8b87d2d8c4802de32125fe294ec46753d732144ee65df68a23d\n"
+      "      Flags:                 0\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
+      "      Kernel Cmdline:        'cmdline2 in hash footer'\n",
+      InfoImage(other_vbmeta_path));
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+
+  AvbSlotVerifyData* slot_data = NULL;
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+
+  // Now verify the slot data. We should have two vbmeta
+  // structs. Verify both of them. Note that the A/B suffix isn't
+  // appended.
+  EXPECT_EQ(size_t(2), slot_data->num_vbmeta_images);
+  EXPECT_EQ("vbmeta", std::string(slot_data->vbmeta_images[0].partition_name));
+  EXPECT_EQ(slot_data->vbmeta_images[0].vbmeta_size, vbmeta_image_.size());
+  EXPECT_EQ(0,
+            memcmp(vbmeta_image_.data(),
+                   slot_data->vbmeta_images[0].vbmeta_data,
+                   slot_data->vbmeta_images[0].vbmeta_size));
+  // And for the second vbmeta struct we check that the descriptors
+  // match the info_image output from above.
+  EXPECT_EQ("vbmeta_google",
+            std::string(slot_data->vbmeta_images[1].partition_name));
+  const AvbDescriptor** descriptors =
+      avb_descriptor_get_all(slot_data->vbmeta_images[1].vbmeta_data,
+                             slot_data->vbmeta_images[1].vbmeta_size,
+                             NULL);
+  EXPECT_NE(nullptr, descriptors);
+  AvbHashDescriptor hash_desc;
+  EXPECT_EQ(true,
+            avb_hash_descriptor_validate_and_byteswap(
+                ((AvbHashDescriptor*)descriptors[0]), &hash_desc));
+  const uint8_t* desc_end = reinterpret_cast<const uint8_t*>(descriptors[0]) +
+                            sizeof(AvbHashDescriptor);
+  uint64_t o = 0;
+  EXPECT_EQ("boot",
+            std::string(reinterpret_cast<const char*>(desc_end + o),
+                        hash_desc.partition_name_len));
+  o += hash_desc.partition_name_len;
+  EXPECT_EQ("deadbeef", mem_to_hexstring(desc_end + o, hash_desc.salt_len));
+  o += hash_desc.salt_len;
+  EXPECT_EQ("184cb36243adb8b87d2d8c4802de32125fe294ec46753d732144ee65df68a23d",
+            mem_to_hexstring(desc_end + o, hash_desc.digest_len));
+  AvbKernelCmdlineDescriptor cmdline_desc;
+  EXPECT_EQ(true,
+            avb_kernel_cmdline_descriptor_validate_and_byteswap(
+                ((AvbKernelCmdlineDescriptor*)descriptors[1]), &cmdline_desc));
+  desc_end = reinterpret_cast<const uint8_t*>(descriptors[1]) +
+             sizeof(AvbKernelCmdlineDescriptor);
+  EXPECT_EQ("cmdline2 in hash footer",
+            std::string(reinterpret_cast<const char*>(desc_end),
+                        cmdline_desc.kernel_cmdline_length));
+  avb_free(descriptors);
+
+  // The boot image data should match what is generated above with
+  // GenerateImage().
+  EXPECT_EQ(size_t(1), slot_data->num_loaded_partitions);
+  EXPECT_EQ("boot",
+            std::string(slot_data->loaded_partitions[0].partition_name));
+  EXPECT_EQ(boot_image_size, slot_data->loaded_partitions[0].data_size);
+  for (size_t n = 0; n < slot_data->loaded_partitions[0].data_size; n++) {
+    EXPECT_EQ(slot_data->loaded_partitions[0].data[n], uint8_t(n));
+  }
+
+  // This should match the two cmdlines with a space (U+0020) between them.
+  EXPECT_EQ(
+      "cmdline2 in hash footer cmdline2 in vbmeta "
+      "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta "
+      "androidboot.vbmeta.avb_version=1.1 "
+      "androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=4416 "
+      "androidboot.vbmeta.digest="
+      "232447e92370ed31c2b6c5fb7328eb5d828a9819b3e6f6c10d96b9ca6fd209a1 "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
+      std::string(slot_data->cmdline));
+  EXPECT_EQ(11UL, slot_data->rollback_indexes[0]);
+  EXPECT_EQ(12UL, slot_data->rollback_indexes[1]);
+  for (size_t n = 2; n < AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS; n++) {
+    EXPECT_EQ(0UL, slot_data->rollback_indexes[n]);
+  }
+  uint8_t vbmeta_digest[AVB_SHA256_DIGEST_SIZE];
+  avb_slot_verify_data_calculate_vbmeta_digest(
+      slot_data, AVB_DIGEST_TYPE_SHA256, vbmeta_digest);
+  EXPECT_EQ("232447e92370ed31c2b6c5fb7328eb5d828a9819b3e6f6c10d96b9ca6fd209a1",
+            mem_to_hexstring(vbmeta_digest, AVB_SHA256_DIGEST_SIZE));
+  avb_slot_verify_data_free(slot_data);
+
+  EXPECT_EQ("232447e92370ed31c2b6c5fb7328eb5d828a9819b3e6f6c10d96b9ca6fd209a1",
+            CalcVBMetaDigest("vbmeta.img", "sha256"));
+}
+
 TEST_F(AvbSlotVerifyTest, HashDescriptorInChainedPartitionCorruptBoot) {
   size_t boot_partition_size = 16 * 1024 * 1024;
   base::FilePath boot_path = GenerateImage("boot_a.img", 5 * 1024 * 1024);
