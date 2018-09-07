@@ -37,6 +37,7 @@ extern "C" {
 
 /* Well-known names of named persistent values. */
 #define AVB_NPV_PERSISTENT_DIGEST_PREFIX "avb.persistent_digest."
+#define AVB_NPV_MANAGED_VERITY_MODE "avb.managed_verity_mode"
 
 /* Return codes used for I/O operations.
  *
@@ -272,9 +273,10 @@ struct AvbOps {
    * AVB_IO_RESULT_ERROR_NO_SUCH_VALUE. If |buffer_size| is smaller than the
    * size of the stored value, returns AVB_IO_RESULT_ERROR_INSUFFICIENT_SPACE.
    *
-   * This operation is currently only used to support persistent digests. If a
-   * device does not use persistent digests this function pointer can be set to
-   * NULL.
+   * This operation is currently only used to support persistent digests or the
+   * AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO hashtree error mode. If a
+   * device does not use one of these features this function pointer can be set
+   * to NULL.
    */
   AvbIOResult (*read_persistent_value)(AvbOps* ops,
                                        const char* name,
@@ -294,9 +296,10 @@ struct AvbOps {
    * AVB_IO_RESULT_ERROR_NO_SUCH_VALUE. If the |value_size| is not supported,
    * returns AVB_IO_RESULT_ERROR_INVALID_VALUE_SIZE.
    *
-   * This operation is currently only used to support persistent digests. If a
-   * device does not use persistent digests this function pointer can be set to
-   * NULL.
+   * This operation is currently only used to support persistent digests or the
+   * AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO hashtree error mode. If a
+   * device does not use one of these features this function pointer can be set
+   * to NULL.
    */
   AvbIOResult (*write_persistent_value)(AvbOps* ops,
                                         const char* name,

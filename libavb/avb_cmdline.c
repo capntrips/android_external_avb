@@ -220,7 +220,8 @@ AvbSlotVerifyResult avb_append_options(
     AvbSlotVerifyData* slot_data,
     AvbVBMetaImageHeader* toplevel_vbmeta,
     AvbAlgorithmType algorithm_type,
-    AvbHashtreeErrorMode hashtree_error_mode) {
+    AvbHashtreeErrorMode hashtree_error_mode,
+    AvbHashtreeErrorMode resolved_hashtree_error_mode) {
   AvbSlotVerifyResult ret;
   const char* verity_mode;
   bool is_device_unlocked;
@@ -323,7 +324,7 @@ AvbSlotVerifyResult avb_append_options(
     const char* dm_verity_mode;
     char* new_ret;
 
-    switch (hashtree_error_mode) {
+    switch (resolved_hashtree_error_mode) {
       case AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE:
         if (!cmdline_append_option(
                 slot_data, "androidboot.vbmeta.invalidate_on_error", "yes")) {
@@ -350,6 +351,11 @@ AvbSlotVerifyResult avb_append_options(
         verity_mode = "logging";
         dm_verity_mode = "ignore_corruption";
         break;
+      case AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO:
+        // Should never get here because MANAGED_RESTART_AND_EIO is
+        // remapped by avb_manage_hashtree_error_mode().
+        avb_assert_not_reached();
+        break;
     }
     new_ret = avb_replace(
         slot_data->cmdline, "$(ANDROID_VERITY_MODE)", dm_verity_mode);
@@ -364,6 +370,13 @@ AvbSlotVerifyResult avb_append_options(
           slot_data, "androidboot.veritymode", verity_mode)) {
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
     goto out;
+  }
+  if (hashtree_error_mode == AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO) {
+    if (!cmdline_append_option(
+            slot_data, "androidboot.veritymode.managed", "yes")) {
+      ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      goto out;
+    }
   }
 
   ret = AVB_SLOT_VERIFY_RESULT_OK;
