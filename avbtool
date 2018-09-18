@@ -721,7 +721,7 @@ class ImageHandler(object):
                                        chunk_sz*self.block_size,
                                        self._image.tell(),
                                        None))
-        self._image.read(data_sz)
+        self._image.seek(data_sz, os.SEEK_CUR)
 
       elif chunk_type == ImageChunk.TYPE_FILL:
         if data_sz != 4:
