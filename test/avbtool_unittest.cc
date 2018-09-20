@@ -1603,6 +1603,75 @@ TEST_F(AvbToolTest, AddHashtreeFooterWithPersistentDigestAndNoAB) {
       InfoImage(path));
 }
 
+TEST_F(AvbToolTest, AddHashtreeFooterNoSizeOrName) {
+  // Size must be a multiple of block size (4096 bytes)
+  size_t file_size = 72 * 1024;
+  base::FilePath path = GenerateImage("data.bin", file_size);
+
+  // Note how there is no --partition_size or --partition_name here.
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d "
+                 "--image %s "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\" ",
+                 path.value().c_str());
+
+  ASSERT_EQ(
+      "Footer version:           1.0\n"
+      "Image size:               94208 bytes\n"
+      "Original image size:      73728 bytes\n"
+      "VBMeta offset:            86016\n"
+      "VBMeta size:              1344 bytes\n"
+      "--\n"
+      "Minimum libavb version:   1.0\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     320 bytes\n"
+      "Auxiliary Block:          768 bytes\n"
+      "Algorithm:                SHA256_RSA2048\n"
+      "Rollback Index:           0\n"
+      "Flags:                    0\n"
+      "Release String:           ''\n"
+      "Descriptors:\n"
+      "    Hashtree descriptor:\n"
+      "      Version of dm-verity:  1\n"
+      "      Image Size:            73728 bytes\n"
+      "      Tree Offset:           73728\n"
+      "      Tree Size:             4096 bytes\n"
+      "      Data Block Size:       4096 bytes\n"
+      "      Hash Block Size:       4096 bytes\n"
+      "      FEC num roots:         2\n"
+      "      FEC offset:            77824\n"
+      "      FEC size:              8192 bytes\n"
+      "      Hash Algorithm:        sha1\n"
+      "      Partition Name:        \n"
+      "      Salt:                  d00df00d\n"
+      "      Root Digest:           2f73fb340e982794643e1121d82d5195677c2b31\n"
+      "      Flags:                 0\n",
+      InfoImage(path));
+
+  // Check that at least avbtool can verify the image and hashtree.
+  EXPECT_COMMAND(0,
+                 "./avbtool verify_image "
+                 "--image %s ",
+                 path.value().c_str());
+}
+
+TEST_F(AvbToolTest, AddHashtreeFooterNoSizeWrongSize) {
+  // Size must be a multiple of block size (4096 bytes) and this one isn't...
+  size_t file_size = 70 * 1024;
+  base::FilePath path = GenerateImage("data.bin", file_size);
+
+  // ... so we expect this command to fail.
+  EXPECT_COMMAND(1,
+                 "./avbtool add_hashtree_footer --salt d00df00d "
+                 "--image %s "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\" ",
+                 path.value().c_str());
+}
+
 TEST_F(AvbToolTest, KernelCmdlineDescriptor) {
   base::FilePath vbmeta_path =
       testdir_.Append("vbmeta_kernel_cmdline_desc.bin");
