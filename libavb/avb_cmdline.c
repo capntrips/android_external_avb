@@ -58,6 +58,14 @@ char* avb_sub_cmdline(AvbOps* ops,
     char part_name[AVB_PART_NAME_MAX_SIZE];
     char guid_buf[37];
 
+    /* Don't attempt to query the partition guid unless its search string is
+     * present in the command line. Note: the original cmdline is used here,
+     * not the replaced one. See b/116010959.
+     */
+    if (avb_strstr(cmdline, replace_str[n]) == NULL) {
+      continue;
+    }
+
     if (!avb_str_concat(part_name,
                         sizeof part_name,
                         part_name_str[n],
