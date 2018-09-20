@@ -2292,6 +2292,47 @@ class Avb(object):
     output.write('{}\n'.format(digest.encode('hex')))
 
 
+  def calculate_kernel_cmdline(self, image_filename, hashtree_disabled, output):
+    """Implements the 'calculate_kernel_cmdline' command.
+
+    Arguments:
+      image_filename: Image file to get information from (file object).
+      hashtree_disabled: If True, returns the cmdline for hashtree disabled.
+      output: Output file to write human-readable information to (file object).
+    """
+
+    image = ImageHandler(image_filename)
+    _, _, descriptors, _ = self._parse_image(image)
+
+    image_dir = os.path.dirname(image_filename)
+    image_ext = os.path.splitext(image_filename)[1]
+
+    cmdline_descriptors = []
+    for desc in descriptors:
+      if isinstance(desc, AvbChainPartitionDescriptor):
+        ch_image_filename = os.path.join(image_dir, desc.partition_name + image_ext)
+        ch_image = ImageHandler(ch_image_filename)
+        _, _, ch_descriptors, _ = self._parse_image(ch_image)
+        for ch_desc in ch_descriptors:
+          if isinstance(ch_desc, AvbKernelCmdlineDescriptor):
+            cmdline_descriptors.append(ch_desc)
+      elif isinstance(desc, AvbKernelCmdlineDescriptor):
+        cmdline_descriptors.append(desc)
+
+    kernel_cmdline_snippets = []
+    for desc in cmdline_descriptors:
+      use_cmdline = True
+      if (desc.flags & AvbKernelCmdlineDescriptor.FLAGS_USE_ONLY_IF_HASHTREE_NOT_DISABLED) != 0:
+        if hashtree_disabled:
+          use_cmdline = False
+      if (desc.flags & AvbKernelCmdlineDescriptor.FLAGS_USE_ONLY_IF_HASHTREE_DISABLED) != 0:
+        if not hashtree_disabled:
+          use_cmdline = False
+      if use_cmdline:
+        kernel_cmdline_snippets.append(desc.kernel_cmdline)
+    output.write(' '.join(kernel_cmdline_snippets))
+
+
   def _parse_image(self, image):
     """Gets information about an image.
 
@@ -3991,6 +4032,22 @@ class AvbTool(object):
                             default=sys.stdout)
     sub_parser.set_defaults(func=self.calculate_vbmeta_digest)
 
+    sub_parser = subparsers.add_parser(
+        'calculate_kernel_cmdline',
+        help='Calculate kernel cmdline.')
+    sub_parser.add_argument('--image',
+                            help='Image to calculate kernel cmdline for',
+                            type=argparse.FileType('rb'),
+                            required=True)
+    sub_parser.add_argument('--hashtree_disabled',
+                            help='Return the cmdline for hashtree disabled',
+                            action='store_true')
+    sub_parser.add_argument('--output',
+                            help='Write cmdline to file (default: stdout)',
+                            type=argparse.FileType('wt'),
+                            default=sys.stdout)
+    sub_parser.set_defaults(func=self.calculate_kernel_cmdline)
+
     sub_parser = subparsers.add_parser('set_ab_metadata',
                                        help='Set A/B metadata.')
     sub_parser.add_argument('--misc_image',
@@ -4244,6 +4301,10 @@ class AvbTool(object):
     """Implements the 'calculate_vbmeta_digest' sub-command."""
     self.avb.calculate_vbmeta_digest(args.image.name, args.hash_algorithm,
                                      args.output)
+
+  def calculate_kernel_cmdline(self, args):
+    """Implements the 'calculate_kernel_cmdline' sub-command."""
+    self.avb.calculate_kernel_cmdline(args.image.name, args.hashtree_disabled, args.output)
 
   def make_atx_certificate(self, args):
     """Implements the 'make_atx_certificate' sub-command."""
