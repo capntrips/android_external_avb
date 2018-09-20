@@ -3318,4 +3318,39 @@ TEST_F(AvbSlotVerifyTest, ManagedVerityMode) {
   avb_slot_verify_data_free(slot_data);
 }
 
+TEST_F(AvbSlotVerifyTest, NoSystemPartition) {
+  GenerateVBMetaImage("vbmeta_a.img",
+                      "SHA256_RSA2048",
+                      0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      "--internal_release_string \"\"");
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+  ops_.set_hidden_partitions({"system_a"});
+
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"boot", NULL};
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(
+      "androidboot.vbmeta.device=PARTUUID=1234-fake-guid-for:vbmeta_a "
+      "androidboot.vbmeta.avb_version=1.1 "
+      "androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=1152 "
+      "androidboot.vbmeta.digest="
+      "4161a7e655eabe16c3fe714de5d43736e7c0a190cf08d36c946d2509ce071e4d "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
+      std::string(slot_data->cmdline));
+
+  avb_slot_verify_data_free(slot_data);
+}
+
 }  // namespace avb
