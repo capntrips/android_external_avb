@@ -1677,6 +1677,178 @@ TEST_F(AvbToolTest, KernelCmdlineDescriptor) {
                         d.kernel_cmdline_length));
 }
 
+TEST_F(AvbToolTest, CalculateKernelCmdline) {
+  base::FilePath vbmeta_path = testdir_.Append("vbmeta.bin");
+  EXPECT_COMMAND(0,
+                 "./avbtool make_vbmeta_image "
+                 "--output %s "
+                 "--kernel_cmdline 'foo bar baz' "
+                 "--kernel_cmdline 'second cmdline' "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\"",
+                 vbmeta_path.value().c_str());
+
+  base::FilePath out_path = testdir_.Append("out.txt");
+  std::string out;
+  EXPECT_COMMAND(0,
+                 "./avbtool calculate_kernel_cmdline --image %s > %s",
+                 vbmeta_path.value().c_str(),
+                 out_path.value().c_str());
+  ASSERT_TRUE(base::ReadFileToString(out_path, &out));
+  EXPECT_EQ(out, "foo bar baz second cmdline");
+}
+
+TEST_F(AvbToolTest, CalculateKernelCmdlineChainedAndWithFlags) {
+  const size_t rootfs_size = 1028 * 1024;
+  const size_t partition_size = 1536 * 1024;
+
+  base::FilePath pk_path = testdir_.Append("testkey_rsa2048.avbpubkey");
+
+  // Generate a 1028 KiB file with known content, add a hashtree, and cmdline
+  // descriptors for setting up this hashtree. Notably this will create *two*
+  // cmdline descriptors so we can test calculate_kernel_cmdline's
+  // --hashtree_disabled option.
+  std::vector<uint8_t> rootfs;
+  rootfs.resize(rootfs_size);
+  for (size_t n = 0; n < rootfs_size; n++)
+    rootfs[n] = uint8_t(n);
+  base::FilePath rootfs_path = testdir_.Append("rootfs.bin");
+  EXPECT_EQ(rootfs_size,
+            static_cast<const size_t>(
+                base::WriteFile(rootfs_path,
+                                reinterpret_cast<const char*>(rootfs.data()),
+                                rootfs.size())));
+
+  EXPECT_COMMAND(
+      0,
+      "./avbtool extract_public_key --key test/data/testkey_rsa2048.pem"
+      " --output %s",
+      pk_path.value().c_str());
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d --image %s "
+                 "--partition_size %d --partition_name rootfs "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\" "
+                 "--setup_as_rootfs_from_kernel",
+                 rootfs_path.value().c_str(),
+                 (int)partition_size);
+  EXPECT_EQ(
+      "Footer version:           1.0\n"
+      "Image size:               1572864 bytes\n"
+      "Original image size:      1052672 bytes\n"
+      "VBMeta offset:            1085440\n"
+      "VBMeta size:              1792 bytes\n"
+      "--\n"
+      "Minimum libavb version:   1.0\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     320 bytes\n"
+      "Auxiliary Block:          1216 bytes\n"
+      "Algorithm:                SHA256_RSA2048\n"
+      "Rollback Index:           0\n"
+      "Flags:                    0\n"
+      "Release String:           ''\n"
+      "Descriptors:\n"
+      "    Hashtree descriptor:\n"
+      "      Version of dm-verity:  1\n"
+      "      Image Size:            1052672 bytes\n"
+      "      Tree Offset:           1052672\n"
+      "      Tree Size:             16384 bytes\n"
+      "      Data Block Size:       4096 bytes\n"
+      "      Hash Block Size:       4096 bytes\n"
+      "      FEC num roots:         2\n"
+      "      FEC offset:            1069056\n"
+      "      FEC size:              16384 bytes\n"
+      "      Hash Algorithm:        sha1\n"
+      "      Partition Name:        rootfs\n"
+      "      Salt:                  d00df00d\n"
+      "      Root Digest:           e811611467dcd6e8dc4324e45f706c2bdd51db67\n"
+      "      Flags:                 0\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 1\n"
+      "      Kernel Cmdline:        'dm=\"1 vroot none ro 1,0 2056 verity 1 "
+      "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
+      "4096 4096 257 257 sha1 e811611467dcd6e8dc4324e45f706c2bdd51db67 "
+      "d00df00d 10 $(ANDROID_VERITY_MODE) ignore_zero_blocks "
+      "use_fec_from_device PARTUUID=$(ANDROID_SYSTEM_PARTUUID) fec_roots 2 "
+      "fec_blocks 261 fec_start 261\" root=/dev/dm-0'\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 2\n"
+      "      Kernel Cmdline:        "
+      "'root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'\n",
+      InfoImage(rootfs_path));
+
+  // Chain to the rootfs.img and include two cmdline descriptors.
+  base::FilePath vbmeta_path = testdir_.Append("vbmeta.bin");
+  EXPECT_COMMAND(0,
+                 "./avbtool make_vbmeta_image "
+                 "--output %s "
+                 "--kernel_cmdline 'foo bar baz' "
+                 "--kernel_cmdline 'second cmdline' "
+                 "--chain_partition rootfs:1:%s "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\"",
+                 vbmeta_path.value().c_str(),
+                 pk_path.value().c_str());
+  EXPECT_EQ(
+      "Minimum libavb version:   1.0\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     320 bytes\n"
+      "Auxiliary Block:          1280 bytes\n"
+      "Algorithm:                SHA256_RSA2048\n"
+      "Rollback Index:           0\n"
+      "Flags:                    0\n"
+      "Release String:           ''\n"
+      "Descriptors:\n"
+      "    Chain Partition descriptor:\n"
+      "      Partition Name:          rootfs\n"
+      "      Rollback Index Location: 1\n"
+      "      Public key (sha1):       "
+      "cdbb77177f731920bbe0a0f94f84d9038ae0617d\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
+      "      Kernel Cmdline:        'foo bar baz'\n"
+      "    Kernel Cmdline descriptor:\n"
+      "      Flags:                 0\n"
+      "      Kernel Cmdline:        'second cmdline'\n",
+      InfoImage(vbmeta_path));
+
+  base::FilePath out_path = testdir_.Append("out.txt");
+  std::string out;
+
+  // First check the kernel cmdline without --hashtree_disabled - compare with
+  // above info_image output.
+  EXPECT_COMMAND(0,
+                 "./avbtool calculate_kernel_cmdline --image %s > %s",
+                 vbmeta_path.value().c_str(),
+                 out_path.value().c_str());
+  ASSERT_TRUE(base::ReadFileToString(out_path, &out));
+  EXPECT_EQ(
+      "dm=\"1 vroot none ro 1,0 2056 verity 1 "
+      "PARTUUID=$(ANDROID_SYSTEM_PARTUUID) PARTUUID=$(ANDROID_SYSTEM_PARTUUID) "
+      "4096 4096 257 257 sha1 e811611467dcd6e8dc4324e45f706c2bdd51db67 "
+      "d00df00d 10 $(ANDROID_VERITY_MODE) ignore_zero_blocks "
+      "use_fec_from_device PARTUUID=$(ANDROID_SYSTEM_PARTUUID) fec_roots 2 "
+      "fec_blocks 261 fec_start 261\" root=/dev/dm-0 foo bar baz second "
+      "cmdline",
+      out);
+
+  // Then check the kernel cmdline with --hashtree_disabled - compare with above
+  // info_image output.
+  EXPECT_COMMAND(
+      0,
+      "./avbtool calculate_kernel_cmdline --image %s --hashtree_disabled > %s",
+      vbmeta_path.value().c_str(),
+      out_path.value().c_str());
+  ASSERT_TRUE(base::ReadFileToString(out_path, &out));
+  EXPECT_EQ(
+      "root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID) foo bar baz second cmdline",
+      out);
+}
+
 TEST_F(AvbToolTest, AddHashFooterSmallImageWithExternalVbmeta) {
   const size_t image_size = 37;
   const size_t partition_size = 20 * 4096;
