@@ -1081,7 +1081,8 @@ class AvbDescriptor(object):
     ret = desc + self.data + padding
     return bytearray(ret)
 
-  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map,
+             image_containing_descriptor):
     """Verifies contents of the descriptor - used in verify_image sub-command.
 
     Arguments:
@@ -1089,6 +1090,7 @@ class AvbDescriptor(object):
       image_ext: The extension of the file being verified (e.g. '.img').
       expected_chain_partitions_map: A map from partition name to the
         tuple (rollback_index_location, key_blob).
+      image_containing_descriptor: The image the descriptor is in.
 
     Returns:
       True if the descriptor verifies, False otherwise.
@@ -1165,7 +1167,8 @@ class AvbPropertyDescriptor(AvbDescriptor):
     ret = desc + self.key + '\0' + self.value + '\0' + padding
     return bytearray(ret)
 
-  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map,
+             image_containing_descriptor):
     """Verifies contents of the descriptor - used in verify_image sub-command.
 
     Arguments:
@@ -1173,6 +1176,7 @@ class AvbPropertyDescriptor(AvbDescriptor):
       image_ext: The extension of the file being verified (e.g. '.img').
       expected_chain_partitions_map: A map from partition name to the
         tuple (rollback_index_location, key_blob).
+      image_containing_descriptor: The image the descriptor is in.
 
     Returns:
       True if the descriptor verifies, False otherwise.
@@ -1325,7 +1329,8 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     ret = desc + encoded_name + self.salt + self.root_digest + padding
     return bytearray(ret)
 
-  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map,
+             image_containing_descriptor):
     """Verifies contents of the descriptor - used in verify_image sub-command.
 
     Arguments:
@@ -1333,12 +1338,16 @@ class AvbHashtreeDescriptor(AvbDescriptor):
       image_ext: The extension of the file being verified (e.g. '.img').
       expected_chain_partitions_map: A map from partition name to the
         tuple (rollback_index_location, key_blob).
+      image_containing_descriptor: The image the descriptor is in.
 
     Returns:
       True if the descriptor verifies, False otherwise.
     """
-    image_filename = os.path.join(image_dir, self.partition_name + image_ext)
-    image = ImageHandler(image_filename)
+    if self.partition_name == '':
+      image = image_containing_descriptor
+    else:
+      image_filename = os.path.join(image_dir, self.partition_name + image_ext)
+      image = ImageHandler(image_filename)
     # Generate the hashtree and checks that it matches what's in the file.
     digest_size = len(hashlib.new(name=self.hash_algorithm).digest())
     digest_padding = round_to_pow2(digest_size) - digest_size
@@ -1367,7 +1376,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     # takes a long time; and c) is not strictly needed for
     # verification purposes as we've already verified the root hash.
     print ('{}: Successfully verified {} hashtree of {} for image of {} bytes'
-           .format(self.partition_name, self.hash_algorithm, image_filename,
+           .format(self.partition_name, self.hash_algorithm, image.filename,
                    self.image_size))
     return True
 
@@ -1477,7 +1486,8 @@ class AvbHashDescriptor(AvbDescriptor):
     ret = desc + encoded_name + self.salt + self.digest + padding
     return bytearray(ret)
 
-  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map,
+             image_containing_descriptor):
     """Verifies contents of the descriptor - used in verify_image sub-command.
 
     Arguments:
@@ -1485,12 +1495,16 @@ class AvbHashDescriptor(AvbDescriptor):
       image_ext: The extension of the file being verified (e.g. '.img').
       expected_chain_partitions_map: A map from partition name to the
         tuple (rollback_index_location, key_blob).
+      image_containing_descriptor: The image the descriptor is in.
 
     Returns:
       True if the descriptor verifies, False otherwise.
     """
-    image_filename = os.path.join(image_dir, self.partition_name + image_ext)
-    image = ImageHandler(image_filename)
+    if self.partition_name == '':
+      image = image_containing_descriptor
+    else:
+      image_filename = os.path.join(image_dir, self.partition_name + image_ext)
+      image = ImageHandler(image_filename)
     data = image.read(self.image_size)
     ha = hashlib.new(self.hash_algorithm)
     ha.update(self.salt)
@@ -1502,7 +1516,7 @@ class AvbHashDescriptor(AvbDescriptor):
                        format(self.hash_algorithm, image_filename))
       return False
     print ('{}: Successfully verified {} hash of {} for image of {} bytes'
-           .format(self.partition_name, self.hash_algorithm, image_filename,
+           .format(self.partition_name, self.hash_algorithm, image.filename,
                    self.image_size))
     return True
 
@@ -1582,7 +1596,8 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
     ret = desc + encoded_str + padding
     return bytearray(ret)
 
-  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map,
+             image_containing_descriptor):
     """Verifies contents of the descriptor - used in verify_image sub-command.
 
     Arguments:
@@ -1590,6 +1605,7 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
       image_ext: The extension of the file being verified (e.g. '.img').
       expected_chain_partitions_map: A map from partition name to the
         tuple (rollback_index_location, key_blob).
+      image_containing_descriptor: The image the descriptor is in.
 
     Returns:
       True if the descriptor verifies, False otherwise.
@@ -1683,7 +1699,8 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
     ret = desc + encoded_name + self.public_key + padding
     return bytearray(ret)
 
-  def verify(self, image_dir, image_ext, expected_chain_partitions_map):
+  def verify(self, image_dir, image_ext, expected_chain_partitions_map,
+             image_containing_descriptor):
     """Verifies contents of the descriptor - used in verify_image sub-command.
 
     Arguments:
@@ -1691,6 +1708,7 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
       image_ext: The extension of the file being verified (e.g. '.img').
       expected_chain_partitions_map: A map from partition name to the
         tuple (rollback_index_location, key_blob).
+      image_containing_descriptor: The image the descriptor is in.
 
     Returns:
       True if the descriptor verifies, False otherwise.
@@ -2227,7 +2245,7 @@ class Avb(object):
              .format(alg_name, image.filename))
 
     for desc in descriptors:
-      if not desc.verify(image_dir, image_ext, expected_chain_partitions_map):
+      if not desc.verify(image_dir, image_ext, expected_chain_partitions_map, image):
         raise AvbError('Error verifying descriptor.')
       # Note how AvbDescriptor.verify() method verifies only the descriptor
       # contents which in the case of chain descriptors means checking only its
@@ -3126,7 +3144,7 @@ class Avb(object):
 
     Arguments:
       image_filename: File to add the footer to.
-      partition_size: Size of partition.
+      partition_size: Size of partition or 0 to put it right at the end.
       partition_name: Name of partition (without A/B suffix).
       generate_fec: If True, generate FEC codes.
       fec_num_roots: Number of roots for FEC.
@@ -3177,19 +3195,22 @@ class Avb(object):
     digest_size = len(hashlib.new(name=hash_algorithm).digest())
     digest_padding = round_to_pow2(digest_size) - digest_size
 
-    # First, calculate the maximum image size such that an image
-    # this size + the hashtree + metadata (footer + vbmeta struct)
-    # fits in |partition_size|. We use very conservative figures for
-    # metadata.
-    (_, max_tree_size) = calc_hash_level_offsets(
-        partition_size, block_size, digest_size + digest_padding)
-    max_fec_size = 0
-    if generate_fec:
-      max_fec_size = calc_fec_data_size(partition_size, fec_num_roots)
-    max_metadata_size = (max_fec_size + max_tree_size +
-                         self.MAX_VBMETA_SIZE +
-                         self.MAX_FOOTER_SIZE)
-    max_image_size = partition_size - max_metadata_size
+    # If |partition_size| is given (e.g. not 0), calculate the maximum image
+    # size such that an image this size + the hashtree + metadata (footer +
+    # vbmeta struct) fits in |partition_size|. We use very conservative figures
+    # for metadata.
+    if partition_size > 0:
+      (_, max_tree_size) = calc_hash_level_offsets(
+          partition_size, block_size, digest_size + digest_padding)
+      max_fec_size = 0
+      if generate_fec:
+        max_fec_size = calc_fec_data_size(partition_size, fec_num_roots)
+      max_metadata_size = (max_fec_size + max_tree_size +
+                           self.MAX_VBMETA_SIZE +
+                           self.MAX_FOOTER_SIZE)
+      max_image_size = partition_size - max_metadata_size
+    else:
+      max_image_size = 0
 
     # If we're asked to only calculate the maximum image size, we're done.
     if calc_max_image_size:
@@ -3198,10 +3219,16 @@ class Avb(object):
 
     image = ImageHandler(image_filename)
 
-    if partition_size % image.block_size != 0:
-      raise AvbError('Partition size of {} is not a multiple of the image '
-                     'block size {}.'.format(partition_size,
-                                             image.block_size))
+    if partition_size > 0:
+      if partition_size % image.block_size != 0:
+        raise AvbError('Partition size of {} is not a multiple of the image '
+                       'block size {}.'.format(partition_size,
+                                               image.block_size))
+    else:
+      if image.image_size % image.block_size != 0:
+        raise AvbError('File size of {} is not a multiple of the image '
+                       'block size {}.'.format(image.image_size,
+                                               image.block_size))
 
     # If there's already a footer, truncate the image to its original
     # size. This way 'avbtool add_hashtree_footer' is idempotent
@@ -3228,11 +3255,12 @@ class Avb(object):
         image.append_raw('\0' * (rounded_image_size - image.image_size))
 
       # If image size exceeds the maximum image size, fail.
-      if image.image_size > max_image_size:
-        raise AvbError('Image size of {} exceeds maximum image '
-                       'size of {} in order to fit in a partition '
-                       'size of {}.'.format(image.image_size, max_image_size,
-                                            partition_size))
+      if partition_size > 0:
+        if image.image_size > max_image_size:
+          raise AvbError('Image size of {} exceeds maximum image '
+                         'size of {} in order to fit in a partition '
+                         'size of {}.'.format(image.image_size, max_image_size,
+                                              partition_size))
 
       if salt:
         salt = salt.decode('hex')
@@ -3331,8 +3359,9 @@ class Avb(object):
 
         # Now insert a DONT_CARE chunk with enough bytes such that the
         # final Footer block is at the end of partition_size..
-        image.append_dont_care(partition_size - image.image_size -
-                               1*image.block_size)
+        if partition_size > 0:
+          image.append_dont_care(partition_size - image.image_size -
+                                 1*image.block_size)
 
         # Generate the Footer that tells where the VBMeta footer
         # is. Also put enough padding in the front of the footer since
@@ -3895,10 +3924,11 @@ class AvbTool(object):
                             type=argparse.FileType('rab+'))
     sub_parser.add_argument('--partition_size',
                             help='Partition size',
+                            default=0,
                             type=parse_number)
     sub_parser.add_argument('--partition_name',
                             help='Partition name',
-                            default=None)
+                            default='')
     sub_parser.add_argument('--hash_algorithm',
                             help='Hash algorithm to use (default: sha1)',
                             default='sha1')
