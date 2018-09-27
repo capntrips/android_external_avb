@@ -27,6 +27,7 @@
 
 #include <gtest/gtest.h>
 
+#include <libavb/avb_sha.h>
 #include <libavb/libavb.h>
 
 #include "avb_unittest_util.h"
@@ -540,6 +541,84 @@ TEST_F(UtilTest, Basename) {
   EXPECT_EQ("some_dir/", std::string(avb_basename("a/some_dir/")));
   EXPECT_EQ("some_dir/", std::string(avb_basename("/some_dir/")));
   EXPECT_EQ("/", std::string(avb_basename("/")));
+}
+
+TEST_F(UtilTest, Sha256) {
+  AvbSHA256Ctx ctx;
+
+  /* Compare with
+   *
+   * $ echo -n foobar |sha256sum
+   * c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2 -
+   */
+  avb_sha256_init(&ctx);
+  avb_sha256_update(&ctx, (const uint8_t*)"foobar", 6);
+  EXPECT_EQ("c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2",
+            mem_to_hexstring(avb_sha256_final(&ctx), AVB_SHA256_DIGEST_SIZE));
+}
+
+// Disabled for now because it takes ~30 seconds to run.
+TEST_F(UtilTest, DISABLED_Sha256Large) {
+  AvbSHA256Ctx ctx;
+
+  /* Also check we this works with greater than 4GiB input. Compare with
+   *
+   * $ dd if=/dev/zero bs=1048576 count=4097 |sha256sum
+   * 829816e339ff597ec3ada4c30fc840d3f2298444169d242952a54bcf3fcd7747 -
+   */
+  const size_t kMebibyte = 1048576;
+  uint8_t* megabuf;
+  megabuf = new uint8_t[kMebibyte];
+  memset((char*)megabuf, '\0', kMebibyte);
+  avb_sha256_init(&ctx);
+  for (size_t n = 0; n < 4097; n++) {
+    avb_sha256_update(&ctx, megabuf, kMebibyte);
+  }
+  EXPECT_EQ("829816e339ff597ec3ada4c30fc840d3f2298444169d242952a54bcf3fcd7747",
+            mem_to_hexstring(avb_sha256_final(&ctx), AVB_SHA256_DIGEST_SIZE));
+  delete[] megabuf;
+}
+
+TEST_F(UtilTest, Sha512) {
+  AvbSHA512Ctx ctx;
+
+  /* Compare with
+   *
+   * $ echo -n foobar |sha512sum
+   * 0a50261ebd1a390fed2bf326f2673c145582a6342d523204973d0219337f81616a8069b012587cf5635f6925f1b56c360230c19b273500ee013e030601bf2425
+   * -
+   */
+  avb_sha512_init(&ctx);
+  avb_sha512_update(&ctx, (const uint8_t*)"foobar", 6);
+  EXPECT_EQ(
+      "0a50261ebd1a390fed2bf326f2673c145582a6342d523204973d0219337f81616a8069b0"
+      "12587cf5635f6925f1b56c360230c19b273500ee013e030601bf2425",
+      mem_to_hexstring(avb_sha512_final(&ctx), AVB_SHA512_DIGEST_SIZE));
+}
+
+// Disabled for now because it takes ~30 seconds to run.
+TEST_F(UtilTest, DISABLED_Sha512Large) {
+  AvbSHA512Ctx ctx;
+
+  /* Also check we this works with greater than 4GiB input. Compare with
+   *
+   * $ dd if=/dev/zero bs=1048576 count=4097 |sha512sum
+   * eac1685671cc2060315888746de072398116c0c83b7ee9463f0576e11bfdea9cdd5ddbf291fb3ffc4ee8a1b459c798d9fb9b50b7845e2871c4b1402470aaf4c0
+   * -
+   */
+  const size_t kMebibyte = 1048576;
+  uint8_t* megabuf;
+  megabuf = new uint8_t[kMebibyte];
+  memset((char*)megabuf, '\0', kMebibyte);
+  avb_sha512_init(&ctx);
+  for (size_t n = 0; n < 4097; n++) {
+    avb_sha512_update(&ctx, megabuf, kMebibyte);
+  }
+  EXPECT_EQ(
+      "eac1685671cc2060315888746de072398116c0c83b7ee9463f0576e11bfdea9cdd5ddbf2"
+      "91fb3ffc4ee8a1b459c798d9fb9b50b7845e2871c4b1402470aaf4c0",
+      mem_to_hexstring(avb_sha512_final(&ctx), AVB_SHA512_DIGEST_SIZE));
+  delete[] megabuf;
 }
 
 }  // namespace avb
