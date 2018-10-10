@@ -942,6 +942,27 @@ TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_UnlockWithPSK) {
   EXPECT_FALSE(is_trusted);
 }
 
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_ReplayChallenge) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_TRUE(is_trusted);
+  // A second attempt with the same challenge should fail.
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_FALSE(is_trusted);
+}
+
+TEST_F(AvbAtxValidateTest, ValidateUnlockCredential_MultipleUnlock) {
+  ASSERT_TRUE(PrepareUnlockCredential());
+  bool is_trusted = true;
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_TRUE(is_trusted);
+  // A second attempt with a newly staged challenge should succeed.
+  ASSERT_TRUE(PrepareUnlockCredential());
+  EXPECT_EQ(AVB_IO_RESULT_OK, ValidateUnlock(&is_trusted));
+  EXPECT_TRUE(is_trusted);
+}
+
 // A fixture for testing avb_slot_verify() with ATX.
 class AvbAtxSlotVerifyTest : public BaseAvbToolTest,
                              public FakeAvbOpsDelegateWithDefaults {
