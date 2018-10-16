@@ -43,6 +43,14 @@
 /* Maximum size of a vbmeta image - 64 KiB. */
 #define VBMETA_MAX_SIZE (64 * 1024)
 
+static AvbSlotVerifyResult initialize_persistent_digest(
+    AvbOps* ops,
+    const char* part_name,
+    const char* persistent_value_name,
+    size_t digest_size,
+    const uint8_t* initial_digest,
+    uint8_t* out_digest);
+
 /* Helper function to see if we should continue with verification in
  * allow_verification_error=true mode if something goes wrong. See the
  * comments for the avb_slot_verify() function for more information.
@@ -137,7 +145,8 @@ static AvbSlotVerifyResult load_full_partition(AvbOps* ops,
  * the given |part_name|. The value is returned in |out_digest| which must point
  * to |expected_digest_size| bytes. If there is no digest stored for |part_name|
  * it can be initialized by providing a non-NULL |initial_digest| of length
- * |expected_digest_size|. The |initial_digest| may be NULL.
+ * |expected_digest_size|. This automatic initialization will only occur if the
+ * device is currently locked. The |initial_digest| may be NULL.
  *
  * Returns AVB_SLOT_VERIFY_RESULT_OK on success, otherwise returns an
  * AVB_SLOT_VERIFY_RESULT_ERROR_* error code.
@@ -166,41 +175,104 @@ static AvbSlotVerifyResult read_persistent_digest(AvbOps* ops,
   if (persistent_value_name == NULL) {
     return AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
   }
+
   io_ret = ops->read_persistent_value(ops,
                                       persistent_value_name,
                                       expected_digest_size,
                                       out_digest,
                                       &stored_digest_size);
+
+  // If no such named persistent value exists and an initial digest value was
+  // given, initialize the named persistent value with the given digest. If
+  // initialized successfully, this will recurse into this function but with a
+  // NULL initial_digest.
   if (io_ret == AVB_IO_RESULT_ERROR_NO_SUCH_VALUE && initial_digest) {
-    avb_debugv(part_name,
-               ": Digest does not exist, initializing persistent digest.\n",
-               NULL);
-    stored_digest_size = expected_digest_size;
-    io_ret = ops->write_persistent_value(
-        ops, persistent_value_name, expected_digest_size, initial_digest);
-    if (io_ret == AVB_IO_RESULT_OK) {
-      avb_memcpy(out_digest, initial_digest, expected_digest_size);
-    } else {
-      avb_errorv(part_name, ": Error initializing persistent digest.\n", NULL);
-    }
+    AvbSlotVerifyResult ret =
+        initialize_persistent_digest(ops,
+                                     part_name,
+                                     persistent_value_name,
+                                     expected_digest_size,
+                                     initial_digest,
+                                     out_digest);
+    avb_free(persistent_value_name);
+    return ret;
   }
   avb_free(persistent_value_name);
+
   if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
     return AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
   } else if (io_ret == AVB_IO_RESULT_ERROR_NO_SUCH_VALUE) {
+    // Treat a missing persistent value as a verification error, which is
+    // ignoreable, rather than a metadata error which is not.
     avb_errorv(part_name, ": Persistent digest does not exist.\n", NULL);
-    return AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
+    return AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
   } else if (io_ret == AVB_IO_RESULT_ERROR_INVALID_VALUE_SIZE ||
-             io_ret == AVB_IO_RESULT_ERROR_INSUFFICIENT_SPACE ||
-             expected_digest_size != stored_digest_size) {
+             io_ret == AVB_IO_RESULT_ERROR_INSUFFICIENT_SPACE) {
     avb_errorv(
         part_name, ": Persistent digest is not of expected size.\n", NULL);
     return AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
   } else if (io_ret != AVB_IO_RESULT_OK) {
     avb_errorv(part_name, ": Error reading persistent digest.\n", NULL);
     return AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+  } else if (expected_digest_size != stored_digest_size) {
+    avb_errorv(
+        part_name, ": Persistent digest is not of expected size.\n", NULL);
+    return AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
   }
   return AVB_SLOT_VERIFY_RESULT_OK;
+}
+
+static AvbSlotVerifyResult initialize_persistent_digest(
+    AvbOps* ops,
+    const char* part_name,
+    const char* persistent_value_name,
+    size_t digest_size,
+    const uint8_t* initial_digest,
+    uint8_t* out_digest) {
+  AvbSlotVerifyResult ret;
+  AvbIOResult io_ret = AVB_IO_RESULT_OK;
+  bool is_device_unlocked = true;
+
+  io_ret = ops->read_is_device_unlocked(ops, &is_device_unlocked);
+  if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+    return AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+  } else if (io_ret != AVB_IO_RESULT_OK) {
+    avb_error("Error getting device lock state.\n");
+    return AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+  }
+
+  if (is_device_unlocked) {
+    avb_debugv(part_name,
+               ": Digest does not exist, device unlocked so not initializing "
+               "digest.\n",
+               NULL);
+    return AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
+  }
+
+  // Device locked; initialize digest with given initial value.
+  avb_debugv(part_name,
+             ": Digest does not exist, initializing persistent digest.\n",
+             NULL);
+  io_ret = ops->write_persistent_value(
+      ops, persistent_value_name, digest_size, initial_digest);
+  if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+    return AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+  } else if (io_ret != AVB_IO_RESULT_OK) {
+    avb_errorv(part_name, ": Error initializing persistent digest.\n", NULL);
+    return AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+  }
+
+  // To ensure that the digest value was written successfully - and avoid a
+  // scenario where the digest is simply 'initialized' on every verify - recurse
+  // into read_persistent_digest to read back the written value. The NULL
+  // initial_digest ensures that this will not recurse again.
+  ret = read_persistent_digest(ops, part_name, digest_size, NULL, out_digest);
+  if (ret != AVB_SLOT_VERIFY_RESULT_OK) {
+    avb_errorv(part_name,
+               ": Reading back initialized persistent digest failed!\n",
+               NULL);
+  }
+  return ret;
 }
 
 static AvbSlotVerifyResult load_and_verify_hash_partition(
