@@ -59,7 +59,23 @@ static int open_partition(const char* name, int flags) {
   struct fstab* fstab;
   struct fstab_rec* record;
 
-  /* We can't use fs_mgr to look up |name| because fstab doesn't list
+  /* Per https://android-review.googlesource.com/c/platform/system/core/+/674989
+   * Android now supports /dev/block/by-name/<partition_name> ... try that
+   * first.
+   */
+  path = avb_strdupv("/dev/block/by-name/", name, NULL);
+  if (path != NULL) {
+    fd = open(path, flags);
+    avb_free(path);
+    if (fd != -1) {
+      return fd;
+    }
+  }
+
+  /* OK, so /dev/block/by-name/<partition_name> didn't work... so we're
+   * falling back to what we used to do before that:
+   *
+   * We can't use fs_mgr to look up |name| because fstab doesn't list
    * every slot partition (it uses the slotselect option to mask the
    * suffix) and |slot| is expected to be of that form, e.g. boot_a.
    *
