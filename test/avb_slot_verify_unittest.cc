@@ -2867,6 +2867,15 @@ TEST_F(AvbSlotVerifyTestWithPersistentDigest, Basic_WithAutoInit) {
   Verify(true /* expect_success */);
 }
 
+TEST_F(AvbSlotVerifyTestWithPersistentDigest, Basic_WithNoAutoInit) {
+  SetupWithHashDescriptor();
+  // Explicitly do not write any digest as a persistent value.
+  // Set device as unlocked so that auto persistent digest initialization does
+  // not occur.
+  ops_.set_stored_is_device_unlocked(true);
+  Verify(false /* expect_success */);
+}
+
 class AvbSlotVerifyTestWithPersistentDigest_InvalidDigestLength
     : public AvbSlotVerifyTestWithPersistentDigest,
       public ::testing::WithParamInterface<size_t> {};
@@ -2875,6 +2884,7 @@ TEST_P(AvbSlotVerifyTestWithPersistentDigest_InvalidDigestLength, Param) {
   SetupWithHashDescriptor();
   // Store a digest value with the given length.
   ops_.write_persistent_value(kPersistentValueName, GetParam(), kDigest);
+  expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
   Verify(false /* expect_success */);
 }
 
@@ -2929,22 +2939,24 @@ class AvbSlotVerifyTestWithPersistentDigest_ReadDigestFailure
                                     size_t* out_num_bytes_read) override {
     return GetParam();
   }
-  AvbIOResult write_persistent_value(const char* name,
-                                     size_t value_size,
-                                     const uint8_t* value) override {
-    // Fail any attempted initialization in response to the read error.
-    return GetParam();
-  }
 };
 
 TEST_P(AvbSlotVerifyTestWithPersistentDigest_ReadDigestFailure, Param) {
   SetupWithHashDescriptor();
+  // Set device as unlocked so that auto persistent digest initialization does
+  // not occur.
+  ops_.set_stored_is_device_unlocked(true);
   switch (GetParam()) {
     case AVB_IO_RESULT_ERROR_OOM:
       expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
       break;
-    // Fall through.
+    case AVB_IO_RESULT_ERROR_IO:
+      expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+      break;
     case AVB_IO_RESULT_ERROR_NO_SUCH_VALUE:
+      expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
+      break;
+    // Fall through.
     case AVB_IO_RESULT_ERROR_INVALID_VALUE_SIZE:
     case AVB_IO_RESULT_ERROR_INSUFFICIENT_SPACE:
       expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
@@ -2960,6 +2972,61 @@ INSTANTIATE_TEST_CASE_P(
     P,
     AvbSlotVerifyTestWithPersistentDigest_ReadDigestFailure,
     ::testing::Values(AVB_IO_RESULT_ERROR_OOM,
+                      AVB_IO_RESULT_ERROR_IO,
+                      AVB_IO_RESULT_ERROR_NO_SUCH_VALUE,
+                      AVB_IO_RESULT_ERROR_INVALID_VALUE_SIZE,
+                      AVB_IO_RESULT_ERROR_INSUFFICIENT_SPACE));
+
+class AvbSlotVerifyTestWithPersistentDigest_AutoInitDigestFailure
+    : public AvbSlotVerifyTestWithPersistentDigest,
+      public ::testing::WithParamInterface<AvbIOResult> {
+  // FakeAvbOpsDelegate overrides.
+  AvbIOResult read_persistent_value(const char* name,
+                                    size_t buffer_size,
+                                    uint8_t* out_buffer,
+                                    size_t* out_num_bytes_read) override {
+    // Auto digest initialization only occurs when read returns NO_SUCH_VALUE
+    return AVB_IO_RESULT_ERROR_NO_SUCH_VALUE;
+  }
+  AvbIOResult write_persistent_value(const char* name,
+                                     size_t value_size,
+                                     const uint8_t* value) override {
+    return GetParam();
+  }
+};
+
+TEST_P(AvbSlotVerifyTestWithPersistentDigest_AutoInitDigestFailure, Param) {
+  SetupWithHashDescriptor();
+  // Set device as locked so that auto persistent digest initialization occurs.
+  ops_.set_stored_is_device_unlocked(false);
+  switch (GetParam()) {
+    case AVB_IO_RESULT_OK:
+      // This tests the case where the write appears to succeed, but the
+      // read-back after it still fails.
+      expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
+      break;
+    case AVB_IO_RESULT_ERROR_OOM:
+      expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+      break;
+    // Fall through.
+    case AVB_IO_RESULT_ERROR_IO:
+    case AVB_IO_RESULT_ERROR_NO_SUCH_VALUE:
+    case AVB_IO_RESULT_ERROR_INVALID_VALUE_SIZE:
+    case AVB_IO_RESULT_ERROR_INSUFFICIENT_SPACE:
+      expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+      break;
+    default:
+      break;
+  }
+  Verify(false /* expect_success */);
+}
+
+// Test a bunch of error codes.
+INSTANTIATE_TEST_CASE_P(
+    P,
+    AvbSlotVerifyTestWithPersistentDigest_AutoInitDigestFailure,
+    ::testing::Values(AVB_IO_RESULT_OK,
+                      AVB_IO_RESULT_ERROR_OOM,
                       AVB_IO_RESULT_ERROR_IO,
                       AVB_IO_RESULT_ERROR_NO_SUCH_VALUE,
                       AVB_IO_RESULT_ERROR_INVALID_VALUE_SIZE,
@@ -3134,8 +3201,13 @@ TEST_P(AvbSlotVerifyTestWithPersistentDigest_Hashtree_ReadDigestFailure,
     case AVB_IO_RESULT_ERROR_OOM:
       expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
       break;
-    // Fall through.
+    case AVB_IO_RESULT_ERROR_IO:
+      expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+      break;
     case AVB_IO_RESULT_ERROR_NO_SUCH_VALUE:
+      expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
+      break;
+    // Fall through.
     case AVB_IO_RESULT_ERROR_INVALID_VALUE_SIZE:
     case AVB_IO_RESULT_ERROR_INSUFFICIENT_SPACE:
       expected_error_code_ = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
