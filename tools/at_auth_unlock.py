@@ -280,7 +280,7 @@ def AuthenticatedUnlock(creds, serial=None, verbose=False):
     fastboot_cmd(['oem', 'at-unlock-vboot'])
 
     res = fastboot_cmd(['getvar', 'at-vboot-state'])
-    if 'avb-locked: 0' in res:
+    if re.search(r'avb-locked(:\s*|=)0', res) is not None:
       print('Device successfully AVB unlocked')
       return 0
     else:
