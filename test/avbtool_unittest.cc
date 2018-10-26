@@ -760,7 +760,7 @@ TEST_F(AvbToolTest, AddHashFooterWithPersistentDigest) {
   size_t partition_size = 1024 * 1024;
   base::FilePath path = GenerateImage("digest_location", 1024);
   EXPECT_COMMAND(0,
-                 "./avbtool add_hash_footer --salt d00df00d "
+                 "./avbtool add_hash_footer "
                  "--hash_algorithm sha256 --image %s "
                  "--partition_size %d --partition_name foobar "
                  "--algorithm SHA256_RSA2048 "
@@ -792,7 +792,7 @@ TEST_F(AvbToolTest, AddHashFooterWithPersistentDigest) {
       "      Image Size:            1024 bytes\n"
       "      Hash Algorithm:        sha256\n"
       "      Partition Name:        foobar\n"
-      "      Salt:                  d00df00d\n"
+      "      Salt:                  \n"
       "      Digest:                \n"
       "      Flags:                 0\n",
       InfoImage(path));
@@ -845,7 +845,7 @@ TEST_F(AvbToolTest, AddHashFooterWithPersistentDigestAndNoAB) {
   size_t partition_size = 1024 * 1024;
   base::FilePath path = GenerateImage("digest_location", 1024);
   EXPECT_COMMAND(0,
-                 "./avbtool add_hash_footer --salt d00df00d "
+                 "./avbtool add_hash_footer "
                  "--hash_algorithm sha256 --image %s "
                  "--partition_size %d --partition_name foobar "
                  "--algorithm SHA256_RSA2048 "
@@ -878,7 +878,7 @@ TEST_F(AvbToolTest, AddHashFooterWithPersistentDigestAndNoAB) {
       "      Image Size:            1024 bytes\n"
       "      Hash Algorithm:        sha256\n"
       "      Partition Name:        foobar\n"
-      "      Salt:                  d00df00d\n"
+      "      Salt:                  \n"
       "      Digest:                \n"
       "      Flags:                 1\n",
       InfoImage(path));
@@ -1455,7 +1455,7 @@ TEST_F(AvbToolTest, AddHashtreeFooterWithPersistentDigest) {
   size_t partition_size = 10 * 1024 * 1024;
   base::FilePath path = GenerateImage("digest_location", partition_size / 2);
   EXPECT_COMMAND(0,
-                 "./avbtool add_hashtree_footer --salt d00df00d "
+                 "./avbtool add_hashtree_footer "
                  "--hash_algorithm sha256 --image %s "
                  "--partition_size %d --partition_name foobar "
                  "--algorithm SHA256_RSA2048 "
@@ -1495,7 +1495,7 @@ TEST_F(AvbToolTest, AddHashtreeFooterWithPersistentDigest) {
       "      FEC size:              49152 bytes\n"
       "      Hash Algorithm:        sha256\n"
       "      Partition Name:        foobar\n"
-      "      Salt:                  d00df00d\n"
+      "      Salt:                  \n"
       "      Root Digest:           \n"
       "      Flags:                 0\n",
       InfoImage(path));
@@ -1556,7 +1556,7 @@ TEST_F(AvbToolTest, AddHashtreeFooterWithPersistentDigestAndNoAB) {
   size_t partition_size = 10 * 1024 * 1024;
   base::FilePath path = GenerateImage("digest_location", partition_size / 2);
   EXPECT_COMMAND(0,
-                 "./avbtool add_hashtree_footer --salt d00df00d "
+                 "./avbtool add_hashtree_footer "
                  "--hash_algorithm sha256 --image %s "
                  "--partition_size %d --partition_name foobar "
                  "--algorithm SHA256_RSA2048 "
@@ -1597,7 +1597,7 @@ TEST_F(AvbToolTest, AddHashtreeFooterWithPersistentDigestAndNoAB) {
       "      FEC size:              49152 bytes\n"
       "      Hash Algorithm:        sha256\n"
       "      Partition Name:        foobar\n"
-      "      Salt:                  d00df00d\n"
+      "      Salt:                  \n"
       "      Root Digest:           \n"
       "      Flags:                 1\n",
       InfoImage(path));
