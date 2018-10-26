@@ -14,6 +14,8 @@
 // limitations under the License.
 //
 
+subdirs = ["test", "tools"]
+
 cc_defaults {
     name: "avb_defaults",
     cflags: [
