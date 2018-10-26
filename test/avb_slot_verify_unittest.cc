@@ -2680,7 +2680,6 @@ class AvbSlotVerifyTestWithPersistentDigest : public AvbSlotVerifyTest {
                    " --rollback_index 0"
                    " --partition_name factory"
                    " --partition_size %zd"
-                   " --salt deadbeef"
                    " --internal_release_string \"\""
                    " --use_persistent_digest %s",
                    factory_path.value().c_str(),
@@ -2709,7 +2708,7 @@ class AvbSlotVerifyTestWithPersistentDigest : public AvbSlotVerifyTest {
                                  "      Image Size:            5242880 bytes\n"
                                  "      Hash Algorithm:        sha256\n"
                                  "      Partition Name:        factory\n"
-                                 "      Salt:                  deadbeef\n"
+                                 "      Salt:                  \n"
                                  "      Digest:                \n"
                                  "      Flags:                 %d\n",
                                  do_not_use_ab ? 1 : 0),
@@ -2732,7 +2731,6 @@ class AvbSlotVerifyTestWithPersistentDigest : public AvbSlotVerifyTest {
         " --rollback_index 0"
         " --partition_name factory"
         " --partition_size %zd"
-        " --salt deadbeef"
         " --hash_algorithm %s"
         " --internal_release_string \"\""
         " --kernel_cmdline "
@@ -2782,7 +2780,7 @@ class AvbSlotVerifyTestWithPersistentDigest : public AvbSlotVerifyTest {
                                  "      FEC size:              49152 bytes\n"
                                  "      Hash Algorithm:        %s\n"
                                  "      Partition Name:        factory\n"
-                                 "      Salt:                  deadbeef\n"
+                                 "      Salt:                  \n"
                                  "      Root Digest:           \n"
                                  "      Flags:                 %d\n",
                                  expected_tree_size,

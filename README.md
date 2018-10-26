@@ -769,6 +769,15 @@ using a token of the form `$(AVB_FOO_ROOT_DIGEST)` where 'FOO' is the
 uppercase partition name, in this case for the partition named 'foo'.
 The token will be replaced by the digest in hexadecimal form.
 
+By default, when the `--use_persistent_digest` option is used with
+`add_hash_footer` or `add_hashtree_footer`, avbtool will generate a
+descriptor with no salt rather than the typical default of generating a
+random salt equal to the digest length. This is because the digest
+value is stored in persistent storage and thus cannot change over time.
+An alternative option would be to manually provide a random salt using
+`--salt`, but this salt would need to remain unchanged for the life
+of the device once the persistent digest value was written.
+
 ## Updating Stored Rollback Indexes
 
 In order for Rollback Protection to work the bootloader will need to
