@@ -3036,9 +3036,10 @@ class Avb(object):
       if salt:
         salt = salt.decode('hex')
       else:
-        if salt is None:
-          # If salt is not explicitly specified, choose a hash
-          # that's the same size as the hash size.
+        if salt is None and not use_persistent_digest:
+          # If salt is not explicitly specified, choose a hash that's the same
+          # size as the hash size. Don't populate a random salt if this
+          # descriptor is being created to use a persistent digest on device.
           hash_size = digest_size
           salt = open('/dev/urandom').read(hash_size)
         else:
@@ -3265,9 +3266,10 @@ class Avb(object):
       if salt:
         salt = salt.decode('hex')
       else:
-        if salt is None:
-          # If salt is not explicitly specified, choose a hash
-          # that's the same size as the hash size.
+        if salt is None and not use_persistent_root_digest:
+          # If salt is not explicitly specified, choose a hash that's the same
+          # size as the hash size. Don't populate a random salt if this
+          # descriptor is being created to use a persistent digest on device.
           hash_size = digest_size
           salt = open('/dev/urandom').read(hash_size)
         else:
