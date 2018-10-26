@@ -182,6 +182,11 @@ cc_test_host {
         "img2simg",
         "avbtool",
     ],
+    data: [
+        "avbtool",
+        "test/data/*",
+    ],
+    test_config: "test/libavb_host_unittest.xml",
     static_libs: [
         "libavb",
         "libavb_ab_host",
