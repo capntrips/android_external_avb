@@ -114,6 +114,8 @@ class UnlockCredentials(object):
 
     with open(unlock_key_file, 'rb') as f:
       self._unlock_key = RSA.importKey(f.read())
+      if not self._unlock_key.has_private():
+        raise ValueError('Unlock key was not an RSA private key.')
 
   @property
   def intermediate_cert(self):
@@ -260,37 +262,38 @@ def AuthenticatedUnlock(creds, serial=None, verbose=False):
       if verbose:
         print('$ ' + ' '.join(args))
 
-      try:
-        out = subprocess.check_output(
-            args, stderr=subprocess.STDOUT).decode('utf-8')
-      except subprocess.CalledProcessError as e:
-        print(e.output.decode('utf-8'))
-        print("Command '{}' returned non-zero exit status {}".format(
-            ' '.join(e.cmd), e.returncode))
-        sys.exit(1)
+      out = subprocess.check_output(
+          args, stderr=subprocess.STDOUT).decode('utf-8')
 
       if verbose:
         print(out)
       return out
 
-    fastboot_cmd(['oem', 'at-get-vboot-unlock-challenge'])
-    fastboot_cmd(['get_staged', challenge_file])
-    MakeAtxUnlockCredential(creds, challenge_file, credential_file)
-    fastboot_cmd(['stage', credential_file])
-    fastboot_cmd(['oem', 'at-unlock-vboot'])
+    try:
+      fastboot_cmd(['oem', 'at-get-vboot-unlock-challenge'])
+      fastboot_cmd(['get_staged', challenge_file])
+      MakeAtxUnlockCredential(creds, challenge_file, credential_file)
+      fastboot_cmd(['stage', credential_file])
+      fastboot_cmd(['oem', 'at-unlock-vboot'])
 
-    res = fastboot_cmd(['getvar', 'at-vboot-state'])
-    if re.search(r'avb-locked(:\s*|=)0', res) is not None:
-      print('Device successfully AVB unlocked')
-      return 0
-    else:
-      print('ERROR: Commands succeeded but device still locked')
-      return 1
+      res = fastboot_cmd(['getvar', 'at-vboot-state'])
+      if re.search(r'avb-locked(:\s*|=)0', res) is not None:
+        print('Device successfully AVB unlocked')
+        return True
+      else:
+        print('ERROR: Commands succeeded but device still locked')
+        return False
+    except subprocess.CalledProcessError as e:
+      print(e.output.decode('utf-8'))
+      print("Command '{}' returned non-zero exit status {}".format(
+          ' '.join(e.cmd), e.returncode))
+      return False
+
   finally:
     shutil.rmtree(tempdir)
 
 
-if __name__ == '__main__':
+def main(in_args):
   parser = argparse.ArgumentParser(
       description=HELP_DESCRIPTION,
       usage=HELP_USAGE,
@@ -340,7 +343,7 @@ if __name__ == '__main__':
       help='Path to product unlock key in PEM format')
 
   # Print help if no args given
-  args = parser.parse_args(args=None if sys.argv[1:] else ['-h'])
+  args = parser.parse_args(in_args if in_args else ['-h'])
 
   # Do the custom validation described above.
   if args.pik_cert is not None or args.puk_cert is not None or args.puk is not None:
@@ -366,5 +369,9 @@ if __name__ == '__main__':
   else:
     creds = UnlockCredentials.from_files(args.pik_cert, args.puk_cert, args.puk)
   with creds as creds:
-    sys.exit(
-        AuthenticatedUnlock(creds, serial=args.serial, verbose=args.verbose))
+    ret = AuthenticatedUnlock(creds, serial=args.serial, verbose=args.verbose)
+    return 0 if ret else 1
+
+
+if __name__ == '__main__':
+  sys.exit(main(sys.argv[1:]))
