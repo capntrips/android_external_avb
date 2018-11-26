@@ -544,13 +544,52 @@ def verify_vbmeta_signature(vbmeta_header, vbmeta_blob):
   modulus = decode_long(modulus_blob)
   exponent = 65537
 
-  # For now, just use Crypto.PublicKey.RSA to verify the signature. This
-  # is OK since 'avbtool verify_image' is not expected to run on the
-  # Android builders (see bug #36809096).
-  import Crypto.PublicKey.RSA
-  key = Crypto.PublicKey.RSA.construct((modulus, long(exponent)))
-  if not key.verify(decode_long(padding_and_digest),
-                    (decode_long(sig_blob), None)):
+  # We used to have this:
+  #
+  #  import Crypto.PublicKey.RSA
+  #  key = Crypto.PublicKey.RSA.construct((modulus, long(exponent)))
+  #  if not key.verify(decode_long(padding_and_digest),
+  #                    (decode_long(sig_blob), None)):
+  #    return False
+  #  return True
+  #
+  # but since 'avbtool verify_image' is used on the builders we don't want
+  # to rely on Crypto.PublicKey.RSA. Instead just use openssl(1) to verify.
+  asn1_str = ('asn1=SEQUENCE:pubkeyinfo\n'
+              '\n'
+              '[pubkeyinfo]\n'
+              'algorithm=SEQUENCE:rsa_alg\n'
+              'pubkey=BITWRAP,SEQUENCE:rsapubkey\n'
+              '\n'
+              '[rsa_alg]\n'
+              'algorithm=OID:rsaEncryption\n'
+              'parameter=NULL\n'
+              '\n'
+              '[rsapubkey]\n'
+              'n=INTEGER:%s\n'
+              'e=INTEGER:%s\n' % (hex(modulus).rstrip('L'), hex(exponent).rstrip('L')))
+  asn1_tmpfile = tempfile.NamedTemporaryFile()
+  asn1_tmpfile.write(asn1_str)
+  asn1_tmpfile.flush()
+  der_tmpfile = tempfile.NamedTemporaryFile()
+  p = subprocess.Popen(
+      ['openssl', 'asn1parse', '-genconf', asn1_tmpfile.name, '-out', der_tmpfile.name, '-noout'])
+  retcode = p.wait()
+  if retcode != 0:
+    raise AvbError('Error generating DER file')
+
+  p = subprocess.Popen(
+      ['openssl', 'rsautl', '-verify', '-pubin', '-inkey', der_tmpfile.name, '-keyform', 'DER', '-raw'],
+      stdin=subprocess.PIPE,
+      stdout=subprocess.PIPE,
+      stderr=subprocess.PIPE)
+  (pout, perr) = p.communicate(str(sig_blob))
+  retcode = p.wait()
+  if retcode != 0:
+    raise AvbError('Error verifying data: {}'.format(perr))
+  recovered_data = bytearray(pout)
+  if recovered_data != padding_and_digest:
+    sys.stderr.write('Signature not correct\n')
     return False
   return True
 
