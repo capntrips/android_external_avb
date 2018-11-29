@@ -48,7 +48,9 @@ class AvbSlotVerifyTest : public BaseAvbToolTest,
 
   void CmdlineWithHashtreeVerification(bool hashtree_verification_on);
   void CmdlineWithChainedHashtreeVerification(bool hashtree_verification_on);
-  void VerificationDisabled(bool use_avbctl, bool preload);
+  void VerificationDisabled(bool use_avbctl,
+                            bool preload,
+                            bool has_system_partition);
 };
 
 TEST_F(AvbSlotVerifyTest, Basic) {
@@ -2006,7 +2008,8 @@ TEST_F(AvbSlotVerifyTest, CmdlineWithChainedHashtreeVerificationOn) {
 }
 
 void AvbSlotVerifyTest::VerificationDisabled(bool use_avbctl,
-                                             bool preload_boot) {
+                                             bool preload_boot,
+                                             bool has_system_partition) {
   const size_t boot_part_size = 32 * 1024 * 1024;
   const size_t dtbo_part_size = 4 * 1024 * 1024;
   const size_t rootfs_size = 1028 * 1024;
@@ -2089,6 +2092,10 @@ void AvbSlotVerifyTest::VerificationDisabled(bool use_avbctl,
   ops_.set_expected_public_key(
       PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
 
+  if (!has_system_partition) {
+    ops_.set_hidden_partitions({"system", "system_a", "system_b"});
+  }
+
   // Manually set the flag the same way 'avbctl disable-verification'
   // would do it.
   if (use_avbctl) {
@@ -2131,8 +2138,13 @@ void AvbSlotVerifyTest::VerificationDisabled(bool use_avbctl,
                             AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
                             &slot_data));
   EXPECT_NE(nullptr, slot_data);
-  EXPECT_EQ("root=PARTUUID=1234-fake-guid-for:system_a",
-            std::string(slot_data->cmdline));
+  if (has_system_partition) {
+    EXPECT_EQ("root=PARTUUID=1234-fake-guid-for:system_a",
+              std::string(slot_data->cmdline));
+  } else {
+    EXPECT_EQ(nullptr, slot_data->cmdline);
+  }
+
   // Also make sure that it actually loads the boot and dtbo partitions.
   EXPECT_EQ(size_t(2), slot_data->num_loaded_partitions);
   EXPECT_EQ("boot",
@@ -2156,19 +2168,39 @@ void AvbSlotVerifyTest::VerificationDisabled(bool use_avbctl,
 }
 
 TEST_F(AvbSlotVerifyTest, VerificationDisabledUnmodified) {
-  VerificationDisabled(false, false);  // use_avbctl
+  VerificationDisabled(false,  // use_avbctl
+                       false,  // preload_boot
+                       true);  // has_system_partition
 }
 
 TEST_F(AvbSlotVerifyTest, VerificationDisabledModified) {
-  VerificationDisabled(true, false);  // use_avbctl
+  VerificationDisabled(true,   // use_avbctl
+                       false,  // preload_boot
+                       true);  // has_system_partition
 }
 
 TEST_F(AvbSlotVerifyTest, VerificationDisabledUnmodifiedPreloadBoot) {
-  VerificationDisabled(false, true);  // use_avbctl
+  VerificationDisabled(false,  // use_avbctl
+                       true,   // preload_boot
+                       true);  // has_system_partition
 }
 
 TEST_F(AvbSlotVerifyTest, VerificationDisabledModifiedPreloadBoot) {
-  VerificationDisabled(true, true);  // use_avbctl
+  VerificationDisabled(true,   // use_avbctl
+                       true,   // preload_boot
+                       true);  // has_system_partition
+}
+
+TEST_F(AvbSlotVerifyTest, VerificationDisabledUnmodifiedNoSystemPartition) {
+  VerificationDisabled(false,   // use_avbctl
+                       false,   // preload_boot
+                       false);  // has_system_partition
+}
+
+TEST_F(AvbSlotVerifyTest, VerificationDisabledModifiedNoSystemPartition) {
+  VerificationDisabled(true,    // use_avbctl
+                       false,   // preload_boot
+                       false);  // has_system_partition
 }
 
 // In the event that there's no vbmeta partition, we treat the vbmeta
