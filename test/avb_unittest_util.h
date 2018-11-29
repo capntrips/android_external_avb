@@ -68,21 +68,7 @@ class BaseAvbToolTest : public ::testing::Test {
 
   /* Calculates the vbmeta digest using 'avbtool calc_vbmeta_digest' command. */
   std::string CalcVBMetaDigest(const std::string& vbmeta_image,
-                               const std::string& digest_alg) {
-    base::FilePath vbmeta_path = testdir_.Append(vbmeta_image);
-    base::FilePath vbmeta_digest_path = testdir_.Append("vbmeta_digest");
-    EXPECT_COMMAND(
-        0,
-        "./avbtool calculate_vbmeta_digest --image %s --hash_algorithm %s"
-        " --output %s",
-        vbmeta_path.value().c_str(),
-        digest_alg.c_str(),
-        vbmeta_digest_path.value().c_str());
-    std::string vbmeta_digest_data;
-    EXPECT_TRUE(
-        base::ReadFileToString(vbmeta_digest_path, &vbmeta_digest_data));
-    return string_trim(vbmeta_digest_data);
-  }
+                               const std::string& digest_alg);
 
   /* Generates a vbmeta image, using avbtoool, with file name
    * |image_name|. The generated vbmeta image will written to disk,
@@ -93,95 +79,23 @@ class BaseAvbToolTest : public ::testing::Test {
                            const std::string& algorithm,
                            uint64_t rollback_index,
                            const base::FilePath& key_path,
-                           const std::string& additional_options = "") {
-    std::string signing_options;
-    if (algorithm == "") {
-      signing_options = " --algorithm NONE ";
-    } else {
-      signing_options = std::string(" --algorithm ") + algorithm + " --key " +
-                        key_path.value() + " ";
-    }
-    vbmeta_image_path_ = testdir_.Append(image_name);
-    EXPECT_COMMAND(0,
-                   "./avbtool make_vbmeta_image"
-                   " --rollback_index %" PRIu64
-                   " %s %s "
-                   " --output %s",
-                   rollback_index,
-                   additional_options.c_str(),
-                   signing_options.c_str(),
-                   vbmeta_image_path_.value().c_str());
-    int64_t file_size;
-    ASSERT_TRUE(base::GetFileSize(vbmeta_image_path_, &file_size));
-    vbmeta_image_.resize(file_size);
-    ASSERT_TRUE(base::ReadFile(vbmeta_image_path_,
-                               reinterpret_cast<char*>(vbmeta_image_.data()),
-                               vbmeta_image_.size()));
-  }
+                           const std::string& additional_options = "");
 
   /* Generate a file with name |file_name| of size |image_size| with
    * known content (0x00 0x01 0x02 .. 0xff 0x00 0x01 ..).
    */
   base::FilePath GenerateImage(const std::string file_name,
                                size_t image_size,
-                               uint8_t start_byte = 0) {
-    std::vector<uint8_t> image;
-    image.resize(image_size);
-    for (size_t n = 0; n < image_size; n++) {
-      image[n] = uint8_t(n + start_byte);
-    }
-    base::FilePath image_path = testdir_.Append(file_name);
-    EXPECT_EQ(image_size,
-              static_cast<const size_t>(
-                  base::WriteFile(image_path,
-                                  reinterpret_cast<const char*>(image.data()),
-                                  image.size())));
-    return image_path;
-  }
+                               uint8_t start_byte = 0);
 
   /* Returns the output of 'avbtool info_image' for a given image. */
-  std::string InfoImage(const base::FilePath& image_path) {
-    base::FilePath tmp_path = testdir_.Append("info_output.txt");
-    EXPECT_COMMAND(0,
-                   "./avbtool info_image --image %s --output %s",
-                   image_path.value().c_str(),
-                   tmp_path.value().c_str());
-    std::string info_data;
-    EXPECT_TRUE(base::ReadFileToString(tmp_path, &info_data));
-    return info_data;
-  }
+  std::string InfoImage(const base::FilePath& image_path);
 
   /* Returns public key in AVB format for a .pem key */
-  std::string PublicKeyAVB(const base::FilePath& key_path) {
-    base::FilePath tmp_path = testdir_.Append("public_key.bin");
-    EXPECT_COMMAND(0,
-                   "./avbtool extract_public_key --key %s"
-                   " --output %s",
-                   key_path.value().c_str(),
-                   tmp_path.value().c_str());
-    std::string key_data;
-    EXPECT_TRUE(base::ReadFileToString(tmp_path, &key_data));
-    return key_data;
-  }
+  std::string PublicKeyAVB(const base::FilePath& key_path);
 
-  virtual void SetUp() override {
-    /* Create temporary directory to stash images in. */
-    base::FilePath ret;
-    char* buf = strdup("/tmp/libavb-tests.XXXXXX");
-    ASSERT_TRUE(mkdtemp(buf) != nullptr);
-    testdir_ = base::FilePath(buf);
-    free(buf);
-    /* Reset memory leak tracing */
-    avb::testing_memory_reset();
-  }
-
-  virtual void TearDown() override {
-    /* Nuke temporary directory. */
-    ASSERT_EQ(0U, testdir_.value().find("/tmp/libavb-tests"));
-    ASSERT_TRUE(base::DeleteFile(testdir_, true /* recursive */));
-    /* Ensure all memory has been freed. */
-    EXPECT_TRUE(avb::testing_memory_all_freed());
-  }
+  void SetUp() override;
+  void TearDown() override;
 
   /* Temporary directory created in SetUp(). */
   base::FilePath testdir_;
