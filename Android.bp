@@ -184,6 +184,7 @@ cc_test_host {
     ],
     data: [
         "avbtool",
+        "test/avbtool_signing_helper_*.py",
         "test/data/*",
     ],
     test_config: "test/libavb_host_unittest.xml",
