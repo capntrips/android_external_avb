@@ -30,7 +30,6 @@
 #include <gtest/gtest.h>
 
 #include <base/files/file_util.h>
-#include <base/strings/string_util.h>
 #include <base/strings/stringprintf.h>
 
 // Encodes |len| bytes of |data| as a lower-case hex-string.
