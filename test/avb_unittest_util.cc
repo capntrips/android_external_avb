@@ -24,6 +24,8 @@
 
 #include "avb_unittest_util.h"
 
+#include <android-base/file.h>
+
 std::string mem_to_hexstring(const uint8_t* data, size_t len) {
   std::string ret;
   char digits[17] = "0123456789abcdef";
@@ -46,12 +48,19 @@ std::string string_trim(const std::string& str) {
 namespace avb {
 
 void BaseAvbToolTest::SetUp() {
+  /* Change current directory to test executable directory so that relative path
+   * references to test dependencies don't rely on being manually run from
+   * correct directory */
+  base::SetCurrentDirectory(
+      base::FilePath(android::base::GetExecutableDirectory()));
+
   /* Create temporary directory to stash images in. */
   base::FilePath ret;
   char* buf = strdup("/tmp/libavb-tests.XXXXXX");
   ASSERT_TRUE(mkdtemp(buf) != nullptr);
   testdir_ = base::FilePath(buf);
   free(buf);
+
   /* Reset memory leak tracing */
   avb::testing_memory_reset();
 }
