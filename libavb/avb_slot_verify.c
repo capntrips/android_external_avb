@@ -1442,10 +1442,13 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
       if (has_system_partition(ops, ab_suffix)) {
         slot_data->cmdline =
             avb_strdup("root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)");
-        if (slot_data->cmdline == NULL) {
-          ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-          goto fail;
-        }
+      } else {
+        // The |cmdline| field should be a NUL-terminated string.
+        slot_data->cmdline = avb_strdup("");
+      }
+      if (slot_data->cmdline == NULL) {
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+        goto fail;
       }
     } else {
       /* If requested, manage dm-verity mode... */
@@ -1480,7 +1483,7 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
     }
 
     /* Substitute $(ANDROID_SYSTEM_PARTUUID) and friends. */
-    if (slot_data->cmdline != NULL) {
+    if (slot_data->cmdline != NULL && avb_strlen(slot_data->cmdline) != 0) {
       char* new_cmdline;
       new_cmdline = avb_sub_cmdline(ops,
                                     slot_data->cmdline,

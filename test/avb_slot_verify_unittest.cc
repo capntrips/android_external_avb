@@ -2142,7 +2142,7 @@ void AvbSlotVerifyTest::VerificationDisabled(bool use_avbctl,
     EXPECT_EQ("root=PARTUUID=1234-fake-guid-for:system_a",
               std::string(slot_data->cmdline));
   } else {
-    EXPECT_EQ(nullptr, slot_data->cmdline);
+    EXPECT_EQ("", std::string(slot_data->cmdline));
   }
 
   // Also make sure that it actually loads the boot and dtbo partitions.
