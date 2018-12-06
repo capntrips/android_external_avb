@@ -362,7 +362,7 @@ def FindUnlockCredentialsInDirectory(dir, verbose=False):
         creds.append(UnlockCredentials.from_credential_archive(path))
         if verbose:
           print('Found valid unlock credential bundle: ' + path)
-      except (IOError, ValueError, zipfile.BadZipFile) as e:
+      except (IOError, ValueError, zipfile.BadZipfile) as e:
         if verbose:
           print(
               "Ignoring file which isn't a valid unlock credential zip bundle: "
