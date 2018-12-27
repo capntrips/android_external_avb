@@ -94,7 +94,7 @@ cc_library_static {
     recovery_available: true,
     export_include_dirs: ["."],
     target: {
-        android: {
+        linux: {
             srcs: ["libavb/avb_sysdeps_posix.c"],
         },
         linux_glibc: {
