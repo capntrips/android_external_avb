@@ -188,6 +188,7 @@ cc_test_host {
         "test/data/*",
     ],
     test_config: "test/libavb_host_unittest.xml",
+    test_suites: ["general-tests"],
     static_libs: [
         "libavb",
         "libavb_ab_host",
