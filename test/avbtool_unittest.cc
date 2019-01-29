@@ -2503,6 +2503,86 @@ TEST_F(AvbToolTest, VerifyImageChainPartition) {
                  pk8192_path.value().c_str());
 }
 
+TEST_F(AvbToolTest, VerifyImageChainPartitionWithFollow) {
+  base::FilePath pk4096_path = testdir_.Append("testkey_rsa4096.avbpubkey");
+  EXPECT_COMMAND(
+      0,
+      "./avbtool extract_public_key --key test/data/testkey_rsa4096.pem"
+      " --output %s",
+      pk4096_path.value().c_str());
+
+  GenerateVBMetaImage("vbmeta.img",
+                      "SHA256_RSA2048",
+                      0,
+                      base::FilePath("test/data/testkey_rsa2048.pem"),
+                      base::StringPrintf("--chain_partition system:1:%s ",
+                                         pk4096_path.value().c_str()));
+
+  const size_t system_partition_size = 10 * 1024 * 1024;
+  const size_t system_image_size = 8 * 1024 * 1024;
+  base::FilePath system_path = GenerateImage("system.img", system_image_size);
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d --image %s "
+                 "--partition_size %zd --partition_name system "
+                 "--algorithm SHA256_RSA4096 "
+                 "--key test/data/testkey_rsa4096.pem "
+                 "--internal_release_string \"\" ",
+                 system_path.value().c_str(),
+                 system_partition_size);
+
+  // Even without --expected_chain_partition this shouldn't fail because we use
+  // --follow_chain_partitions and system.img exists... to avoid unstable paths
+  // (e.g. /tmp/libavb.12345) in the output we need to run this from the test
+  // directory itself. It's a little ugly but it works.
+  char cwdbuf[PATH_MAX];
+  ASSERT_NE(nullptr, getcwd(cwdbuf, sizeof cwdbuf));
+  EXPECT_COMMAND(0,
+                 "cd %s && (%s/avbtool verify_image "
+                 "--image vbmeta.img --follow_chain_partitions > out.txt)",
+                 testdir_.value().c_str(),
+                 cwdbuf);
+  base::FilePath out_path = testdir_.Append("out.txt");
+  std::string out;
+  ASSERT_TRUE(base::ReadFileToString(out_path, &out));
+  EXPECT_EQ(
+      "Verifying image vbmeta.img using embedded public key\n"
+      "vbmeta: Successfully verified SHA256_RSA2048 vbmeta struct in "
+      "vbmeta.img\n"
+      "system: Chained but ROLLBACK_SLOT (which is 1) and KEY (which has sha1 "
+      "2597c218aae470a130f61162feaae70afd97f011) not specified\n"
+      "--\n"
+      "Verifying image system.img using embedded public key\n"
+      "vbmeta: Successfully verified footer and SHA256_RSA4096 vbmeta struct "
+      "in system.img\n"
+      "system: Successfully verified sha1 hashtree of system.img for image of "
+      "8388608 bytes\n",
+      out);
+
+  // Make sure we also follow partitions *even* when specifying
+  // --expect_chain_partition. The output is slightly different from above.
+  EXPECT_COMMAND(0,
+                 "cd %s && (%s/avbtool verify_image "
+                 "--image vbmeta.img --expected_chain_partition system:1:%s "
+                 "--follow_chain_partitions > out.txt)",
+                 testdir_.value().c_str(),
+                 cwdbuf,
+                 pk4096_path.value().c_str());
+  ASSERT_TRUE(base::ReadFileToString(out_path, &out));
+  EXPECT_EQ(
+      "Verifying image vbmeta.img using embedded public key\n"
+      "vbmeta: Successfully verified SHA256_RSA2048 vbmeta struct in "
+      "vbmeta.img\n"
+      "system: Successfully verified chain partition descriptor matches "
+      "expected data\n"
+      "--\n"
+      "Verifying image system.img using embedded public key\n"
+      "vbmeta: Successfully verified footer and SHA256_RSA4096 vbmeta struct "
+      "in system.img\n"
+      "system: Successfully verified sha1 hashtree of system.img for image of "
+      "8388608 bytes\n",
+      out);
+}
+
 TEST_F(AvbToolTest, VerifyImageChainPartitionOtherVBMeta) {
   base::FilePath pk4096_path = testdir_.Append("testkey_rsa4096.avbpubkey");
   EXPECT_COMMAND(
