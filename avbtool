@@ -1756,7 +1756,7 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
     if not value:
       sys.stderr.write('No expected chain partition for partition {}. Use '
                        '--expected_chain_partition to specify expected '
-                       'contents.\n'.
+                       'contents or --follow_chain_partitions.\n'.
                        format(self.partition_name))
       return False
     rollback_index_location, pk_blob = value
@@ -2220,15 +2220,16 @@ class Avb(object):
     if num_printed == 0:
       o.write('    (none)\n')
 
-  def verify_image(self, image_filename, key_path, expected_chain_partitions):
+  def verify_image(self, image_filename, key_path, expected_chain_partitions, follow_chain_partitions):
     """Implements the 'verify_image' command.
 
     Arguments:
       image_filename: Image file to get information from (file object).
       key_path: None or check that embedded public key matches key at given path.
       expected_chain_partitions: List of chain partitions to check or None.
+      follow_chain_partitions: If True, will follows chain partitions even when not
+                               specified with the --expected_chain_partition option
     """
-
     expected_chain_partitions_map = {}
     if expected_chain_partitions:
       used_locations = {}
@@ -2284,26 +2285,22 @@ class Avb(object):
              .format(alg_name, image.filename))
 
     for desc in descriptors:
-      if not desc.verify(image_dir, image_ext, expected_chain_partitions_map, image):
-        raise AvbError('Error verifying descriptor.')
-      # Note how AvbDescriptor.verify() method verifies only the descriptor
-      # contents which in the case of chain descriptors means checking only its
-      # contents matches what is in |expected_chain_partitions_map|.
-      #
-      # Specifically AvbHashtreeDescriptor.verify(), doesn't follow chain
-      # descriptors e.g. if it's a chain descriptor for 'system' it will not try
-      # to verify system.img. Why?  Because the whole idea of chain descriptors
-      # is separate organizations. That is, when they are used it's assumed that
-      # all you have is the public key, not an actual image (because if you had
-      # the image you wouldn't need to use a chain partition in the first
-      # place).
-      #
-      # However in certain situations you do have the image so it would be nice
-      # to add something like a --follow_chain_descriptors option for 'avbtool
-      # verify_image' which will look for and follow images specified by chain
-      # descriptors. Maybe it should be on a per-partition basis and specificied
-      # as part of the --expected_chain_partition paramter, maybe if the
-      # partition name ends with a '+' or something. Something to think about.
+      if (isinstance(desc, AvbChainPartitionDescriptor) and follow_chain_partitions and
+          expected_chain_partitions_map.get(desc.partition_name) == None):
+        # In this case we're processing a chain descriptor but don't have a
+        # --expect_chain_partition ... however --follow_chain_partitions was
+        # specified so we shouldn't error out in desc.verify().
+        print ('{}: Chained but ROLLBACK_SLOT (which is {}) and KEY (which has sha1 {}) not specified'
+              .format(desc.partition_name, desc.rollback_index_location,
+                      hashlib.sha1(desc.public_key).hexdigest()))
+      else:
+        if not desc.verify(image_dir, image_ext, expected_chain_partitions_map, image):
+          raise AvbError('Error verifying descriptor.')
+      # Honor --follow_chain_partitions - add '--' to make the output more readable.
+      if isinstance(desc, AvbChainPartitionDescriptor) and follow_chain_partitions:
+        print '--'
+        chained_image_filename = os.path.join(image_dir, desc.partition_name + image_ext)
+        self.verify_image(chained_image_filename, key_path, None, False)
 
 
   def calculate_vbmeta_digest(self, image_filename, hash_algorithm, output):
@@ -4085,6 +4082,10 @@ class AvbTool(object):
                             help='Expected chain partition',
                             metavar='PART_NAME:ROLLBACK_SLOT:KEY_PATH',
                             action='append')
+    sub_parser.add_argument('--follow_chain_partitions',
+                            help=('Follows chain partitions even when not '
+                                  'specified with the --expected_chain_partition option'),
+                            action='store_true')
     sub_parser.set_defaults(func=self.verify_image)
 
     sub_parser = subparsers.add_parser(
@@ -4366,7 +4367,8 @@ class AvbTool(object):
   def verify_image(self, args):
     """Implements the 'verify_image' sub-command."""
     self.avb.verify_image(args.image.name, args.key,
-                          args.expected_chain_partition)
+                          args.expected_chain_partition,
+                          args.follow_chain_partitions)
 
   def calculate_vbmeta_digest(self, args):
     """Implements the 'calculate_vbmeta_digest' sub-command."""
