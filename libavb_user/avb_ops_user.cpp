@@ -39,6 +39,11 @@
 
 #include <libavb_ab/libavb_ab.h>
 
+using android::fs_mgr::Fstab;
+using android::fs_mgr::GetEntryForMountPoint;
+using android::fs_mgr::ReadDefaultFstab;
+using android::fs_mgr::ReadFstabFromFile;
+
 /* Open the appropriate fstab file and fallback to /fstab.device if
  * that's what's being used.
  */
