@@ -42,22 +42,13 @@
 /* Open the appropriate fstab file and fallback to /fstab.device if
  * that's what's being used.
  */
-static struct fstab* open_fstab(void) {
-  struct fstab* fstab = fs_mgr_read_fstab_default();
-
-  if (fstab != NULL) {
-    return fstab;
-  }
-
-  fstab = fs_mgr_read_fstab("/fstab.device");
-  return fstab;
+static bool open_fstab(Fstab* fstab) {
+  return ReadDefaultFstab(fstab) || ReadFstabFromFile("/fstab.device", fstab);
 }
 
 static int open_partition(const char* name, int flags) {
   char* path;
   int fd;
-  struct fstab* fstab;
-  struct fstab_rec* record;
 
   /* Per https://android-review.googlesource.com/c/platform/system/core/+/674989
    * Android now supports /dev/block/by-name/<partition_name> ... try that
@@ -93,31 +84,28 @@ static int open_partition(const char* name, int flags) {
    * misc and then finding an entry in /dev matching the sysfs entry.
    */
 
-  fstab = open_fstab();
-  if (fstab == NULL) {
+  Fstab fstab;
+  if (!open_fstab(&fstab)) {
     return -1;
   }
-  record = fs_mgr_get_entry_for_mount_point(fstab, "/misc");
-  if (record == NULL) {
-    fs_mgr_free_fstab(fstab);
+  auto record = GetEntryForMountPoint(&fstab, "/misc");
+  if (record == nullptr) {
     return -1;
   }
   if (strcmp(name, "misc") == 0) {
-    path = strdup(record->blk_device);
+    path = strdup(record->blk_device.c_str());
   } else {
     size_t trimmed_len, name_len;
-    const char* end_slash = strrchr(record->blk_device, '/');
+    const char* end_slash = strrchr(record->blk_device.c_str(), '/');
     if (end_slash == NULL) {
-      fs_mgr_free_fstab(fstab);
       return -1;
     }
-    trimmed_len = end_slash - record->blk_device + 1;
+    trimmed_len = end_slash - record->blk_device.c_str() + 1;
     name_len = strlen(name);
     path = static_cast<char*>(calloc(trimmed_len + name_len + 1, 1));
-    strncpy(path, record->blk_device, trimmed_len);
+    strncpy(path, record->blk_device.c_str(), trimmed_len);
     strncpy(path + trimmed_len, name, name_len);
   }
-  fs_mgr_free_fstab(fstab);
 
   fd = open(path, flags);
   free(path);
