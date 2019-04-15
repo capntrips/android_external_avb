@@ -38,6 +38,10 @@ Unlock credentials can be provided to the tool in one of two ways:
      of the provided credential archives for a match against the product ID of
      the device being unlocked and automatically use the first match.
 
+This tool also clears the factory partition persistent digest unless the
+--clear_factory_digest=false option is used. There is no harm to clear this
+digest even if changes to the factory partition are not planned.
+
 Dependencies:
   - Python 2.7.x, 3.2.x, or newer (for argparse)
   - PyCrypto 2.5 or newer (for PKCS1_v1_5 and RSA PKCS#8 PEM key import)
@@ -49,7 +53,7 @@ HELP_DESCRIPTION = """Performs an authenticated AVB unlock of an Android Things 
 fastboot, given valid unlock credentials for the device."""
 
 HELP_USAGE = """
-  %(prog)s [-h] [-v] [-s SERIAL] unlock_creds.zip [unlock_creds_2.zip ...]
+  %(prog)s [-h] [-v] [-s SERIAL] [--clear_factory_digest=true|false] unlock_creds.zip [unlock_creds_2.zip ...]
   %(prog)s --pik_cert pik_cert.bin --puk_cert puk_cert.bin --puk puk.pem"""
 
 HELP_EPILOG = """examples:
@@ -370,6 +374,67 @@ def FindUnlockCredentialsInDirectory(dir, verbose=False):
   return creds
 
 
+def ClearFactoryPersistentDigest(serial=None, verbose=False):
+  """Clears the factory partition persistent digest using fastboot.
+
+  Most of the time this should be cleared when unlocking a device because
+  otherwise any attempts to update the factory partition will be rejected once
+  the device is again locked, causing confusion. There is no harm to clear this
+  digest even if factory partition updates are not planned.
+
+  Arguments:
+    serial: [optional] A device serial number or other valid value to be passed
+      to fastboot's '-s' switch to select the device to unlock.
+    verbose: [optional] Enable verbose output, which prints the fastboot
+      commands and their output as the commands are run.
+  """
+  FACTORY_PERSISTENT_DIGEST_NAME = 'avb.persistent_digest.factory'
+
+  tempdir = tempfile.mkdtemp()
+  try:
+    digest_data = os.path.join(tempdir, 'digest_data')
+
+    with open(digest_data, 'wb') as out:
+      out.write(struct.pack('<I', len(FACTORY_PERSISTENT_DIGEST_NAME)))
+      out.write(FACTORY_PERSISTENT_DIGEST_NAME)
+      # Sending a zero length digest will clear the existing digest.
+      out.write(struct.pack('<I', 0))
+
+    def fastboot_cmd(args):
+      args = ['fastboot'] + (['-s', serial] if serial else []) + args
+      if verbose:
+        print('$ ' + ' '.join(args))
+
+      out = subprocess.check_output(
+          args, stderr=subprocess.STDOUT).decode('utf-8')
+
+      if verbose:
+        print(out)
+
+    try:
+      fastboot_cmd(['stage', digest_data])
+      fastboot_cmd(['oem', 'at-write-persistent-digest'])
+      print("Successfully cleared the factory partition persistent digest.")
+      return True
+    except subprocess.CalledProcessError as e:
+      print(e.output.decode('utf-8'))
+      print("Command '{}' returned non-zero exit status {}".format(
+          ' '.join(e.cmd), e.returncode))
+      print("Warning: Failed to clear factory partition persistent digest.")
+      return False
+
+  finally:
+    shutil.rmtree(tempdir)
+
+
+def parse_boolean(value):
+  if value.strip().lower() in ('true', 't', 'yes', 'y', 'on', '1'):
+      return True
+  elif value.strip().lower() in ('false', 'f', 'no', 'n', 'off', '0'):
+      return False
+  else:
+      raise argparse.ArgumentTypeError('Unexpected boolean value: %s' % value)
+
 def main(in_args):
   parser = argparse.ArgumentParser(
       description=HELP_DESCRIPTION,
@@ -390,6 +455,13 @@ def main(in_args):
       help=
       "specify device to unlock, either by serial or any other valid value for fastboot's -s arg"
   )
+  parser.add_argument(
+      '--clear_factory_digest',
+      nargs='?',
+      type=parse_boolean,
+      default='true',
+      const='true',
+      help='Defaults to true. Set to false to prevent clearing the factory persistent digest')
 
   # User must provide either a unlock credential bundle, or the individual files
   # normally contained in such a bundle.
@@ -465,6 +537,8 @@ def main(in_args):
     creds = [UnlockCredentials(args.pik_cert, args.puk_cert, args.puk)]
 
   ret = AuthenticatedUnlock(creds, serial=args.serial, verbose=args.verbose)
+  if ret and args.clear_factory_digest:
+    ret = ClearFactoryPersistentDigest(serial=args.serial, verbose=args.verbose)
   return 0 if ret else 1
 
 
