@@ -422,6 +422,18 @@ an external file via the `--output_vbmeta_image` option and one can
 also specify that the vbmeta struct and footer not be added to the
 image being operated on.
 
+The hashtree and FEC data in an image can be zeroed out with the following
+command:
+
+    $ avbtool zero_hashtree --image IMAGE
+
+This is useful for trading compressed image size for having to reculculate the
+hashtree and FEC at runtime. If this is done the hashtree and FEC data is set
+to zero except for the first eight bytes which are set to the magic
+`ZeRoHaSH`. Either the hashtree or FEC data or both may be zeroed this way
+so applications should check for the magic both places. Applications can
+use the magic to detect if recalculation is needed.
+
 To calculate the maximum size of an image that will fit in a partition
 of a given size after having used the `avbtool add_hash_footer` or
 `avbtool add_hashtree_footer` commands on it, use the
