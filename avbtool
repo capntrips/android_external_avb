@@ -2371,7 +2371,7 @@ class Avb(object):
       if isinstance(desc, AvbChainPartitionDescriptor) and follow_chain_partitions:
         print '--'
         chained_image_filename = os.path.join(image_dir, desc.partition_name + image_ext)
-        self.verify_image(chained_image_filename, key_path, None, False)
+        self.verify_image(chained_image_filename, key_path, None, False, accept_zeroed_hashtree)
 
 
   def calculate_vbmeta_digest(self, image_filename, hash_algorithm, output):
