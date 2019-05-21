@@ -1406,105 +1406,107 @@ AvbSlotVerifyResult avb_slot_verify(AvbOps* ops,
     goto fail;
   }
 
+  if (!result_should_continue(ret)) {
+    goto fail;
+  }
+
   /* If things check out, mangle the kernel command-line as needed. */
-  if (result_should_continue(ret)) {
-    if (avb_strcmp(slot_data->vbmeta_images[0].partition_name, "vbmeta") != 0) {
-      avb_assert(
-          avb_strcmp(slot_data->vbmeta_images[0].partition_name, "boot") == 0);
-      using_boot_for_vbmeta = true;
+  if (avb_strcmp(slot_data->vbmeta_images[0].partition_name, "vbmeta") != 0) {
+    avb_assert(
+        avb_strcmp(slot_data->vbmeta_images[0].partition_name, "boot") == 0);
+    using_boot_for_vbmeta = true;
+  }
+
+  /* Byteswap top-level vbmeta header since we'll need it below. */
+  avb_vbmeta_image_header_to_host_byte_order(
+      (const AvbVBMetaImageHeader*)slot_data->vbmeta_images[0].vbmeta_data,
+      &toplevel_vbmeta);
+
+  /* Fill in |ab_suffix| field. */
+  slot_data->ab_suffix = avb_strdup(ab_suffix);
+  if (slot_data->ab_suffix == NULL) {
+    ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+    goto fail;
+  }
+
+  /* If verification is disabled, we are done ... we specifically
+   * don't want to add any androidboot.* options since verification
+   * is disabled.
+   */
+  if (toplevel_vbmeta.flags & AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED) {
+    /* Since verification is disabled we didn't process any
+     * descriptors and thus there's no cmdline... so set root= such
+     * that the system partition is mounted.
+     */
+    avb_assert(slot_data->cmdline == NULL);
+    // Devices with dynamic partitions won't have system partition.
+    // Instead, it has a large super partition to accommodate *.img files.
+    // See b/119551429 for details.
+    if (has_system_partition(ops, ab_suffix)) {
+      slot_data->cmdline =
+          avb_strdup("root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)");
+    } else {
+      // The |cmdline| field should be a NUL-terminated string.
+      slot_data->cmdline = avb_strdup("");
     }
-
-    /* Byteswap top-level vbmeta header since we'll need it below. */
-    avb_vbmeta_image_header_to_host_byte_order(
-        (const AvbVBMetaImageHeader*)slot_data->vbmeta_images[0].vbmeta_data,
-        &toplevel_vbmeta);
-
-    /* Fill in |ab_suffix| field. */
-    slot_data->ab_suffix = avb_strdup(ab_suffix);
-    if (slot_data->ab_suffix == NULL) {
+    if (slot_data->cmdline == NULL) {
       ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
       goto fail;
     }
-
-    /* If verification is disabled, we are done ... we specifically
-     * don't want to add any androidboot.* options since verification
-     * is disabled.
-     */
-    if (toplevel_vbmeta.flags & AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED) {
-      /* Since verification is disabled we didn't process any
-       * descriptors and thus there's no cmdline... so set root= such
-       * that the system partition is mounted.
-       */
-      avb_assert(slot_data->cmdline == NULL);
-      // Devices with dynamic partitions won't have system partition.
-      // Instead, it has a large super partition to accommodate *.img files.
-      // See b/119551429 for details.
-      if (has_system_partition(ops, ab_suffix)) {
-        slot_data->cmdline =
-            avb_strdup("root=PARTUUID=$(ANDROID_SYSTEM_PARTUUID)");
-      } else {
-        // The |cmdline| field should be a NUL-terminated string.
-        slot_data->cmdline = avb_strdup("");
+  } else {
+    /* If requested, manage dm-verity mode... */
+    AvbHashtreeErrorMode resolved_hashtree_error_mode = hashtree_error_mode;
+    if (hashtree_error_mode ==
+        AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO) {
+      AvbIOResult io_ret;
+      io_ret = avb_manage_hashtree_error_mode(
+          ops, flags, slot_data, &resolved_hashtree_error_mode);
+      if (io_ret != AVB_IO_RESULT_OK) {
+        ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
+        if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
+          ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
+        }
+        goto fail;
       }
-      if (slot_data->cmdline == NULL) {
+    }
+    slot_data->resolved_hashtree_error_mode = resolved_hashtree_error_mode;
+
+    /* Add options... */
+    AvbSlotVerifyResult sub_ret;
+    sub_ret = avb_append_options(ops,
+                                 slot_data,
+                                 &toplevel_vbmeta,
+                                 algorithm_type,
+                                 hashtree_error_mode,
+                                 resolved_hashtree_error_mode);
+    if (sub_ret != AVB_SLOT_VERIFY_RESULT_OK) {
+      ret = sub_ret;
+      goto fail;
+    }
+  }
+
+  /* Substitute $(ANDROID_SYSTEM_PARTUUID) and friends. */
+  if (slot_data->cmdline != NULL && avb_strlen(slot_data->cmdline) != 0) {
+    char* new_cmdline;
+    new_cmdline = avb_sub_cmdline(ops,
+                                  slot_data->cmdline,
+                                  ab_suffix,
+                                  using_boot_for_vbmeta,
+                                  additional_cmdline_subst);
+    if (new_cmdline != slot_data->cmdline) {
+      if (new_cmdline == NULL) {
         ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
         goto fail;
       }
-    } else {
-      /* If requested, manage dm-verity mode... */
-      AvbHashtreeErrorMode resolved_hashtree_error_mode = hashtree_error_mode;
-      if (hashtree_error_mode ==
-          AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO) {
-        AvbIOResult io_ret;
-        io_ret = avb_manage_hashtree_error_mode(
-            ops, flags, slot_data, &resolved_hashtree_error_mode);
-        if (io_ret != AVB_IO_RESULT_OK) {
-          ret = AVB_SLOT_VERIFY_RESULT_ERROR_IO;
-          if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
-            ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-          }
-          goto fail;
-        }
-      }
-      slot_data->resolved_hashtree_error_mode = resolved_hashtree_error_mode;
-
-      /* Add options... */
-      AvbSlotVerifyResult sub_ret;
-      sub_ret = avb_append_options(ops,
-                                   slot_data,
-                                   &toplevel_vbmeta,
-                                   algorithm_type,
-                                   hashtree_error_mode,
-                                   resolved_hashtree_error_mode);
-      if (sub_ret != AVB_SLOT_VERIFY_RESULT_OK) {
-        ret = sub_ret;
-        goto fail;
-      }
+      avb_free(slot_data->cmdline);
+      slot_data->cmdline = new_cmdline;
     }
+  }
 
-    /* Substitute $(ANDROID_SYSTEM_PARTUUID) and friends. */
-    if (slot_data->cmdline != NULL && avb_strlen(slot_data->cmdline) != 0) {
-      char* new_cmdline;
-      new_cmdline = avb_sub_cmdline(ops,
-                                    slot_data->cmdline,
-                                    ab_suffix,
-                                    using_boot_for_vbmeta,
-                                    additional_cmdline_subst);
-      if (new_cmdline != slot_data->cmdline) {
-        if (new_cmdline == NULL) {
-          ret = AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
-          goto fail;
-        }
-        avb_free(slot_data->cmdline);
-        slot_data->cmdline = new_cmdline;
-      }
-    }
-
-    if (out_data != NULL) {
-      *out_data = slot_data;
-    } else {
-      avb_slot_verify_data_free(slot_data);
-    }
+  if (out_data != NULL) {
+    *out_data = slot_data;
+  } else {
+    avb_slot_verify_data_free(slot_data);
   }
 
   avb_free_cmdline_subst_list(additional_cmdline_subst);
