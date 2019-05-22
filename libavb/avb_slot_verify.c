@@ -390,16 +390,22 @@ static AvbSlotVerifyResult load_and_verify_hash_partition(
   // used later.
   AvbSHA256Ctx sha256_ctx;
   AvbSHA512Ctx sha512_ctx;
+  size_t image_size_to_hash = hash_desc.image_size;
+  // If we allow verification error and the whole partition is smaller than
+  // image size in hash descriptor, we just hash the whole partition.
+  if (image_size_to_hash > image_size) {
+    image_size_to_hash = image_size;
+  }
   if (avb_strcmp((const char*)hash_desc.hash_algorithm, "sha256") == 0) {
     avb_sha256_init(&sha256_ctx);
     avb_sha256_update(&sha256_ctx, desc_salt, hash_desc.salt_len);
-    avb_sha256_update(&sha256_ctx, image_buf, hash_desc.image_size);
+    avb_sha256_update(&sha256_ctx, image_buf, image_size_to_hash);
     digest = avb_sha256_final(&sha256_ctx);
     digest_len = AVB_SHA256_DIGEST_SIZE;
   } else if (avb_strcmp((const char*)hash_desc.hash_algorithm, "sha512") == 0) {
     avb_sha512_init(&sha512_ctx);
     avb_sha512_update(&sha512_ctx, desc_salt, hash_desc.salt_len);
-    avb_sha512_update(&sha512_ctx, image_buf, hash_desc.image_size);
+    avb_sha512_update(&sha512_ctx, image_buf, image_size_to_hash);
     digest = avb_sha512_final(&sha512_ctx);
     digest_len = AVB_SHA512_DIGEST_SIZE;
   } else {
