@@ -404,6 +404,13 @@ TEST_F(VerifyTest, PublicKeyBlockTooSmall) {
                 vbmeta_image_.data(), vbmeta_image_.size(), NULL, NULL));
 }
 
+TEST_F(VerifyTest, VbmetaImageSmallerThanMagic) {
+  uint8_t vbmeta_onebyte[1] = {0};
+  EXPECT_EQ(AVB_VBMETA_VERIFY_RESULT_INVALID_VBMETA_HEADER,
+            avb_vbmeta_image_verify(
+                vbmeta_onebyte, 1, NULL, NULL));
+}
+
 bool VerifyTest::test_modification(AvbVBMetaVerifyResult expected_result,
                                    size_t offset,
                                    size_t length) {
