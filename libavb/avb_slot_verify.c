@@ -1168,7 +1168,8 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
     }
   }
 
-  if (rollback_index_location >= AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS) {
+  if (rollback_index_location < 0 ||
+      rollback_index_location >= AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS) {
     avb_errorv(
         full_partition_name, ": Invalid rollback_index_location.\n", NULL);
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
