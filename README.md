@@ -164,6 +164,24 @@ a relying party can extract the digest and compare it with list of digests for
 known good operating systems which, if found, provides additional assurance
 about the device the application is running on.
 
+For [factory images of Pixel 3 and later
+devices](https://developers.google.com/android/images), the
+`pixel_factory_image_verify.py` located in `tools/transparency` is a convenience
+tool for downloading, verifying and calcuating VBMeta Digests.
+
+    $ pixel_factory_image_verify.py https://dl.google.com/dl/android/aosp/image.zip
+    Fetching file from: https://dl.google.com/dl/android/aosp/image.zip
+    Successfully downloaded file.
+    Successfully unpacked factory image.
+    Successfully unpacked factory image partitions.
+    Successfully verified VBmeta.
+    Successfully calculated VBMeta Digest.
+    The VBMeta Digest for factory image is: 1f329b20a2dd69425e7a29566ca870dad51d2c579311992d41c9ba9ba05e170e
+
+If the given argument is not an URL it considered to be a local file:
+
+    $ pixel_factory_image_verify.py image.zip
+
 # Tools and Libraries
 
 This section contains information about the tools and libraries
