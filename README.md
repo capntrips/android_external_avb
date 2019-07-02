@@ -594,8 +594,8 @@ a hash descriptor for `boot.img`, a hashtree descriptor for
 `system.img`, a kernel-cmdline descriptor for setting up `dm-verity`
 for `system.img` and append a hash-tree to `system.img`. If the build
 system is set up such that one or many of `vendor.img` / `product.img`
-/ `odm.img` / `product_services.img` are being built, the hash-tree for
-each of them will also be appended to the image respectively, and their
+/ `system_ext.img` / `odm.img` are being built, the hash-tree for each
+of them will also be appended to the image respectively, and their
 hash-tree descriptors will be included into `vbmeta.img` accordingly.
 
 By default, the algorithm `SHA256_RSA4096` is used with a test key
@@ -623,20 +623,20 @@ Devices can be configured to create additional `vbmeta` partitions as
 partitions without changing the top-level `vbmeta` partition. For example,
 the following variables create `vbmeta_system.img` as a chained `vbmeta`
 image that contains the hash-tree descriptors for `system.img` and
-`product_services.img`. `vbmeta_system.img` itself will be signed by the
-specified key and algorithm.
+`system_ext.img`. `vbmeta_system.img` itself will be signed by the specified
+key and algorithm.
 
-    BOARD_AVB_VBMETA_SYSTEM := system product_services
+    BOARD_AVB_VBMETA_SYSTEM := system system_ext
     BOARD_AVB_VBMETA_SYSTEM_KEY_PATH := external/avb/test/data/testkey_rsa2048.pem
     BOARD_AVB_VBMETA_SYSTEM_ALGORITHM := SHA256_RSA2048
     BOARD_AVB_VBMETA_SYSTEM_ROLLBACK_INDEX_LOCATION := 1
 
-Note that the hash-tree descriptors for `system.img` and
-`product_services.img` will be included only in `vbmeta_system.img`, but
-not `vbmeta.img`. With the above setup, partitions `system.img`,
-`product_services.img` and `vbmeta_system.img` can be updated
-independently - but as a group - of the rest of the partitions, *or* as
-part of the traditional updates that update all the partitions.
+Note that the hash-tree descriptors for `system.img` and `system_ext.img`
+will be included only in `vbmeta_system.img`, but not `vbmeta.img`. With
+the above setup, partitions `system.img`, `system_ext.img` and
+`vbmeta_system.img` can be updated independently - but as a group - of the
+rest of the partitions, *or* as part of the traditional updates that
+update all the partitions.
 
 Currently build system supports building chained `vbmeta` images of
 `vbmeta_system.img` (`BOARD_AVB_VBMETA_SYSTEM`) and `vbmeta_vendor.img`
