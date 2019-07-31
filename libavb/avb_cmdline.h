@@ -62,6 +62,7 @@ char* avb_sub_cmdline(AvbOps* ops,
 
 AvbSlotVerifyResult avb_append_options(
     AvbOps* ops,
+    AvbSlotVerifyFlags flags,
     AvbSlotVerifyData* slot_data,
     AvbVBMetaImageHeader* toplevel_vbmeta,
     AvbAlgorithmType algorithm_type,
