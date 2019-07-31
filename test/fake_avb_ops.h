@@ -95,6 +95,16 @@ class FakeAvbOpsDelegate {
                                              size_t value_size,
                                              const uint8_t* value) = 0;
 
+  virtual AvbIOResult validate_public_key_for_partition(
+      AvbOps* ops,
+      const char* partition,
+      const uint8_t* public_key_data,
+      size_t public_key_length,
+      const uint8_t* public_key_metadata,
+      size_t public_key_metadata_length,
+      bool* out_is_trusted,
+      uint32_t* out_rollback_index_location) = 0;
+
   virtual AvbIOResult read_permanent_attributes(
       AvbAtxPermanentAttributes* attributes) = 0;
 
@@ -148,6 +158,16 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
 
   void set_expected_public_key(const std::string& expected_public_key) {
     expected_public_key_ = expected_public_key;
+  }
+
+  void set_expected_public_key_for_partition(
+      const std::string& partition_name,
+      const std::string& expected_public_key,
+      uint32_t rollback_index_location) {
+    expected_public_key_for_partition_map_[partition_name] =
+        expected_public_key;
+    rollback_index_location_for_partition_map_[partition_name] =
+        rollback_index_location;
   }
 
   void set_expected_public_key_metadata(
@@ -248,6 +268,16 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
                                      size_t value_size,
                                      const uint8_t* value) override;
 
+  AvbIOResult validate_public_key_for_partition(
+      AvbOps* ops,
+      const char* partition,
+      const uint8_t* public_key_data,
+      size_t public_key_length,
+      const uint8_t* public_key_metadata,
+      size_t public_key_metadata_length,
+      bool* out_is_trusted,
+      uint32_t* out_rollback_index_location) override;
+
   AvbIOResult read_permanent_attributes(
       AvbAtxPermanentAttributes* attributes) override;
 
@@ -270,6 +300,10 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
 
   std::string expected_public_key_;
   std::string expected_public_key_metadata_;
+
+  std::map<std::string, std::string> expected_public_key_for_partition_map_;
+
+  std::map<std::string, uint32_t> rollback_index_location_for_partition_map_;
 
   std::map<size_t, uint64_t> stored_rollback_indexes_;
   std::map<size_t, uint64_t> verified_rollback_indexes_;
@@ -326,6 +360,25 @@ class FakeAvbOpsDelegateWithDefaults : public FakeAvbOpsDelegate {
                                            public_key_metadata,
                                            public_key_metadata_length,
                                            out_key_is_trusted);
+  }
+
+  AvbIOResult validate_public_key_for_partition(
+      AvbOps* ops,
+      const char* partition,
+      const uint8_t* public_key_data,
+      size_t public_key_length,
+      const uint8_t* public_key_metadata,
+      size_t public_key_metadata_length,
+      bool* out_key_is_trusted,
+      uint32_t* out_rollback_index_location) override {
+    return ops_.validate_public_key_for_partition(ops,
+                                                  partition,
+                                                  public_key_data,
+                                                  public_key_length,
+                                                  public_key_metadata,
+                                                  public_key_metadata_length,
+                                                  out_key_is_trusted,
+                                                  out_rollback_index_location);
   }
 
   AvbIOResult read_rollback_index(AvbOps* ops,

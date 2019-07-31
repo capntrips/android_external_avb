@@ -27,6 +27,7 @@ Verified Boot 2.0. Usually AVB is used to refer to this codebase.
     + [Persistent Digests](#Persistent-Digests)
     + [Updating Stored Rollback Indexes](#Updating-Stored-Rollback-Indexes)
     + [Recommended Bootflow](#Recommended-Bootflow)
+      + [Booting Into Recovery](#Booting-Into-Recovery)
     + [Handling dm-verity Errors](#Handling-dm_verity-Errors)
     + [Android Specific Integration](#Android-Specific-Integration)
     + [Device Specific Notes](#Device-Specific-Notes)
@@ -916,6 +917,19 @@ Notes:
       continues. If the device does not have a screen, other ways must
       be used to convey that the device is UNLOCKED (lightbars, LEDs,
       etc.).
+
+### Booting Into Recovery
+
+On Android devices not using A/B, the `recovery` partition usually isn't
+updated along with other partitions and therefore can't be referenced
+from the main `vbmeta` partition.
+
+It's still possible to use AVB to protect this partition (and others)
+by signing these partitions and passing the
+`AVB_SLOT_VERIFY_FLAGS_NO_VBMETA_PARTITION` flag to `avb_slot_verify()`.
+In this mode, the key used to sign each requested partition is verified
+by the `validate_public_key_for_partition()` operation which is also
+used to return the rollback index location to be used.
 
 ## Handling dm-verity Errors
 
