@@ -1728,6 +1728,115 @@ TEST_F(AvbSlotVerifyTest, OnlyLoadWhatHasBeenRequested) {
   EXPECT_TRUE(partitions.find("bar_a") == partitions.end());
 }
 
+TEST_F(AvbSlotVerifyTest, NoVBMetaPartitionFlag) {
+  const size_t foo_partition_size = 16 * 1024 * 1024;
+  const size_t bar_partition_size = 32 * 1024 * 1024;
+  const size_t foo_image_size = 5 * 1024 * 1024;
+  const size_t bar_image_size = 10 * 1024 * 1024;
+  base::FilePath foo_path = GenerateImage("foo_a.img", foo_image_size);
+  base::FilePath bar_path = GenerateImage("bar_a.img", bar_image_size);
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer"
+                 " --image %s"
+                 " --kernel_cmdline 'this is=5 from foo=42'"
+                 " --partition_name foo"
+                 " --partition_size %zd"
+                 " --salt deadbeef"
+                 " --internal_release_string \"\""
+                 " --algorithm SHA256_RSA4096"
+                 " --salt deadbeef"
+                 " --key test/data/testkey_rsa4096.pem"
+                 " --rollback_index 42",
+                 foo_path.value().c_str(),
+                 foo_partition_size);
+
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hash_footer"
+                 " --image %s"
+                 " --kernel_cmdline 'and=43 from bar'"
+                 " --partition_name bar"
+                 " --partition_size %zd"
+                 " --salt deadbeef"
+                 " --internal_release_string \"\""
+                 " --algorithm SHA256_RSA2048"
+                 " --salt deadbeef"
+                 " --key test/data/testkey_rsa2048.pem"
+                 " --rollback_index 43",
+                 bar_path.value().c_str(),
+                 bar_partition_size);
+
+  ops_.set_expected_public_key_for_partition(
+      "foo_a",
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa4096.pem")),
+      1);
+  ops_.set_expected_public_key_for_partition(
+      "bar_a",
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")),
+      2);
+  ops_.set_stored_rollback_indexes({{0, 1000}, {1, 10}, {2, 11}});
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"foo", "bar", NULL};
+
+  // Without AVB_SLOT_VERIFY_FLAGS_NO_VBMETA_PARTITION, this should fail because
+  // vbmeta_a (or boot_a) cannot not be found.
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_IO,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+
+  // However, with this flag it should succeed (note that rollback indexes in
+  // the images exceed the stored rollback indexes)
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_OK,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            AVB_SLOT_VERIFY_FLAGS_NO_VBMETA_PARTITION,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_NE(nullptr, slot_data);
+  EXPECT_EQ(size_t(2), slot_data->num_loaded_partitions);
+  EXPECT_EQ("foo", std::string(slot_data->loaded_partitions[0].partition_name));
+  EXPECT_EQ("bar", std::string(slot_data->loaded_partitions[1].partition_name));
+  // Note the absence of 'androidboot.vbmeta.device'
+  EXPECT_EQ(
+      "this is=5 from foo=42 and=43 from bar "
+      "androidboot.vbmeta.avb_version=1.1 "
+      "androidboot.vbmeta.device_state=locked "
+      "androidboot.vbmeta.hash_alg=sha256 "
+      "androidboot.vbmeta.size=3456 "
+      "androidboot.vbmeta.digest="
+      "b5dbfb1743073f9a4cb45f94d1d849f89ca9777d158a2a06d09517c79ffd86cd "
+      "androidboot.vbmeta.invalidate_on_error=yes "
+      "androidboot.veritymode=enforcing",
+      std::string(slot_data->cmdline));
+  avb_slot_verify_data_free(slot_data);
+
+  // Check that rollback protection works if we increase the stored rollback
+  // indexes to exceed that of the image... do a check for each location.
+  ops_.set_stored_rollback_indexes({{0, 1000}, {1, 10}, {2, 100}});
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            AVB_SLOT_VERIFY_FLAGS_NO_VBMETA_PARTITION,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_EQ(nullptr, slot_data);
+  ops_.set_stored_rollback_indexes({{0, 1000}, {1, 100}, {2, 10}});
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            AVB_SLOT_VERIFY_FLAGS_NO_VBMETA_PARTITION,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_EQ(nullptr, slot_data);
+}
+
 TEST_F(AvbSlotVerifyTest, PublicKeyMetadata) {
   base::FilePath md_path = GenerateImage("md.bin", 1536);
 
