@@ -71,12 +71,12 @@ class PixelFactoryImageVerifier(object):
     """
     # Checks for command line parameters and show help if non given.
     if len(argv) != 2:
-      print('No command line parameter give. At least a filename or URL for a '
-            'Pixel 3 factory image needs to be specified.')
+      print('No command line parameter given. At least a filename or URL for a '
+            'Pixel 3 or later factory image needs to be specified.')
       sys.exit(1)
 
     # Checks if necessary commands are available.
-    for cmd in ['unzip', 'wget']:
+    for cmd in ['grep', 'unzip', 'wget']:
       if not distutils.spawn.find_executable(cmd):
         print('Necessary command line tool needs to be installed first: %s'
               % cmd)
@@ -100,11 +100,16 @@ class PixelFactoryImageVerifier(object):
     if not verified:
       sys.exit(1)
 
+    fingerprint = self._extract_build_fingerprint(partition_image_dir)
+    if not fingerprint:
+      sys.exit(1)
+
     # Calculates the VBMeta Digest for the factory image.
     vbmeta_digest = self._calculate_vbmeta_digest(partition_image_dir)
     if not vbmeta_digest:
       sys.exit(1)
 
+    print('The build fingerprint for factory image is: %s' % fingerprint)
     print('The VBMeta Digest for factory image is: %s' % vbmeta_digest)
     sys.exit(0)
 
@@ -267,6 +272,33 @@ class PixelFactoryImageVerifier(object):
     os.chdir(self.working_dir)
     return result
 
+  def _extract_build_fingerprint(self, image_dir):
+    """Extracts the build fingerprint from the system.img.
+    Args:
+      image_dir: The folder containing the unpacked factory image partitions,
+	    which contains a vbmeta.img patition.
+
+    Returns:
+      The build fingerprint string, e.g.
+      google/blueline/blueline:9/PQ2A.190305.002/5240760:user/release-keys
+    """ 
+    os.chdir(image_dir)
+    args = ['grep',
+            '-a',
+            'ro\.build\.fingerprint=google/.*/release-keys',
+            'system.img']
+
+    result, output = self._run_command(
+        args,
+        'Successfully extracted build fingerpint.',
+        'Build fingerprint extraction failed.')
+    os.chdir(self.working_dir)
+    if result:
+      _, fingerprint = output.split('=', 1)
+      return fingerprint.rstrip()
+    else:
+      return None
+
   def _calculate_vbmeta_digest(self, image_dir):
     """Calculates the VBMeta Digest for given parititions using avbtool.
 
@@ -284,6 +316,7 @@ class PixelFactoryImageVerifier(object):
     result, output = self._run_command(args,
                                        'Successfully calculated VBMeta Digest.',
                                        'Failed to calculate VBmeta Digest.')
+    os.chdir(self.working_dir)
     if result:
       return output
     else:
