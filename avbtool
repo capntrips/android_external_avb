@@ -1409,7 +1409,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     # ... also check that the on-disk hashtree matches
     image.seek(self.tree_offset)
     hash_tree_ondisk = image.read(self.tree_size)
-    is_zeroed = (hash_tree_ondisk[0:8] == 'ZeRoHaSH')
+    is_zeroed = (self.tree_size == 0) or (hash_tree_ondisk[0:8] == 'ZeRoHaSH')
     if is_zeroed and accept_zeroed_hashtree:
       print ('{}: skipping verification since hashtree is zeroed and --accept_zeroed_hashtree was given'
              .format(self.partition_name))
@@ -3244,7 +3244,7 @@ class Avb(object):
                           release_string, append_to_release_string,
                           output_vbmeta_image, do_not_append_vbmeta_image,
                           print_required_libavb_version,
-                          use_persistent_root_digest, do_not_use_ab):
+                          use_persistent_root_digest, do_not_use_ab, no_hashtree):
     """Implements the 'add_hashtree_footer' command.
 
     See https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity for
@@ -3286,6 +3286,7 @@ class Avb(object):
       print_required_libavb_version: True to only print required libavb version.
       use_persistent_root_digest: Use a persistent root digest on device.
       do_not_use_ab: The partition does not use A/B.
+      no_hashtree: Do not append hashtree. Set size in descriptor as zero.
 
     Raises:
       AvbError: If an argument is incorrect.
@@ -3308,11 +3309,13 @@ class Avb(object):
     # vbmeta struct) fits in |partition_size|. We use very conservative figures
     # for metadata.
     if partition_size > 0:
-      (_, max_tree_size) = calc_hash_level_offsets(
-          partition_size, block_size, digest_size + digest_padding)
+      max_tree_size = 0
       max_fec_size = 0
-      if generate_fec:
-        max_fec_size = calc_fec_data_size(partition_size, fec_num_roots)
+      if not no_hashtree:
+        (_, max_tree_size) = calc_hash_level_offsets(
+            partition_size, block_size, digest_size + digest_padding)
+        if generate_fec:
+          max_fec_size = calc_fec_data_size(partition_size, fec_num_roots)
       max_metadata_size = (max_fec_size + max_tree_size +
                            self.MAX_VBMETA_SIZE +
                            self.MAX_FOOTER_SIZE)
@@ -3405,6 +3408,9 @@ class Avb(object):
 
       # Generate HashtreeDescriptor with details about the tree we
       # just generated.
+      if no_hashtree:
+        tree_size = 0
+        hash_tree = bytearray()
       ht_desc = AvbHashtreeDescriptor()
       ht_desc.dm_verity_version = 1
       ht_desc.image_size = image.image_size
@@ -3430,6 +3436,8 @@ class Avb(object):
       # Generate FEC codes, if requested.
       if generate_fec:
         fec_data = generate_fec_data(image_filename, fec_num_roots)
+        if no_hashtree:
+          fec_data = bytearray()
         padding_needed = (round_to_multiple(len(fec_data), image.block_size) -
                           len(fec_data))
         fec_data_with_padding = fec_data + '\0'*padding_needed
@@ -4082,6 +4090,9 @@ class AvbTool(object):
     sub_parser.add_argument('--setup_as_rootfs_from_kernel',
                             action='store_true',
                             help='Adds kernel cmdline for setting up rootfs')
+    sub_parser.add_argument('--no_hashtree',
+                            action='store_true',
+                            help='Do not append hashtree')
     self._add_common_args(sub_parser)
     self._add_common_footer_args(sub_parser)
     sub_parser.set_defaults(func=self.add_hashtree_footer)
@@ -4423,7 +4434,8 @@ class AvbTool(object):
                                  args.do_not_append_vbmeta_image,
                                  args.print_required_libavb_version,
                                  args.use_persistent_digest,
-                                 args.do_not_use_ab)
+                                 args.do_not_use_ab,
+                                 args.no_hashtree)
 
   def erase_footer(self, args):
     """Implements the 'erase_footer' sub-command."""
