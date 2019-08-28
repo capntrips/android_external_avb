@@ -422,6 +422,7 @@ hashtree is also appended to the image.
         [--append_to_release_string STR]                                           \
         [--calc_max_image_size]                                                    \
         [--do_not_use_ab]                                                          \
+        [--no_hashtree]                                                            \
         [--use_persistent_digest]
 
 The size of an image with integrity footers can be changed using the
@@ -477,6 +478,11 @@ vbmeta struct when using `make_vbmeta_image`, `add_hash_footer`, and
         --include_descriptors_from_image /path/to/system.img \
         --print_required_libavb_version
     1.0
+
+Alternatively, `--no_hashtree` can be used with `avbtool add_hashtree_footer`
+command. If `--no_hashtree` is given, the hashtree blob is omitted and only
+its decriptor is added to vbmeta. The descriptor says the size of hashtree is 0,
+which tells an application to need to recalculate hashtree.
 
 The `--signing_helper` option can be used in `make_vbmeta_image`,
 `add_hash_footer` and `add_hashtree_footer` commands to specify any
