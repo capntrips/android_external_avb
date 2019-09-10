@@ -3435,9 +3435,10 @@ class Avb(object):
 
       # Generate FEC codes, if requested.
       if generate_fec:
-        fec_data = generate_fec_data(image_filename, fec_num_roots)
         if no_hashtree:
           fec_data = bytearray()
+        else:
+          fec_data = generate_fec_data(image_filename, fec_num_roots)
         padding_needed = (round_to_multiple(len(fec_data), image.block_size) -
                           len(fec_data))
         fec_data_with_padding = fec_data + '\0'*padding_needed
