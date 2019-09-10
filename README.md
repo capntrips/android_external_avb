@@ -481,8 +481,9 @@ vbmeta struct when using `make_vbmeta_image`, `add_hash_footer`, and
 
 Alternatively, `--no_hashtree` can be used with `avbtool add_hashtree_footer`
 command. If `--no_hashtree` is given, the hashtree blob is omitted and only
-its decriptor is added to vbmeta. The descriptor says the size of hashtree is 0,
-which tells an application to need to recalculate hashtree.
+its descriptor is added to the vbmeta struct. The descriptor says the size
+of hashtree is 0, which tells an application the need to recalculate
+hashtree.
 
 The `--signing_helper` option can be used in `make_vbmeta_image`,
 `add_hash_footer` and `add_hashtree_footer` commands to specify any
