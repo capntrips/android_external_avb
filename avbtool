@@ -1386,6 +1386,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
       True if the descriptor verifies, False otherwise.
     """
     if self.partition_name == '':
+      image_filename = image_containing_descriptor.filename
       image = image_containing_descriptor
     else:
       image_filename = os.path.join(image_dir, self.partition_name + image_ext)
@@ -1416,7 +1417,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     else:
       if hash_tree != hash_tree_ondisk:
         sys.stderr.write('hashtree of {} contains invalid data\n'.
-                       format(image_filename))
+                         format(image_filename))
         return False
       print ('{}: Successfully verified {} hashtree of {} for image of {} bytes'
              .format(self.partition_name, self.hash_algorithm, image.filename,
@@ -1549,6 +1550,7 @@ class AvbHashDescriptor(AvbDescriptor):
       True if the descriptor verifies, False otherwise.
     """
     if self.partition_name == '':
+      image_filename = image_containing_descriptor.filename
       image = image_containing_descriptor
     else:
       image_filename = os.path.join(image_dir, self.partition_name + image_ext)
