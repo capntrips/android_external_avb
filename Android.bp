@@ -107,7 +107,10 @@ cc_library_static {
     ],
     host_supported: true,
     recovery_available: true,
-    export_include_dirs: ["."],
+    header_libs: [
+        "avb_headers",
+    ],
+    export_header_lib_headers: ["avb_headers"],
     target: {
         linux: {
             srcs: ["libavb/avb_sysdeps_posix.c"],
@@ -128,7 +131,10 @@ cc_library_static {
         "avb_sources",
     ],
     recovery_available: true,
-    export_include_dirs: ["."],
+    header_libs: [
+        "avb_headers",
+    ],
+    export_header_lib_headers: ["avb_headers"],
     shared_libs: ["libbase"],
     static_libs: ["libfs_mgr"],
     cflags: [
@@ -157,7 +163,10 @@ cc_binary {
 cc_library_host_static {
     name: "libavb_ab_host",
     defaults: ["avb_defaults"],
-    export_include_dirs: ["."],
+    header_libs: [
+        "avb_headers",
+    ],
+    export_header_lib_headers: ["avb_headers"],
     cflags: [
         "-fno-stack-protector",
         "-DAVB_AB_I_UNDERSTAND_LIBAVB_AB_IS_DEPRECATED",
@@ -168,7 +177,10 @@ cc_library_host_static {
 cc_library_host_static {
     name: "libavb_atx_host",
     defaults: ["avb_defaults"],
-    export_include_dirs: ["."],
+    header_libs: [
+        "avb_headers",
+    ],
+    export_header_lib_headers: ["avb_headers"],
     cflags: [
         "-fno-stack-protector",
     ],
@@ -178,14 +190,20 @@ cc_library_host_static {
 cc_library_host_static {
     name: "libavb_host_sysdeps",
     defaults: ["avb_defaults"],
-    export_include_dirs: ["."],
+    header_libs: [
+        "avb_headers",
+    ],
+    export_header_lib_headers: ["avb_headers"],
     srcs: ["libavb/avb_sysdeps_posix.c"],
 }
 
 cc_library_host_static {
     name: "libavb_things_example",
     defaults: ["avb_defaults"],
-    export_include_dirs: ["."],
+    header_libs: [
+        "avb_headers",
+    ],
+    export_header_lib_headers: ["avb_headers"],
     srcs: ["examples/things/avb_atx_slot_verify.c"],
 }
 
@@ -260,4 +278,16 @@ cc_library {
         "-DAVB_AB_I_UNDERSTAND_LIBAVB_AB_IS_DEPRECATED",
     ],
     srcs: ["boot_control/boot_control_avb.c"],
+}
+
+cc_library_headers {
+    name: "avb_headers",
+    host_supported: true,
+    recovery_available: true,
+    export_include_dirs: ["."],
+    target: {
+        windows: {
+            enabled: true,
+        },
+    },
 }
