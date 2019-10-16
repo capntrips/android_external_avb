@@ -3541,7 +3541,7 @@ class Avb(object):
     hasher = hashlib.sha256()
     hasher.update(usage)
     signed_data.extend(hasher.digest())
-    if not subject_key_version:
+    if subject_key_version is None:
       subject_key_version = int(time.time())
     signed_data.extend(struct.pack('<Q', subject_key_version))
     signature = bytearray()
