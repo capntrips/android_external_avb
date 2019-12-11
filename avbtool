@@ -199,7 +199,7 @@ def get_release_string():
 def round_to_multiple(number, size):
   """Rounds a number up to nearest multiple of another number.
 
-  Args:
+  Arguments:
     number: The number to round up.
     size: The multiple to round up to.
 
@@ -216,7 +216,7 @@ def round_to_multiple(number, size):
 def round_to_pow2(number):
   """Rounds a number up to the next power of 2.
 
-  Args:
+  Arguments:
     number: The number to round up.
 
   Returns:
@@ -532,7 +532,7 @@ def verify_vbmeta_signature(vbmeta_header, vbmeta_blob):
         signature verification.
   """
   (_, alg) = lookup_algorithm_by_type(vbmeta_header.algorithm_type)
-  if alg.hash_name == '':
+  if not alg.hash_name:
     return True
   header_blob = vbmeta_blob[0:256]
   auth_offset = 256
@@ -1170,6 +1170,10 @@ class AvbDescriptor(object):
     Returns:
       True if the descriptor verifies, False otherwise.
     """
+    # Deletes unused parameters to prevent pylint warning unused-argument.
+    del image_dir, image_ext, expected_chain_partitions_map
+    del image_containing_descriptor, accept_zeroed_hashtree
+
     # Nothing to do.
     return True
 
@@ -1424,7 +1428,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     Returns:
       True if the descriptor verifies, False otherwise.
     """
-    if self.partition_name == '':
+    if not self.partition_name:
       image_filename = image_containing_descriptor.filename
       image = image_containing_descriptor
     else:
@@ -1442,7 +1446,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
                                                 hash_level_offsets,
                                                 tree_size)
     # The root digest must match unless it is not embedded in the descriptor.
-    if len(self.root_digest) != 0 and root_digest != self.root_digest:
+    if len(self.root_digest) and root_digest != self.root_digest:
       sys.stderr.write('hashtree of {} does not match descriptor\n'.
                        format(image_filename))
       return False
@@ -1462,10 +1466,10 @@ class AvbHashtreeDescriptor(AvbDescriptor):
       print ('{}: Successfully verified {} hashtree of {} for image of {} bytes'
              .format(self.partition_name, self.hash_algorithm, image.filename,
                      self.image_size))
-    # TODO: we could also verify that the FEC stored in the image is
-    # correct but this a) currently requires the 'fec' binary; and b)
-    # takes a long time; and c) is not strictly needed for
-    # verification purposes as we've already verified the root hash.
+    # TODO(zeuthen): we could also verify that the FEC stored in the image is
+    # correct but this a) currently requires the 'fec' binary; and b) takes a
+    # long time; and c) is not strictly needed for verification purposes as
+    # we've already verified the root hash.
     return True
 
 
@@ -1590,7 +1594,7 @@ class AvbHashDescriptor(AvbDescriptor):
     Returns:
       True if the descriptor verifies, False otherwise.
     """
-    if self.partition_name == '':
+    if not self.partition_name:
       image_filename = image_containing_descriptor.filename
       image = image_containing_descriptor
     else:
@@ -1602,7 +1606,7 @@ class AvbHashDescriptor(AvbDescriptor):
     ha.update(data)
     digest = ha.digest()
     # The digest must match unless there is no digest in the descriptor.
-    if len(self.digest) != 0 and digest != self.digest:
+    if len(self.digest) and digest != self.digest:
       sys.stderr.write('{} digest of {} does not match digest in descriptor\n'.
                        format(self.hash_algorithm, image_filename))
       return False
@@ -1934,8 +1938,7 @@ class AvbFooter(object):
 
 
 class AvbIcpHeader(object):
-  """A class for parsing and writing AVB vbmeta images with transparency
-     log inclusion proof information.
+  """A class for the transparency log inclusion proof header.
 
   Attributes:
     magic: Magic for identifying the ICP header.
@@ -2021,7 +2024,7 @@ class AvbIcpHeader(object):
 
 
 class AvbIcpEntry(object):
-  """A class for parsing and writing AFTL inclusion proof information.
+  """A class for the transparency log inclusion proof entries.
 
   The data that represents each of the components of the ICP entry are stored
   immediately following the ICP entry header. The format is log_url,
@@ -2387,9 +2390,42 @@ def test_icp_image():
 class AvbVBMetaHeader(object):
   """A class for parsing and writing AVB vbmeta images.
 
+  The attributes correspond to the |AvbVBMetaImageHeader| struct defined in
+  avb_vbmeta_image.h.
+
   Attributes:
-    The attributes correspond to the |AvbVBMetaImageHeader| struct defined in
-    avb_vbmeta_image.h.
+    magic: Four bytes equal to "AVB0" (AVB_MAGIC).
+    required_libavb_version_major: The major version of libavb required for this
+        header.
+    required_libavb_version_minor: The minor version of libavb required for this
+        header.
+    authentication_data_block_size: The size of the signature block.
+    auxiliary_data_block_size: The size of the auxiliary data block.
+    algorithm_type: The verification algorithm used, see |AvbAlgorithmType|
+        enum.
+    hash_offset: Offset into the "Authentication data" block of hash data.
+    hash_size: Length of the hash data.
+    signature_offset: Offset into the "Authentication data" block of signature
+        data.
+    signature_size: Length of the signature data.
+    public_key_offset: Offset into the "Auxiliary data" block of public key
+        data.
+    public_key_size: Length of the public key data.
+    public_key_metadata_offset: Offset into the "Auxiliary data" block of public
+        key metadata.
+    public_key_metadata_size: Length of the public key metadata. Must be set to
+        zero if there is no public key metadata.
+    descriptors_offset: Offset into the "Auxiliary data" block of descriptor
+        data.
+    descriptors_size: Length of descriptor data.
+    rollback_index: The rollback index which can be used to prevent rollback to
+        older versions.
+    flags: Flags from the AvbVBMetaImageFlags enumeration. This must be set to
+        zero if the vbmeta image is not a top-level image.
+    release_string: The release string from avbtool, e.g. "avbtool 1.0.0" or
+        "avbtool 1.0.0 xyz_board Git-234abde89". Is guaranteed to be NUL
+        terminated. Applications must not make assumptions about how this
+        string is formatted.
   """
 
   SIZE = 256
@@ -2868,7 +2904,7 @@ class Avb(object):
     for desc in descriptors:
       if (isinstance(desc, AvbChainPartitionDescriptor)
           and follow_chain_partitions
-          and expected_chain_partitions_map.get(desc.partition_name) == None):
+          and expected_chain_partitions_map.get(desc.partition_name) is None):
         # In this case we're processing a chain descriptor but don't have a
         # --expect_chain_partition ... however --follow_chain_partitions was
         # specified so we shouldn't error out in desc.verify().
@@ -3377,7 +3413,7 @@ class Avb(object):
             descriptors_dict[key] = desc.encode()
           else:
             encoded_descriptors.extend(desc.encode())
-      for key in sorted(descriptors_dict.keys()):
+      for key in sorted(descriptors_dict):
         encoded_descriptors.extend(descriptors_dict[key])
 
     # Load public key metadata blob, if requested.
@@ -4103,7 +4139,7 @@ class Avb(object):
     Raises:
       AvbError: If an argument is incorrect.
     """
-    EXPECTED_PRODUCT_ID_SIZE = 16
+    EXPECTED_PRODUCT_ID_SIZE = 16  # pylint: disable=invalid-name
     if len(product_id) != EXPECTED_PRODUCT_ID_SIZE:
       raise AvbError('Invalid Product ID length.')
     output.write(struct.pack('<I', 1))  # Format Version
@@ -4130,7 +4166,7 @@ class Avb(object):
     Raises:
       AvbError: If an argument is incorrect.
     """
-    EXPECTED_CERTIFICATE_SIZE = 1620
+    EXPECTED_CERTIFICATE_SIZE = 1620  # pylint: disable=invalid-name
     if len(intermediate_key_certificate) != EXPECTED_CERTIFICATE_SIZE:
       raise AvbError('Invalid intermediate key certificate length.')
     if len(product_key_certificate) != EXPECTED_CERTIFICATE_SIZE:
@@ -4170,8 +4206,8 @@ class Avb(object):
     Raises:
       AvbError: If an argument is incorrect.
     """
-    EXPECTED_CERTIFICATE_SIZE = 1620
-    EXPECTED_CHALLENGE_SIZE = 16
+    EXPECTED_CERTIFICATE_SIZE = 1620  # pylint: disable=invalid-name
+    EXPECTED_CHALLENGE_SIZE = 16  # pylint: disable=invalid-name
     if len(intermediate_key_certificate) != EXPECTED_CERTIFICATE_SIZE:
       raise AvbError('Invalid intermediate key certificate length.')
     if len(unlock_key_certificate) != EXPECTED_CERTIFICATE_SIZE:
@@ -4246,7 +4282,7 @@ FEC_MAGIC = 0xfecfecfe
 def calc_fec_data_size(image_size, num_roots):
   """Calculates how much space FEC data will take.
 
-  Args:
+  Arguments:
     image_size: The size of the image.
     num_roots: Number of roots.
 
@@ -4272,7 +4308,7 @@ def calc_fec_data_size(image_size, num_roots):
 def generate_fec_data(image_filename, num_roots):
   """Generate FEC codes for an image.
 
-  Args:
+  Arguments:
     image_filename: The filename of the image.
     num_roots: Number of roots.
 
@@ -4301,7 +4337,7 @@ def generate_hash_tree(image, image_size, block_size, hash_alg_name, salt,
                        digest_padding, hash_level_offsets, tree_size):
   """Generates a Merkle-tree for a file.
 
-  Args:
+  Arguments:
     image: The image, as a file.
     image_size: The size of the image.
     block_size: The block size, e.g. 4096.
