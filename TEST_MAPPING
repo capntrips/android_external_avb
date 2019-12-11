@@ -3,6 +3,10 @@
     {
       "name": "libavb_host_unittest",
       "host": true
+    },
+    {
+      "name": "avbtool_test",
+      "host": true
     }
   ]
 }

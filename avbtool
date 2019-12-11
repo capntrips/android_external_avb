@@ -2018,19 +2018,23 @@ class AvbIcpHeader(object):
       sys.stderr.write(
           'ICP Header: magic value mismatch: {}\n'.format(self.magic))
       return False
+
     if self.required_icp_version_major > AVB_VERSION_MAJOR:
       sys.stderr.write('ICP header: major version mismatch: {}\n'.format(
           self.required_icp_version_major))
       return False
+
     if self.required_icp_version_minor > AVB_VERSION_MINOR:
       sys.stderr.write('ICP header: minor version mismatch: {}\n'.format(
           self.required_icp_version_minor))
       return False
+
     if self.algorithm < 0 or self.algorithm >= len(ALGORITHMS):
       sys.stderr.write(
           'ICP header: algorithm identifier out of range: {}\n'.format(
               self.algorithm))
       return False
+
     if self.icp_count < 0:
       sys.stderr.write(
           'ICP header: ICP entry count out of range: {}\n'.format(
@@ -2054,7 +2058,8 @@ class AvbIcpEntry(object):
     proof_hash_count: Number of hashes comprising the inclusion proof.
     proof_size: The total size of the inclusion proof, in bytes.
     next_entry: 1 if there is a next entry, 0 otherwise.
-    log_url: The URL for the transparency log that generated this inclusion proof.
+    log_url: The URL for the transparency log that generated this inclusion
+        proof.
     signed_root_blob: The data comprising the signed tree head structure.
     proofs: The hashes comprising the inclusion proof.
 
@@ -2084,15 +2089,19 @@ class AvbIcpEntry(object):
     if data:
       # Deserialize the header from the data blob.
       (self.log_url_size, self.leaf_index, self.signed_root_blob_size,
-       self.proof_hash_count, self.proof_size, self.next_entry) = struct.unpack(self.FORMAT_STRING, data[0:self.SIZE])
+       self.proof_hash_count, self.proof_size, self.next_entry) = struct.unpack(
+           self.FORMAT_STRING, data[0:self.SIZE])
       if len(data) >= self.SIZE:
         # There's more data. Ensure the data entry size is valid.
         if len(data) != self.get_expected_size():
           if self.next_entry == 0:
-            raise AvbError('ICP entry size is not valid {}/{}.'.format(len(data), self.get_expected_size()))
+            raise AvbError('ICP entry size is not valid {}/{}.'
+                           .format(len(data), self.get_expected_size()))
       # Deserialize ICP entry components from the data blob.
-      data_format_string = "{}s{}s{}s".format(self.log_url_size, self.signed_root_blob_size, self.proof_size)
-      (self.log_url, self.signed_root_blob, self.proofs) = struct.unpack(data_format_string, data[self.SIZE:self.get_expected_size()])
+      data_format_string = "{}s{}s{}s".format(
+          self.log_url_size, self.signed_root_blob_size, self.proof_size)
+      (self.log_url, self.signed_root_blob, self.proofs) = struct.unpack(
+          data_format_string, data[self.SIZE:self.get_expected_size()])
     else:
       self.log_url_size = 0
       self.leaf_index = 0
@@ -2116,16 +2125,17 @@ class AvbIcpEntry(object):
     self.log_url_size = len(log_url)
 
   def set_signed_root_blob(self, signed_root_blob):
-    """Sets the signed_root_blob and signed_root_blob_size elements in AvbIcpEntry.
+    """Sets signed_root_blob and signed_root_blob_size.
 
     Arguments:
-      signed_root_blob: bytearray containing the SignedLogRoot for the transparency log.
+      signed_root_blob: bytearray containing the SignedLogRoot for the
+          transparency log.
     """
     self.signed_root_blob = signed_root_blob
     self.signed_root_blob_size = len(signed_root_blob)
 
   def set_proofs(self, proof_hash_count, proofs):
-    """Sets the proof_hash_count, proofs, and proof_size elements in AvbIcpEntry.
+    """Sets the proof_hash_count, proofs, and proof_size.
 
     Arguments:
       proof_hash_count: Number of hashes comprising the inclusion proof.
@@ -2174,7 +2184,7 @@ class AvbIcpEntry(object):
       The expected size of the AvbIcpEntry from the header.
     """
     return (self.SIZE + self.log_url_size +
-           self.signed_root_blob_size + self.proof_size)
+            self.signed_root_blob_size + self.proof_size)
 
   def is_valid(self):
     """Ensures that values in an AvbIcpEntry structure are sane.
@@ -2182,41 +2192,52 @@ class AvbIcpEntry(object):
     Returns:
       True if the values in the AvbIcpEntry are sane, False otherwise.
     """
-    if self.log_url and self.log_url_size != len(self.log_url):
-      err_msg = 'ICP entry: invalid URL size: {}\n'.format(self.log_url_size)
-      sys.stderr.write(err_msg)
+    if ((self.log_url and self.log_url_size != len(self.log_url))
+        or (not self.log_url and self.log_url_size != 0)):
+      sys.stderr.write('ICP entry: invalid URL size: {}\n'
+                       .format(self.log_url_size))
       return False
+
     if self.leaf_index < 0:
-      err_msg = ('ICP entry: leaf index out of range: '
-                '{}\n'.format(self.leaf_index))
-      sys.stderr.write(err_msg)
+      sys.stderr.write('ICP entry: leaf index out of range: '
+                       '{}\n'.format(self.leaf_index))
       return False
-    if (self.signed_root_blob and self.signed_root_blob_size !=
-       len(self.signed_root_blob)):
-      sys.stderr.write('ICP entry: invalid signed root blob size: ')
-      sys.stderr.write('{}, {}\n'.format(self.signed_root_blob_size,
-                                         len(self.signed_root_blob)))
+
+    if ((self.signed_root_blob and self.signed_root_blob_size
+         != len(self.signed_root_blob))
+        or (not self.signed_root_blob and self.signed_root_blob_size != 0)):
+      sys.stderr.write('ICP entry: invalid signed root blob size: '
+                       '{}\n'.format(self.signed_root_blob_size))
       return False
+
     if self.proof_hash_count < 0:
       sys.stderr.write('ICP entry: invalid proof count: {}\n'.format(
           self.proof_hash_count))
       return False
-    if self.proofs and self.proof_size != len(self.proofs):
+
+    if ((self.proofs and self.proof_size != len(self.proofs))
+        or (not self.proofs and self.proof_size != 0)):
       sys.stderr.write('ICP entry: invalid transparency log proof size: ')
       sys.stderr.write('{}\n'.format(self.proof_size))
       return False
+
     if self.next_entry != 0 and self.next_entry != 1:
       sys.stderr.write('ICP entry: invalid next entry value: {}\n'.format(
           self.next_entry))
       return False
     return True
 
+
 class AvbIcpBlob(object):
-  """A class for encapsulating an AFTL ICP section with all information required to validate an inclusion proof.
+  """A class for the transparency log inclusion proof blob.
+
+  This encapsulates an AFTL ICP section with all information required to
+  validate an inclusion proof.
 
   Attributes:
     icp_header: A header for the section.
-    icp_entries: A list of AvbIcpEntry objects representing the inclusion proofs.
+    icp_entries: A list of AvbIcpEntry objects representing the inclusion
+        proofs.
   """
 
   def __init__(self, data=None):
@@ -2235,13 +2256,16 @@ class AvbIcpBlob(object):
         raise AvbError('Invalid ICP header.')
       icp_count = self.icp_header.icp_count
       algorithm_id = self.icp_header.algorithm
+      # TODO(danielaustin): make use of proof_hash_size.
+      # pylint: disable=unused-variable
       proof_hash_size = lookup_hash_size_by_type(algorithm_id)
 
       # Jump past the header for entry deserialization.
       icp_index = AvbIcpHeader.SIZE
       # Validate each entry.
       self.icp_entries = []
-      # add_icp_entry updates entries and header, so set header count to compensate.
+      # Add_icp_entry updates entries and header, so set header count to
+      # compensate.
       self.icp_header.icp_count = 0
       for i in range(icp_count):
         # Get the entry header from the ICP blob.
@@ -2264,8 +2288,7 @@ class AvbIcpBlob(object):
       raise AvbError('Malformed ICP blob')
 
   def set_algorithm(self, algorithm_id):
-    """Sets the algorithm to be used by the inclusion proofs in the AvbIcpBlob structure.
-    """
+    """Sets algorithm to be used by the inclusion proofs in AvbIcpBlob."""
     self.icp_header.algorithm = algorithm_id
 
   def add_icp_entry(self, avb_icp_entry):
@@ -2276,7 +2299,7 @@ class AvbIcpBlob(object):
     """
 
     # Set the next entry field to denote that a new ICP entry will follow.
-    if len(self.icp_entries) > 0:
+    if self.icp_entries:
       self.icp_entries[-1].next_entry = 1
     self.icp_entries.append(avb_icp_entry)
     self.icp_header.icp_count += 1
@@ -2328,347 +2351,6 @@ class AvbIcpBlob(object):
       if not icp_entry.is_valid():
         return False
     return True
-
-# AFTL structure test functions.
-
-
-def test_default_icp_header():
-  """Performs validation on a default ICP header structure.
-
-  Returns:
-    True if the tests pass, False otherwise.
-  """
-  # Ensure the header is valid.
-  icp_header = AvbIcpHeader()
-  if icp_header.is_valid():
-    sys.stdout.write('ICP header: validation passed\n')
-    return True
-  sys.stdout.write('ICP header: validation failed\n')
-  return False
-
-
-def test_icp_header(algorithm, icp_count):
-  """Create an ICP header structure and attempt to validate it.
-
-  Arguments:
-    algorithm: The algorithm to be used.
-    icp_count: Number of ICPs that follow the ICP header.
-
-  Returns:
-    True if the tests pass, False otherwise.
-  """
-  icp_header = AvbIcpHeader()
-  icp_header.algorithm = algorithm
-  icp_header.icp_count = icp_count
-  if icp_header.is_valid():
-    sys.stdout.write('ICP header: validation passed\n')
-    return True
-  sys.stdout.write('ICP header: validation failed\n')
-  return False
-
-
-def test_default_icp_entry():
-  """Performs validation on an empty ICP entry structure.
-
-  Returns:
-    True if the tests pass, False otherwise.
-  """
-  icp_entry = AvbIcpEntry()
-  if icp_entry.is_valid():
-    sys.stdout.write('ICP entry validation passed\n')
-    return True
-  sys.stdout.write('ICP entry validation failed\n')
-  return False
-
-
-def test_icp_entry(log_url, leaf_index, signed_root_blob, proof_hash_count, proofs, next_entry):
-  """Create an ICP entry structure and attempt to validate it.
-
-  Returns:
-    True if the tests pass, False otherwise.
-  """
-  icp_entry = AvbIcpEntry()
-  icp_entry.leaf_index = leaf_index
-  icp_entry.next_entry = next_entry
-  icp_entry.set_log_url(log_url)
-  icp_entry.set_signed_root_blob(signed_root_blob)
-  icp_entry.set_proofs(proof_hash_count, proofs)
-  if icp_entry.is_valid():
-    sys.stdout.write('ICP entry validation passed\n')
-    return True
-  else:
-    sys.stdout.write('ICP entry validation failed\n')
-    return False
-
-def test_icp_entry_blob(log_url, log_url_size, leaf_index, signed_root_blob, signed_root_blob_size,
-                        proof_hash_count, proofs, proof_size, next_entry):
-  """Create an ICP entry structure, manually setting all fields, and attempt to validate it.
-
-  Returns:
-    True if the tests pass, False otherwise.
-  """
-  icp_entry = AvbIcpEntry()
-  icp_entry.log_url = log_url
-  icp_entry.log_url_size = log_url_size
-  icp_entry.leaf_index = leaf_index
-  icp_entry.signed_root_blob = signed_root_blob
-  icp_entry.signed_root_blob_size = signed_root_blob_size
-  icp_entry.proof_hash_count = proof_hash_count
-  icp_entry.proofs = proofs
-  icp_entry.proof_size = proof_size
-  icp_entry.next_entry = next_entry
-
-  if icp_entry.is_valid():
-    sys.stdout.write('ICP entry validation passed\n')
-    return True
-  sys.stdout.write('ICP entry validation failed\n')
-  return False
-
-
-
-def test_generate_icp_images():
-  """Test cases for full AFTL ICP structure generation.
-
-  Returns:
-    True if all tests return expected values, False otherwise.
-  """
-  if not test_default_icp_header():
-    return False
-
-  if not test_icp_header(1, 1):
-    return False
-
-  icp_header = AvbIcpHeader()
-  icp_header.algorithm = 1
-  icp_header.icp_count = 1
-
-  expected_header_bytes = \
-    bytearray(b'\x41\x46\x54\x4c\x00\x00\x00\x01\x00\x00\x00\x01\x00'
-              '\x00\x00\x01\x00\x01')
-  icp_header_bytes = icp_header.encode()
-  if icp_header_bytes == expected_header_bytes:
-    sys.stdout.write('ICP header encode passed\n')
-  else:
-    sys.stdout.write('ICP header encode failed\n')
-    return False
-  icp_header = AvbIcpHeader(expected_header_bytes)
-  if not icp_header.is_valid():
-    sys.stdout.write('ICP constructor failed.\n')
-    return False
-  tl_url = 'aftl-test-server.google.com'
-  sth = bytearray()
-  # Fill each structure with an easily observable pattern for easy validation.
-  sth.extend('a' * 160)
-  proof_hashes = bytearray()
-  proof_hashes.extend('b' * 32)
-  proof_hashes.extend('c' * 32)
-  proof_hashes.extend('d' * 32)
-  proof_hashes.extend('e' * 32)
-  if not test_icp_entry(tl_url, 1, sth, 4, proof_hashes, 0):
-    return False
-  icp_entry = AvbIcpEntry()
-  icp_entry.set_log_url(tl_url)
-  icp_entry.leaf_index = 1
-  icp_entry.set_signed_root_blob(sth)
-  icp_entry.set_proofs(4, proof_hashes)
-  icp_entry.next_entry = 0
-  icp_entry_bytes = icp_entry.encode()
-  expected_entry_bytes = bytearray(b'\x00\x00\x00\x1b\x00\x00\x00\x00\x00\x00'
-                                   '\x00\x01\x00\x00\x00\xa0\x04\x00\x00\x00'
-                                   '\x80\x00\x61\x66\x74\x6c\x2d\x74\x65\x73'
-                                   '\x74\x2d\x73\x65\x72\x76\x65\x72\x2e\x67'
-                                   '\x6f\x6f\x67\x6c\x65\x2e\x63\x6f\x6d\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                   '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x62'
-                                   '\x62\x62\x62\x62\x62\x62\x62\x62\x62\x62'
-                                   '\x62\x62\x62\x62\x62\x62\x62\x62\x62\x62'
-                                   '\x62\x62\x62\x62\x62\x62\x62\x62\x62\x62'
-                                   '\x62\x63\x63\x63\x63\x63\x63\x63\x63\x63'
-                                   '\x63\x63\x63\x63\x63\x63\x63\x63\x63\x63'
-                                   '\x63\x63\x63\x63\x63\x63\x63\x63\x63\x63'
-                                   '\x63\x63\x63\x64\x64\x64\x64\x64\x64\x64'
-                                   '\x64\x64\x64\x64\x64\x64\x64\x64\x64\x64'
-                                   '\x64\x64\x64\x64\x64\x64\x64\x64\x64\x64'
-                                   '\x64\x64\x64\x64\x64\x65\x65\x65\x65\x65'
-                                   '\x65\x65\x65\x65\x65\x65\x65\x65\x65\x65'
-                                   '\x65\x65\x65\x65\x65\x65\x65\x65\x65\x65'
-                                   '\x65\x65\x65\x65\x65\x65\x65')
-  if icp_entry_bytes == expected_entry_bytes:
-    sys.stdout.write('ICP entry encode passed\n')
-  else:
-    sys.stdout.write('expected values: {}'.format(binascii.hexlify(expected_entry_bytes)))
-    sys.stdout.write('ICP entry encode failed\n')
-    return False
-  icp_entry = AvbIcpEntry(expected_entry_bytes)
-  if not icp_entry.is_valid():
-    sys.stdout.write('ICP entry constructor failed\n')
-    return False
-  icp_blob = AvbIcpBlob()
-  icp_blob.set_algorithm(1)
-  icp_blob.add_icp_entry(icp_entry)
-  if not icp_blob.is_valid():
-    return False
-  # Now add a 2nd entry (this should fail).
-  tl_url2 = 'aftl-test-server.google.ch'
-  sth2 = bytearray()
-  sth2.extend('f' * 192)
-  proof_hashes2 = bytearray()
-  proof_hashes2.extend('g' * 32)
-  proof_hashes2.extend('h' * 32)
-  if not test_icp_entry(tl_url2, 2, sth2, 2, proof_hashes2, 0):
-    return False
-  icp_entry2 = AvbIcpEntry()
-  icp_entry2.set_log_url(tl_url2)
-  icp_entry2.leaf_index = 2
-  icp_entry2.set_signed_root_blob(sth2)
-  icp_entry2.set_proofs(2, proof_hashes2)
-  icp_entry2.next_entry = 0
-  icp_blob.add_icp_entry(icp_entry2)
-  # Reset the ICP count to invalidate the entry.
-  icp_blob.icp_header.icp_count = 1
-  if icp_blob.is_valid():
-    return False
-  # Fix the entries so this passes.
-  icp_blob.icp_header.icp_count = 2
-  icp_blob.icp_entries[0].next_entry = 1
-  if not icp_blob.is_valid():
-    return False
-  icp_blob_bytes = icp_blob.encode()
-  expected_blob_bytes = bytearray(b'\x41\x46\x54\x4c\x00\x00\x00\x01\x00\x00'
-                                  '\x00\x01\x00\x00\x00\x01\x00\x02\x00\x00\x00'
-                                  '\x1b\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00'
-                                  '\x00\xa0\x04\x00\x00\x00\x80\x01\x61\x66\x74'
-                                  '\x6c\x2d\x74\x65\x73\x74\x2d\x73\x65\x72\x76'
-                                  '\x65\x72\x2e\x67\x6f\x6f\x67\x6c\x65\x2e\x63'
-                                  '\x6f\x6d\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61\x61'
-                                  '\x61\x61\x61\x61\x61\x61\x61\x61\x62\x62\x62'
-                                  '\x62\x62\x62\x62\x62\x62\x62\x62\x62\x62\x62'
-                                  '\x62\x62\x62\x62\x62\x62\x62\x62\x62\x62\x62'
-                                  '\x62\x62\x62\x62\x62\x62\x62\x63\x63\x63\x63'
-                                  '\x63\x63\x63\x63\x63\x63\x63\x63\x63\x63\x63'
-                                  '\x63\x63\x63\x63\x63\x63\x63\x63\x63\x63\x63'
-                                  '\x63\x63\x63\x63\x63\x63\x64\x64\x64\x64\x64'
-                                  '\x64\x64\x64\x64\x64\x64\x64\x64\x64\x64\x64'
-                                  '\x64\x64\x64\x64\x64\x64\x64\x64\x64\x64\x64'
-                                  '\x64\x64\x64\x64\x64\x65\x65\x65\x65\x65\x65'
-                                  '\x65\x65\x65\x65\x65\x65\x65\x65\x65\x65\x65'
-                                  '\x65\x65\x65\x65\x65\x65\x65\x65\x65\x65\x65'
-                                  '\x65\x65\x65\x65\x00\x00\x00\x1a\x00\x00\x00'
-                                  '\x00\x00\x00\x00\x02\x00\x00\x00\xc0\x02\x00'
-                                  '\x00\x00\x40\x00\x61\x66\x74\x6c\x2d\x74\x65'
-                                  '\x73\x74\x2d\x73\x65\x72\x76\x65\x72\x2e\x67'
-                                  '\x6f\x6f\x67\x6c\x65\x2e\x63\x68\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66'
-                                  '\x66\x66\x67\x67\x67\x67\x67\x67\x67\x67\x67'
-                                  '\x67\x67\x67\x67\x67\x67\x67\x67\x67\x67\x67'
-                                  '\x67\x67\x67\x67\x67\x67\x67\x67\x67\x67\x67'
-                                  '\x67\x68\x68\x68\x68\x68\x68\x68\x68\x68\x68'
-                                  '\x68\x68\x68\x68\x68\x68\x68\x68\x68\x68\x68'
-                                  '\x68\x68\x68\x68\x68\x68\x68\x68\x68\x68\x68')
-  if icp_blob_bytes == expected_blob_bytes:
-    sys.stdout.write('ICP blob encode passed\n')
-  else:
-    sys.stdout.write('ICP blob encode failed\n')
-    return False
-  icp_blob = AvbIcpBlob(expected_blob_bytes)
-  if not icp_blob.is_valid():
-    sys.stdout.write('ICP blob constructor failed.\n')
-    return False
-  return True
-
-
-def test_icp_image():
-  """The main function that handles testing all AFTL related components.
-
-  Currently performs tests for validation of AFTL related structures.
-
-  Returns:
-    True if all tests pass, False otherwise.
-  """
-
-  # Header related tests.
-  default_icp = test_default_icp_header()
-  # 1 is SHA256/RSA4096
-  if not test_icp_header(1, 4):
-    return False
-  # Header related failure tests.
-  if test_icp_header(-12, 4):
-    return False
-  if test_icp_header(4, -34):
-    return False
-  if test_icp_header(10, 10):
-    return False
-  # ICP entry related tests.
-  if not test_default_icp_entry():
-    return False
-  test_url = "test"
-  test_sth = "sth"
-  test_proofs = "proofs"
-  if not test_icp_entry_blob(test_url, len(test_url), 2, test_sth, len(test_sth), 2, test_proofs, len(test_proofs), 0):
-    return False
-  if not test_icp_entry_blob(test_url, len(test_url), 2, test_sth, len(test_sth), 2, test_proofs, len(test_proofs), 1):
-    return False
-  # ICP entry related failure tests.
-  if test_icp_entry_blob(test_url, -2, 2, test_sth, len(test_sth), 2, test_proofs, len(test_proofs), 0):
-    return False
-  if test_icp_entry_blob(test_url, len(test_url), -1, test_sth, len(test_sth), 2, test_proofs, len(test_proofs), 1):
-    return False
-  if test_icp_entry_blob(test_url, len(test_url), 2, test_sth, -2, 2, test_proofs, len(test_proofs), 0):
-    return False
-  if test_icp_entry_blob(test_url, len(test_url) - 3, 2, test_sth, len(test_sth), 2, test_proofs, len(test_proofs), 0):
-    return False
-  if test_icp_entry_blob(test_url, len(test_url), 2, test_sth, len(test_sth) + 14, 2, test_proofs, len(test_proofs), 0):
-    return False
-  if test_icp_entry_blob(test_url, len(test_url), 2, test_sth, len(test_sth), 2, test_proofs, len(test_proofs) - 3, 0):
-    return False
-  # Tests for the full AFTL ICP structure.
-  if not test_generate_icp_images():
-    return False
-  sys.stdout.write('All AFTL ICP tests passed.\n')
-  return True
 
 
 class AvbVBMetaHeader(object):
@@ -3455,14 +3137,6 @@ class Avb(object):
       raise AvbError('No hashtree descriptor in given image')
 
     return self._get_cmdline_descriptors_for_hashtree_descriptor(ht)
-
-  def icp_test_suite(self):
-    """Implements a self-contained test suite for AFTL related code.
-
-    Returns:
-      True if all tests pass, False otherwise.
-    """
-    return test_icp_image()
 
   def make_vbmeta_image(self, output, chain_partitions, algorithm_name,
                         key_path, public_key_metadata_path, rollback_index,
@@ -4821,11 +4495,6 @@ class AvbTool(object):
                             required=True)
     sub_parser.set_defaults(func=self.extract_public_key)
 
-    sub_parser = subparsers.add_parser(
-        'icp_test_suite',
-        help='Test suite for ICP related functionality.')
-    sub_parser.set_defaults(func=self.icp_test_suite)
-
     sub_parser = subparsers.add_parser('make_vbmeta_image',
                                        help='Makes a vbmeta image.')
     sub_parser.add_argument('--output',
@@ -5216,10 +4885,6 @@ class AvbTool(object):
   def extract_public_key(self, args):
     """Implements the 'extract_public_key' sub-command."""
     self.avb.extract_public_key(args.key, args.output)
-
-  def icp_test_suite(self, _):
-    """Implements the 'icp_test_suite' sub-command."""
-    return self.avb.icp_test_suite()
 
   def make_vbmeta_image(self, args):
     """Implements the 'make_vbmeta_image' sub-command."""
