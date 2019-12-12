@@ -24,6 +24,8 @@
 #
 """Command-line tool for working with Android Verified Boot images."""
 
+from __future__ import print_function
+
 import argparse
 import binascii
 import bisect
@@ -106,7 +108,7 @@ ALGORITHMS = {
         hash_name='sha256',
         hash_num_bytes=32,
         signature_num_bytes=256,
-        public_key_num_bytes=8 + 2*2048/8,
+        public_key_num_bytes=8 + 2*2048//8,
         padding=[
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*202 + [0x00] + [
@@ -120,7 +122,7 @@ ALGORITHMS = {
         hash_name='sha256',
         hash_num_bytes=32,
         signature_num_bytes=512,
-        public_key_num_bytes=8 + 2*4096/8,
+        public_key_num_bytes=8 + 2*4096//8,
         padding=[
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*458 + [0x00] + [
@@ -134,7 +136,7 @@ ALGORITHMS = {
         hash_name='sha256',
         hash_num_bytes=32,
         signature_num_bytes=1024,
-        public_key_num_bytes=8 + 2*8192/8,
+        public_key_num_bytes=8 + 2*8192//8,
         padding=[
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*970 + [0x00] + [
@@ -148,7 +150,7 @@ ALGORITHMS = {
         hash_name='sha512',
         hash_num_bytes=64,
         signature_num_bytes=256,
-        public_key_num_bytes=8 + 2*2048/8,
+        public_key_num_bytes=8 + 2*2048//8,
         padding=[
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*170 + [0x00] + [
@@ -162,7 +164,7 @@ ALGORITHMS = {
         hash_name='sha512',
         hash_num_bytes=64,
         signature_num_bytes=512,
-        public_key_num_bytes=8 + 2*4096/8,
+        public_key_num_bytes=8 + 2*4096//8,
         padding=[
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*426 + [0x00] + [
@@ -176,7 +178,7 @@ ALGORITHMS = {
         hash_name='sha512',
         hash_num_bytes=64,
         signature_num_bytes=1024,
-        public_key_num_bytes=8 + 2*8192/8,
+        public_key_num_bytes=8 + 2*8192//8,
         padding=[
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*938 + [0x00] + [
@@ -286,9 +288,8 @@ def egcd(a, b):
   """
   if a == 0:
     return (b, 0, 1)
-  else:
-    g, y, x = egcd(b % a, a)
-    return (g, x - (b // a) * y, y)
+  g, y, x = egcd(b % a, a)
+  return (g, x - (b // a) * y, y)
 
 
 def modinv(a, m):
@@ -309,8 +310,7 @@ def modinv(a, m):
   gcd, x, _ = egcd(a, m)
   if gcd != 1:
     return None  # modular inverse does not exist
-  else:
-    return x % m
+  return x % m
 
 
 def parse_number(string):
@@ -413,10 +413,10 @@ def encode_rsa_key(key_path):
     raise AvbError('Only RSA keys with exponent 65537 are supported.')
   ret = bytearray()
   # Calculate n0inv = -1/n[0] (mod 2^32)
-  b = 2L**32
+  b = 2L**32  # pylint: disable=long-suffix
   n0inv = b - modinv(key.modulus, b)
   # Calculate rr = r^2 (mod N), where r = 2^(# of key bits)
-  r = 2L**key.modulus.bit_length()
+  r = 2L**key.modulus.bit_length()  # pylint: disable=long-suffix
   rrmodn = r * r % key.modulus
   ret.extend(struct.pack('!II', key.num_bits, n0inv))
   ret.extend(encode_long(key.num_bits, key.modulus))
@@ -568,7 +568,7 @@ def verify_vbmeta_signature(vbmeta_header, vbmeta_blob):
   padding_and_digest.extend(computed_digest)
 
   (num_bits,) = struct.unpack('!I', pubkey_blob[0:4])
-  modulus_blob = pubkey_blob[8:8 + num_bits/8]
+  modulus_blob = pubkey_blob[8:8 + num_bits//8]
   modulus = decode_long(modulus_blob)
   exponent = 65537
 
@@ -725,6 +725,9 @@ class ImageHandler(object):
       ValueError: If data in the file is invalid.
     """
     self.filename = image_filename
+    self._num_total_blocks = 0
+    self._num_total_chunks = 0
+    self._file_pos = 0
     self._read_header()
 
   def _read_header(self):
@@ -772,7 +775,7 @@ class ImageHandler(object):
     # image.
     offset = 0
     output_offset = 0
-    for _ in xrange(1, self._num_total_chunks + 1):
+    for _ in range(1, self._num_total_chunks + 1):
       chunk_offset = self._image.tell()
 
       header_bin = self._image.read(struct.calcsize(ImageChunk.FORMAT))
@@ -878,14 +881,14 @@ class ImageHandler(object):
       return
 
     self._num_total_chunks += 1
-    self._num_total_blocks += num_bytes / self.block_size
+    self._num_total_blocks += num_bytes // self.block_size
     self._update_chunks_and_blocks()
 
     self._image.seek(self._sparse_end, os.SEEK_SET)
     self._image.write(struct.pack(ImageChunk.FORMAT,
                                   ImageChunk.TYPE_DONT_CARE,
                                   0,  # Reserved
-                                  num_bytes / self.block_size,
+                                  num_bytes // self.block_size,
                                   struct.calcsize(ImageChunk.FORMAT)))
     self._read_header()
 
@@ -906,14 +909,14 @@ class ImageHandler(object):
       return
 
     self._num_total_chunks += 1
-    self._num_total_blocks += len(data) / self.block_size
+    self._num_total_blocks += len(data) // self.block_size
     self._update_chunks_and_blocks()
 
     self._image.seek(self._sparse_end, os.SEEK_SET)
     self._image.write(struct.pack(ImageChunk.FORMAT,
                                   ImageChunk.TYPE_RAW,
                                   0,  # Reserved
-                                  len(data) / self.block_size,
+                                  len(data) // self.block_size,
                                   len(data) +
                                   struct.calcsize(ImageChunk.FORMAT)))
     self._image.write(data)
@@ -934,19 +937,19 @@ class ImageHandler(object):
 
     if not self.is_sparse:
       self._image.seek(0, os.SEEK_END)
-      self._image.write(fill_data * (size/4))
+      self._image.write(fill_data * (size//4))
       self._read_header()
       return
 
     self._num_total_chunks += 1
-    self._num_total_blocks += size / self.block_size
+    self._num_total_blocks += size // self.block_size
     self._update_chunks_and_blocks()
 
     self._image.seek(self._sparse_end, os.SEEK_SET)
     self._image.write(struct.pack(ImageChunk.FORMAT,
                                   ImageChunk.TYPE_FILL,
                                   0,  # Reserved
-                                  size / self.block_size,
+                                  size // self.block_size,
                                   4 + struct.calcsize(ImageChunk.FORMAT)))
     self._image.write(fill_data)
     self._read_header()
@@ -1000,7 +1003,7 @@ class ImageHandler(object):
         self._image.seek(chunk.input_offset + chunk_pos_offset)
         data.extend(self._image.read(chunk_pos_to_go))
       elif chunk.chunk_type == ImageChunk.TYPE_FILL:
-        all_data = chunk.fill_data*(chunk_pos_to_go/len(chunk.fill_data) + 2)
+        all_data = chunk.fill_data*(chunk_pos_to_go // len(chunk.fill_data) + 2)
         offset_mod = chunk_pos_offset % len(chunk.fill_data)
         data.extend(all_data[offset_mod:(offset_mod + chunk_pos_to_go)])
       else:
@@ -1066,7 +1069,7 @@ class ImageHandler(object):
           assert chunk.chunk_type == ImageChunk.TYPE_DONT_CARE
           truncate_at = chunk.chunk_offset + struct.calcsize(ImageChunk.FORMAT)
           data_sz = 0
-        chunk_sz = num_to_keep/self.block_size
+        chunk_sz = num_to_keep // self.block_size
         total_sz = data_sz + struct.calcsize(ImageChunk.FORMAT)
         self._image.seek(chunk.chunk_offset)
         self._image.write(struct.pack(ImageChunk.FORMAT,
@@ -1083,7 +1086,7 @@ class ImageHandler(object):
       self._num_total_chunks = chunk_idx_for_update
       self._num_total_blocks = 0
       for i in range(0, chunk_idx_for_update):
-        self._num_total_blocks += self._chunks[i].output_size / self.block_size
+        self._num_total_blocks += self._chunks[i].output_size // self.block_size
       self._update_chunks_and_blocks()
       self._image.truncate(truncate_at)
 
@@ -1446,7 +1449,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
                                                 hash_level_offsets,
                                                 tree_size)
     # The root digest must match unless it is not embedded in the descriptor.
-    if len(self.root_digest) and root_digest != self.root_digest:
+    if self.root_digest and root_digest != self.root_digest:
       sys.stderr.write('hashtree of {} does not match descriptor\n'.
                        format(image_filename))
       return False
@@ -1455,17 +1458,17 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     hash_tree_ondisk = image.read(self.tree_size)
     is_zeroed = (self.tree_size == 0) or (hash_tree_ondisk[0:8] == 'ZeRoHaSH')
     if is_zeroed and accept_zeroed_hashtree:
-      print ('{}: skipping verification since hashtree is zeroed and '
-             '--accept_zeroed_hashtree was given'
-             .format(self.partition_name))
+      print('{}: skipping verification since hashtree is zeroed and '
+            '--accept_zeroed_hashtree was given'
+            .format(self.partition_name))
     else:
       if hash_tree != hash_tree_ondisk:
         sys.stderr.write('hashtree of {} contains invalid data\n'.
                          format(image_filename))
         return False
-      print ('{}: Successfully verified {} hashtree of {} for image of {} bytes'
-             .format(self.partition_name, self.hash_algorithm, image.filename,
-                     self.image_size))
+      print('{}: Successfully verified {} hashtree of {} for image of {} bytes'
+            .format(self.partition_name, self.hash_algorithm, image.filename,
+                    self.image_size))
     # TODO(zeuthen): we could also verify that the FEC stored in the image is
     # correct but this a) currently requires the 'fec' binary; and b) takes a
     # long time; and c) is not strictly needed for verification purposes as
@@ -1606,13 +1609,13 @@ class AvbHashDescriptor(AvbDescriptor):
     ha.update(data)
     digest = ha.digest()
     # The digest must match unless there is no digest in the descriptor.
-    if len(self.digest) and digest != self.digest:
+    if self.digest and digest != self.digest:
       sys.stderr.write('{} digest of {} does not match digest in descriptor\n'.
                        format(self.hash_algorithm, image_filename))
       return False
-    print ('{}: Successfully verified {} hash of {} for image of {} bytes'
-           .format(self.partition_name, self.hash_algorithm, image.filename,
-                   self.image_size))
+    print('{}: Successfully verified {} hash of {} for image of {} bytes'
+          .format(self.partition_name, self.hash_algorithm, image.filename,
+                  self.image_size))
     return True
 
 
@@ -1836,8 +1839,8 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
                        format(self.partition_name))
       return False
 
-    print ('{}: Successfully verified chain partition descriptor matches '
-           'expected data'.format(self.partition_name))
+    print('{}: Successfully verified chain partition descriptor matches '
+          'expected data'.format(self.partition_name))
 
     return True
 
@@ -2121,6 +2124,9 @@ class AvbIcpEntry(object):
     return True
 
 
+# TODO(jpm): Clean up linter warnings in this function after the AFTL changes
+# are in.
+# pylint: disable=unused-variable
 def validate_icp_blob(icp_blob):
   """Ensures that values in an ICP section are structurally sane.
 
@@ -2162,7 +2168,8 @@ def validate_icp_blob(icp_blob):
     icp_index += cur_icp_entry.log_url_size
     sth = icp_blob[icp_index:(icp_index+cur_icp_entry.signed_root_blob_size)]
     icp_index += cur_icp_entry.signed_root_blob_size
-    if cur_icp_entry.proof_size / cur_icp_entry.proof_hash_count != proof_hash_size:
+    if (cur_icp_entry.proof_size // cur_icp_entry.proof_hash_count
+        != proof_hash_size):
       sys.stderr.write('Bad proof size: {} in ICP entry {}'.format(
           cur_icp_entry.proof_size, i))
       return False
@@ -2194,9 +2201,8 @@ def test_default_icp_header():
   if icp_header.is_valid():
     sys.stdout.write('ICP header: validation passed\n')
     return True
-  else:
-    sys.stdout.write('ICP header: validation failed\n')
-    return False
+  sys.stdout.write('ICP header: validation failed\n')
+  return False
 
 
 def test_icp_header(algorithm, icp_count):
@@ -2216,9 +2222,8 @@ def test_icp_header(algorithm, icp_count):
   if icp_header.is_valid():
     sys.stdout.write('ICP header: validation passed\n')
     return True
-  else:
-    sys.stdout.write('ICP header: validation failed\n')
-    return False
+  sys.stdout.write('ICP header: validation failed\n')
+  return False
 
 
 def test_default_icp_entry():
@@ -2232,9 +2237,8 @@ def test_default_icp_entry():
   if icp_entry.is_valid():
     sys.stdout.write('ICP entry validation passed\n')
     return True
-  else:
-    sys.stdout.write('ICP entry validation failed\n')
-    return False
+  sys.stdout.write('ICP entry validation failed\n')
+  return False
 
 
 def test_icp_entry(log_url_size, leaf_index, signed_root_blob_size,
@@ -2255,9 +2259,8 @@ def test_icp_entry(log_url_size, leaf_index, signed_root_blob_size,
   if icp_entry.is_valid():
     sys.stdout.write('ICP entry validation passed\n')
     return True
-  else:
-    sys.stdout.write('ICP entry validation failed\n')
-    return False
+  sys.stdout.write('ICP entry validation failed\n')
+  return False
 
 
 def test_generate_icp_images():
@@ -2670,7 +2673,8 @@ class Avb(object):
         raise AvbError('Hash-tree and FEC data must be adjacent.')
       zero_fec_start_offset = ht_desc.fec_offset
       zero_fec_num_bytes = ht_desc.fec_size
-    zero_end_offset = zero_ht_start_offset + zero_ht_num_bytes + zero_fec_num_bytes
+    zero_end_offset = (zero_ht_start_offset + zero_ht_num_bytes
+                       + zero_fec_num_bytes)
     image.seek(zero_end_offset)
     data = image.read(image.image_size - zero_end_offset)
 
@@ -2861,12 +2865,12 @@ class Avb(object):
 
     key_blob = None
     if key_path:
-      print 'Verifying image {} using key at {}'.format(image_filename,
-                                                        key_path)
+      print('Verifying image {} using key at {}'.format(image_filename,
+                                                        key_path))
       key_blob = encode_rsa_key(key_path)
     else:
-      print 'Verifying image {} using embedded public key'.format(
-          image_filename)
+      print('Verifying image {} using embedded public key'.format(
+          image_filename))
 
     image = ImageHandler(image_filename)
     (footer, header, descriptors, _) = self._parse_image(image)
@@ -2895,11 +2899,11 @@ class Avb(object):
         raise AvbError('Embedded public key does not match given key.')
 
     if footer:
-      print ('vbmeta: Successfully verified footer and {} vbmeta struct in {}'
-             .format(alg_name, image.filename))
+      print('vbmeta: Successfully verified footer and {} vbmeta struct in {}'
+            .format(alg_name, image.filename))
     else:
-      print ('vbmeta: Successfully verified {} vbmeta struct in {}'
-             .format(alg_name, image.filename))
+      print('vbmeta: Successfully verified {} vbmeta struct in {}'
+            .format(alg_name, image.filename))
 
     for desc in descriptors:
       if (isinstance(desc, AvbChainPartitionDescriptor)
@@ -2908,19 +2912,18 @@ class Avb(object):
         # In this case we're processing a chain descriptor but don't have a
         # --expect_chain_partition ... however --follow_chain_partitions was
         # specified so we shouldn't error out in desc.verify().
-        print ('{}: Chained but ROLLBACK_SLOT (which is {}) '
-               'and KEY (which has sha1 {}) not specified'
-               .format(desc.partition_name, desc.rollback_index_location,
-                       hashlib.sha1(desc.public_key).hexdigest()))
-      else:
-        if not desc.verify(image_dir, image_ext, expected_chain_partitions_map,
+        print('{}: Chained but ROLLBACK_SLOT (which is {}) '
+              'and KEY (which has sha1 {}) not specified'
+              .format(desc.partition_name, desc.rollback_index_location,
+                      hashlib.sha1(desc.public_key).hexdigest()))
+      elif not desc.verify(image_dir, image_ext, expected_chain_partitions_map,
                            image, accept_zeroed_hashtree):
-          raise AvbError('Error verifying descriptor.')
+        raise AvbError('Error verifying descriptor.')
       # Honor --follow_chain_partitions - add '--' to make the output more
       # readable.
       if (isinstance(desc, AvbChainPartitionDescriptor)
           and follow_chain_partitions):
-        print '--'
+        print('--')
         chained_image_filename = os.path.join(image_dir,
                                               desc.partition_name + image_ext)
         self.verify_image(chained_image_filename, key_path, None, False,
@@ -2967,7 +2970,7 @@ class Avb(object):
         hasher.update(ch_vbmeta_blob)
 
     digest = hasher.digest()
-    output.write('{}\n'.format(digest.encode('hex')))
+    output.write('{}\n'.format(binascii.hexlify(digest)))
 
   def calculate_kernel_cmdline(self, image_filename, hashtree_disabled, output):
     """Implements the 'calculate_kernel_cmdline' command.
@@ -3100,14 +3103,14 @@ class Avb(object):
 
     c = 'dm="1 vroot none ro 1,'
     c += '0'  # start
-    c += ' {}'.format((ht.image_size / 512))  # size (# sectors)
+    c += ' {}'.format((ht.image_size // 512))  # size (# sectors)
     c += ' verity {}'.format(ht.dm_verity_version)  # type and version
     c += ' PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'  # data_dev
     c += ' PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'  # hash_dev
     c += ' {}'.format(ht.data_block_size)  # data_block
     c += ' {}'.format(ht.hash_block_size)  # hash_block
-    c += ' {}'.format(ht.image_size / ht.data_block_size)  # #blocks
-    c += ' {}'.format(ht.image_size / ht.data_block_size)  # hash_offset
+    c += ' {}'.format(ht.image_size // ht.data_block_size)  # #blocks
+    c += ' {}'.format(ht.image_size // ht.data_block_size)  # hash_offset
     c += ' {}'.format(ht.hash_algorithm)  # hash_alg
     c += ' {}'.format(str(ht.root_digest).encode('hex'))  # root_digest
     c += ' {}'.format(str(ht.salt).encode('hex'))  # salt
@@ -3120,8 +3123,8 @@ class Avb(object):
       # Note that fec_blocks is the size that FEC covers, *not* the
       # size of the FEC data. Since we use FEC for everything up until
       # the FEC data, it's the same as the offset.
-      c += ' fec_blocks {}'.format(ht.fec_offset/ht.data_block_size)
-      c += ' fec_start {}'.format(ht.fec_offset/ht.data_block_size)
+      c += ' fec_blocks {}'.format(ht.fec_offset // ht.data_block_size)
+      c += ' fec_start {}'.format(ht.fec_offset // ht.data_block_size)
     else:
       c += ' 2'  # number of optional args
       c += ' $(ANDROID_VERITY_MODE)'
@@ -3227,10 +3230,10 @@ class Avb(object):
           (_, image_header, _, _) = self._parse_image(ImageHandler(image.name))
           tmp_header.bump_required_libavb_version_minor(
               image_header.required_libavb_version_minor)
-        print '1.{}'.format(tmp_header.required_libavb_version_minor)
+        print('1.{}'.format(tmp_header.required_libavb_version_minor))
       else:
         # Descriptors aside, all vbmeta features are supported in 1.0.
-        print '1.0'
+        print('1.0')
       return
 
     if not output:
@@ -3354,6 +3357,7 @@ class Avb(object):
         idx = prop.find(':')
         if idx == -1:
           raise AvbError('Malformed property "{}".'.format(prop))
+        # pylint: disable=redefined-variable-type
         desc = AvbPropertyDescriptor()
         desc.key = prop[0:idx]
         desc.value = prop[(idx + 1):]
@@ -3434,6 +3438,7 @@ class Avb(object):
             algorithm_name))
 
     # Override release string, if requested.
+    # pylint: disable=unicode-builtin
     if isinstance(release_string, (str, unicode)):
       h.release_string = release_string
 
@@ -3651,7 +3656,7 @@ class Avb(object):
 
     # If we're asked to calculate minimum required libavb version, we're done.
     if print_required_libavb_version:
-      print '1.{}'.format(required_libavb_version_minor)
+      print('1.{}'.format(required_libavb_version_minor))
       return
 
     # First, calculate the maximum image size such that an image
@@ -3666,7 +3671,7 @@ class Avb(object):
 
     # If we're asked to only calculate the maximum image size, we're done.
     if calc_max_image_size:
-      print '{}'.format(max_image_size)
+      print('{}'.format(max_image_size))
       return
 
     image = ImageHandler(image_filename)
@@ -3704,16 +3709,15 @@ class Avb(object):
 
       digest_size = len(hashlib.new(name=hash_algorithm).digest())
       if salt:
-        salt = salt.decode('hex')
+        salt = binascii.unhexlify(salt)
+      elif salt is None and not use_persistent_digest:
+        # If salt is not explicitly specified, choose a hash that's the same
+        # size as the hash size. Don't populate a random salt if this
+        # descriptor is being created to use a persistent digest on device.
+        hash_size = digest_size
+        salt = open('/dev/urandom').read(hash_size)
       else:
-        if salt is None and not use_persistent_digest:
-          # If salt is not explicitly specified, choose a hash that's the same
-          # size as the hash size. Don't populate a random salt if this
-          # descriptor is being created to use a persistent digest on device.
-          hash_size = digest_size
-          salt = open('/dev/urandom').read(hash_size)
-        else:
-          salt = ''
+        salt = ''
 
       hasher = hashlib.new(name=hash_algorithm, string=salt)
       # TODO(zeuthen): might want to read this in chunks to avoid
@@ -3862,7 +3866,7 @@ class Avb(object):
 
     # If we're asked to calculate minimum required libavb version, we're done.
     if print_required_libavb_version:
-      print '1.{}'.format(required_libavb_version_minor)
+      print('1.{}'.format(required_libavb_version_minor))
       return
 
     digest_size = len(hashlib.new(name=hash_algorithm).digest())
@@ -3889,7 +3893,7 @@ class Avb(object):
 
     # If we're asked to only calculate the maximum image size, we're done.
     if calc_max_image_size:
-      print '{}'.format(max_image_size)
+      print('{}'.format(max_image_size))
       return
 
     image = ImageHandler(image_filename)
@@ -3899,11 +3903,10 @@ class Avb(object):
         raise AvbError('Partition size of {} is not a multiple of the image '
                        'block size {}.'.format(partition_size,
                                                image.block_size))
-    else:
-      if image.image_size % image.block_size != 0:
-        raise AvbError('File size of {} is not a multiple of the image '
-                       'block size {}.'.format(image.image_size,
-                                               image.block_size))
+    elif image.image_size % image.block_size != 0:
+      raise AvbError('File size of {} is not a multiple of the image '
+                     'block size {}.'.format(image.image_size,
+                                             image.block_size))
 
     # If there's already a footer, truncate the image to its original
     # size. This way 'avbtool add_hashtree_footer' is idempotent
@@ -3938,16 +3941,15 @@ class Avb(object):
                                               partition_size))
 
       if salt:
-        salt = salt.decode('hex')
+        salt = binascii.unhexlify(salt)
+      elif salt is None and not use_persistent_root_digest:
+        # If salt is not explicitly specified, choose a hash that's the same
+        # size as the hash size. Don't populate a random salt if this
+        # descriptor is being created to use a persistent digest on device.
+        hash_size = digest_size
+        salt = open('/dev/urandom').read(hash_size)
       else:
-        if salt is None and not use_persistent_root_digest:
-          # If salt is not explicitly specified, choose a hash that's the same
-          # size as the hash size. Don't populate a random salt if this
-          # descriptor is being created to use a persistent digest on device.
-          hash_size = digest_size
-          salt = open('/dev/urandom').read(hash_size)
-        else:
-          salt = ''
+        salt = ''
 
       # Hashes are stored upside down so we need to calculate hash
       # offsets in advance.
@@ -4111,7 +4113,7 @@ class Avb(object):
       padding_and_hash = bytearray()
       algorithm_name = 'SHA512_RSA4096'
       alg = ALGORITHMS[algorithm_name]
-      hasher = hashlib.sha512()
+      hasher = hashlib.sha512()  # pylint: disable=redefined-variable-type
       padding_and_hash.extend(alg.padding)
       hasher.update(signed_data)
       padding_and_hash.extend(hasher.digest())
@@ -4256,7 +4258,7 @@ def calc_hash_level_offsets(image_size, block_size, digest_size):
   num_levels = 0
   size = image_size
   while size > block_size:
-    num_blocks = (size + block_size - 1) / block_size
+    num_blocks = (size + block_size - 1) // block_size
     level_size = round_to_multiple(num_blocks * digest_size, block_size)
 
     level_sizes.append(level_size)
@@ -4923,12 +4925,12 @@ class AvbTool(object):
     try:
       args.func(args)
     except AvbError as e:
-      sys.stderr.write('{}: {}\n'.format(argv[0], e.message))
+      sys.stderr.write('{}: {}\n'.format(argv[0], str(e)))
       sys.exit(1)
 
   def version(self, _):
     """Implements the 'version' sub-command."""
-    print get_release_string()
+    print(get_release_string())
 
   def extract_public_key(self, args):
     """Implements the 'extract_public_key' sub-command."""
