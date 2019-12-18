@@ -23,18 +23,12 @@ follows:
    For trillian.proto, contains the DigitallySigned message used by Tree and
    SignedEntryTimestamp. For aftl.proto, contains the DigitallySigned message
    used by SignedFirmwareInfo.
-* trillian_log_api.proto XXX
-   From https://github.com/google/trillian
-   Dependency of aftl.proto
-   Contains message definitions for Proof
 * trillian.proto
    From https://github.com/google/trillian
-   Dependency of trillian_log_api.proto and aftl.proto
+   Dependency of aftl.proto
    For aftl.proto, contains message definitions for SignedLogRoot.
-   For trillian_log_api.proto, contains message definitions for SignedLogRoot.
 * aftl_google/api/annotations.proto
    From https://github.com/googleapis/googleapis
-   Dependency of trillian_log_api.proto
    Used to get access to google.api.http options.
 * aftl_google/api/http.proto
    From https://github.com/googleapis/googleapis
@@ -42,4 +36,3 @@ follows:
    Contains the HttpRule message that extends MethodOptions.
 * aftl_google/rpc/status.proto
    From https://github.com/googleapis/googleapis
-   Dependency of trillian_log_api.proto
