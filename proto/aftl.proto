@@ -26,7 +26,6 @@ package aftl;
 option go_package = "proto";
 
 import "trillian.proto";
-import "trillian_log_api.proto";
 import "crypto/sigpb/sigpb.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -88,6 +87,7 @@ message SignedFirmwareImageInfo {
   FirmwareImageInfo image_info = 1;
   sigpb.DigitallySigned image_info_signature = 2;
 }
+
 
 message InclusionProof {
   trillian.Proof proof = 1;
