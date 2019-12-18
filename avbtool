@@ -2068,21 +2068,20 @@ class AvbIcpHeader(object):
       return False
     return True
 
+
 def check_signature(log_root, log_root_sig,
                     transparency_log_pub_key):
   """Validates the signature provided by the transparency log.
 
   Arguments:
-    log_root_hash: The root hash for the transparency log's Merkle tree.
-    log_root_sig: The signature of the root hash for the transparency log.
+    log_root: The transparency log_root data structure.
+    log_root_sig: The signature of the transparency log_root data structure.
     transparency_log_pub_key: The trusted public key of the transparency log.
-    algorithm: The algorithm ID given by the AvbIcpHeader to determine hash
-       and signature size.
+
   Returns:
     True if the signature check passes, otherwise False.
   """
 
-  # TODO(danielaustin): Figure out why validation is not working.
   logsig_tmp = tempfile.NamedTemporaryFile()
   logsig_tmp.write(log_root_sig)
   logsig_tmp.flush()
@@ -2104,6 +2103,7 @@ def check_signature(log_root, log_root_sig,
   sys.stderr.write('openssl status {}'.format(openssl_err))
   return False
 
+
 class AvbIcpSignedRootBlob(object):
   """A class for the components required to validate the incusion proof.
 
@@ -2113,16 +2113,17 @@ class AvbIcpSignedRootBlob(object):
   Attributes:
     leaf_hash: The hash of the leaf corresponding with this log entry.
     tree_size: The size of the Merkle tree.
+    log_root: The transparency log_root data structure.
     root_hash: The calculated root hash of the Merkle tree.
     log_root_sig: The signed root hash. Used to verify the ICP.
   """
-  #TODO(danielaustin): Match hash and signature size to algorithm value.
+  # TODO(danielaustin): Match hash and signature size to algorithm value.
   SIZE = 645
-  FORMAT_STRING = ('!32s' # The leaf hash corresponding to this vbmeta.
-                   'Q' # The Merkle tree size
-                   '61s' # The log_root structure that is signed
-                   '32s' # The Merkle tree root hash.
-                   '512s') # The log_root signed with the transparency log key.
+  FORMAT_STRING = ('!32s'   # The leaf hash corresponding to this vbmeta.
+                   'Q'      # The Merkle tree size
+                   '61s'    # The log_root structure that is signed
+                   '32s'    # The Merkle tree root hash.
+                   '512s')  # The log_root signed with the transparency log key.
 
   def __init__(self, data=None):
     """Initializes a new signed_root_blob structure.
@@ -2167,10 +2168,10 @@ class AvbIcpSignedRootBlob(object):
     # https://github.com/google/trillian/blob/master/trillian.proto#L255
 
     # TODO(danielaustin): Make this into a class.
-    partial_log_format_string = ('!H' # Version
-                                 'Q' # tree_size
-                                 'B' # hash_size, verify this is 32 for now
-                                 '32s') # The root_hash
+    partial_log_format_string = ('!H'    # Version
+                                 'Q'     # tree_size
+                                 'B'     # hash_size, verify this is 32 for now
+                                 '32s')  # The root_hash
 
     (log_root_version, self.tree_size, root_hash_size,
      self.root_hash) = struct.unpack(partial_log_format_string,
@@ -2178,7 +2179,7 @@ class AvbIcpSignedRootBlob(object):
     if log_root_version != 1:
       raise AvbError('Unsupported log root version: {}'.format(
           log_root_version))
-    if not len(self.root_hash) == root_hash_size:
+    if len(self.root_hash) != root_hash_size:
       raise AvbError('Unsupported hash size.')
 
   def encode(self):
@@ -2199,34 +2200,36 @@ class AvbIcpSignedRootBlob(object):
                        str(self.log_root),
                        str(self.root_hash),
                        str(self.log_root_sig))
+
   def is_valid(self):
     """Ensures that values in the AvbIcpSignedRootBlob are sane.
 
     Returns:
       True if the values in the AvbIcpSignedRootBlob are sane, False otherwise.
     """
-    #TODO(danielaustin): match these up with algorithm instead of defaults.
+    # TODO(danielaustin): match these up with algorithm instead of defaults.
     # All structures being of size 0 is valid
-    if not self.leaf_hash and self.tree_size == 0 and \
-        not self.root_hash and not self.log_root_sig:
+    if (not self.leaf_hash and self.tree_size == 0 and
+        not self.root_hash and not self.log_root_sig):
       return True
-    if not len(self.leaf_hash) == 32:
-      sys.stderr.write("AvbIcpSignedRootBlob: Bad leaf_hash size {}".format(
+    if len(self.leaf_hash) != 32:
+      sys.stderr.write('AvbIcpSignedRootBlob: Bad leaf_hash size {}'.format(
           len(self.leaf_hash)))
       return False
     if self.tree_size < 0:
-      sys.stderr.write("AvbIcpSignedRootBlob: Bad tree_size value {}".format(
+      sys.stderr.write('AvbIcpSignedRootBlob: Bad tree_size value {}'.format(
           self.tree_size))
       return False
-    if not len(self.root_hash) == 32:
-      sys.stderr.write("AvbIcpSignedRootBlob: Bad root_hash size {}".format(
+    if len(self.root_hash) != 32:
+      sys.stderr.write('AvbIcpSignedRootBlob: Bad root_hash size {}'.format(
           len(self.root_hash)))
       return False
-    if not len(self.log_root_sig) == 512:
-      sys.stderr.write("AvbIcpSignedRootBlob: Bad log_root_sig size {}".format(
+    if len(self.log_root_sig) != 512:
+      sys.stderr.write('AvbIcpSignedRootBlob: Bad log_root_sig size {}'.format(
           len(self.log_root_sig)))
       return False
     return True
+
 
 class AvbIcpEntry(object):
   """A class for the transparency log inclusion proof entries.
@@ -2448,7 +2451,7 @@ class AvbIcpEntry(object):
       return False
 
     if (self.signed_root_blob_size != 0) and (
-        not self.signed_root_blob_size == self.signed_root_blob.SIZE):
+        self.signed_root_blob_size != self.signed_root_blob.SIZE):
       sys.stderr.write('ICP entry: invalid signed root blob size: '
                        '{}, should be {}\n'.format(
                            self.signed_root_blob_size,
@@ -3637,7 +3640,6 @@ class Avb(object):
       padding_needed = padded_size - len(vbmeta_blob)
       output.write('\0' * padding_needed)
 
-
   def make_icp_from_vbmeta(self, vbmeta_image_path, output, algorithm,
                            signing_helper, signing_helper_with_files,
                            version_incremental, transparency_log_servers,
@@ -3758,7 +3760,7 @@ class Avb(object):
       return False
 
     # Write the original vbmeta blob, followed by the AvbIcpBlob.
-    if footer: # Checks if it is a chained partition.
+    if footer:  # Checks if it is a chained partition.
       # TODO(danielaustin): Add support for chained partitions like system.img
       # using similar functionality as implemented in append_vbmeta_image().
       sys.stderr.write('Image has a footer and ICP for this format is not '
