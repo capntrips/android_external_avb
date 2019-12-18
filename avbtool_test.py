@@ -34,10 +34,13 @@ import unittest
 
 import avbtool
 
+
 class AvbtoolTest(unittest.TestCase):
 
   def setUp(self):
     """Sets up the test bed for the unit tests."""
+    super(AvbtoolTest, self).setUp()
+
     self.test_url = 'test'
     self.test_sth = avbtool.AvbIcpSignedRootBlob()
     self.test_sth.leaf_hash = bytearray('leaf' * 8)
@@ -57,6 +60,8 @@ class AvbtoolTest(unittest.TestCase):
     """Tears down the test bed for the unit tests."""
     # Reconnects stderr back to the normal stderr; see setUp() for details.
     sys.stderr = self.stderr
+
+    super(AvbtoolTest, self).tearDown()
 
   def _validate_icp_header(self, algorithm, icp_count):
     """Validate an ICP header structure and attempt to validate it.
@@ -300,7 +305,8 @@ class AvbtoolTest(unittest.TestCase):
     sth.leaf_hash = bytearray('a' * 32)
     sth.tree_size = 2
     sth.root_hash = bytearray('f' * 32)
-    sth.log_root_sig = 'g' * 512 #bytearray('g' * 512)
+    sth.log_root_sig = 'g' * 512  # bytearray('g' * 512)
+
     # Fill each structure with an easily observable pattern for easy validation.
     proof_hashes = []
     proof_hashes.append(bytearray('b' * 32))
@@ -352,7 +358,6 @@ class AvbtoolTest(unittest.TestCase):
     # Tests ICP entry decoding.
     icp_entry = avbtool.AvbIcpEntry(expected_entry_bytes)
     self.assertTrue(icp_entry.is_valid())
-
 
     # Tests ICP blob with one entry.
     icp_blob = avbtool.AvbIcpBlob()
@@ -453,6 +458,7 @@ class AvbtoolTest(unittest.TestCase):
 
   def test_merkle_root_hash(self):
     """Tests validation of inclusion proof and the merkle tree calculations.
+
     The test vectors have been taken from the Trillian tests:
     https://github.com/google/trillian/blob/v1.3.3/merkle/log_verifier_test.go
     """
