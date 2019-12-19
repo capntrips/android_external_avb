@@ -2068,6 +2068,21 @@ class AvbIcpHeader(object):
       return False
     return True
 
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    o.write('    Major version:      {}\n'.format(
+        self.required_icp_version_major))
+    o.write('    Minor version:      {}\n'.format(
+        self.required_icp_version_minor))
+    o.write('    Algorithm:          {}\n'.format(
+        lookup_algorithm_by_type(self.algorithm)[0]))
+    o.write('    ICP entries count:  {}\n'.format(
+        self.icp_count))
+
 
 def check_signature(log_root, log_root_sig,
                     transparency_log_pub_key):
@@ -2229,6 +2244,21 @@ class AvbIcpSignedRootBlob(object):
           len(self.log_root_sig)))
       return False
     return True
+
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    o.write('      Leaf hash:        {}\n'.format(
+        binascii.hexlify(self.leaf_hash)))
+    o.write('      Tree size:        {}\n'.format(
+        self.tree_size))
+    o.write('      Log root:         {}\n'.format(
+        binascii.hexlify(self.log_root)))
+    o.write('      Root hash:        {}\n'.format(
+        binascii.hexlify(self.root_hash)))
 
 
 class AvbIcpEntry(object):
@@ -2481,6 +2511,21 @@ class AvbIcpEntry(object):
           self.next_entry))
       return False
     return True
+
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    o.write('    Transparency Log:   {}\n'.format(self.log_url))
+    o.write('    Leaf index:         {}\n'.format(self.leaf_index))
+    o.write('    Next entry:         {}\n'.format(self.next_entry))
+    o.write('    ICP hashes:         ')
+    for i, proof_hash in enumerate(self.proofs):
+      if i != 0:
+        o.write(' ' * 24)
+      o.write('{}\n'.format(binascii.hexlify(proof_hash)))
 
 
 class AvbIcpBlob(object):
@@ -3151,6 +3196,42 @@ class Avb(object):
       num_printed += 1
     if num_printed == 0:
       o.write('    (none)\n')
+
+  def info_image_icp(self, image_filename, output):
+    """Implements the 'info_image_icp' command.
+
+    Arguments:
+      image_filename: Image file to get information from.
+      output: Output file to write human-readable information to (file object).
+    """
+    image = ImageHandler(image_filename)
+    o = output
+    (footer, header, _, _) = self._parse_image(image)
+
+    offset = 0
+    if footer:
+      offset = footer.vbmeta_offset
+    image.seek(offset +
+               header.SIZE +
+               header.authentication_data_block_size +
+               header.auxiliary_data_block_size)
+
+    # TODO(jpm): Fix up AvbIcp* records so the length of data to be read
+    # can be determined more easily.
+    icp_bytes = image.read(100000)
+    if not icp_bytes or len(icp_bytes) < 4 or icp_bytes[0:4] != AvbIcpHeader.MAGIC:
+      sys.stderr.write('Image does not contain AFTL inclusion proofs.\n')
+      return
+
+    icp_blob = AvbIcpBlob(icp_bytes)
+    o.write('Android Firmware Transparency Descriptor:\n')
+    o.write('  Header:\n')
+    icp_blob.icp_header.print_desc(o)
+    for i, icp_entry in enumerate(icp_blob.icp_entries):
+      o.write('  Entry #{}:\n'.format(i + 1))
+      icp_entry.print_desc(o)
+      o.write('    Signed Root Blob:\n')
+      icp_entry.signed_root_blob.print_desc(o)
 
   def verify_image(self, image_filename, key_path, expected_chain_partitions,
                    follow_chain_partitions, accept_zeroed_hashtree):
@@ -5290,6 +5371,19 @@ class AvbTool(object):
     sub_parser.set_defaults(func=self.info_image)
 
     sub_parser = subparsers.add_parser(
+        'info_image_icp',
+        help='Show information about AFTL ICPs in vbmeta or footer.')
+    sub_parser.add_argument('--image',
+                            help='Image to show information about',
+                            type=argparse.FileType('rb'),
+                            required=True)
+    sub_parser.add_argument('--output',
+                            help='Write info to file',
+                            type=argparse.FileType('wt'),
+                            default=sys.stdout)
+    sub_parser.set_defaults(func=self.info_image_icp)
+
+    sub_parser = subparsers.add_parser(
         'verify_image',
         help='Verify an image.')
     sub_parser.add_argument('--image',
@@ -5609,6 +5703,10 @@ class AvbTool(object):
   def info_image(self, args):
     """Implements the 'info_image' sub-command."""
     self.avb.info_image(args.image.name, args.output)
+
+  def info_image_icp(self, args):
+    """Implements the 'info_image_icp' sub-command."""
+    self.avb.info_image_icp(args.image.name, args.output)
 
   def verify_image(self, args):
     """Implements the 'verify_image' sub-command."""
