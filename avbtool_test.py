@@ -34,20 +34,11 @@ import unittest
 
 import avbtool
 
-
-class AvbtoolTest(unittest.TestCase):
+class AvbtoolTestCase(unittest.TestCase):
 
   def setUp(self):
     """Sets up the test bed for the unit tests."""
-    super(AvbtoolTest, self).setUp()
-
-    self.test_url = 'test'
-    self.test_sth = avbtool.AvbIcpSignedRootBlob()
-    self.test_sth.leaf_hash = bytearray('leaf' * 8)
-    self.test_sth.tree_size = 2
-    self.test_sth.root_hash = bytearray('root' * 8)
-    self.test_sth.log_root_sig = bytearray('root_sig' * 64)
-    self.test_proofs = 'proofs'
+    super(AvbtoolTestCase, self).setUp()
 
     # Redirects the stderr to /dev/null when running the unittests. The reason
     # is that soong interprets any output on stderr as an error and marks the
@@ -61,7 +52,22 @@ class AvbtoolTest(unittest.TestCase):
     # Reconnects stderr back to the normal stderr; see setUp() for details.
     sys.stderr = self.stderr
 
-    super(AvbtoolTest, self).tearDown()
+    super(AvbtoolTestCase, self).setUp()
+
+
+class AvbtoolTest(AvbtoolTestCase):
+
+  def setUp(self):
+    """Sets up the test bed for the unit tests."""
+    super(AvbtoolTest, self).setUp()
+
+    self.test_url = 'test'
+    self.test_sth = avbtool.AvbIcpSignedRootBlob()
+    self.test_sth.leaf_hash = bytearray('leaf' * 8)
+    self.test_sth.tree_size = 2
+    self.test_sth.root_hash = bytearray('root' * 8)
+    self.test_sth.log_root_sig = bytearray('root_sig' * 64)
+    self.test_proofs = 'proofs'
 
   def _validate_icp_header(self, algorithm, icp_count):
     """Validate an ICP header structure and attempt to validate it.
@@ -538,6 +544,54 @@ class AvbtoolTest(unittest.TestCase):
       leaf_hash = avbtool.rfc6962_hash_leaf(leaves[leaf_id])
       root_hash = avbtool.root_from_icp(leaf_id, icp[1], icp[2], leaf_hash)
       self.assertEqual(root_hash, roots[icp[1] -1])
+
+
+class TrillianLogRootDescriptorTest(AvbtoolTestCase):
+
+  def setUp(self):
+    """Sets up the test bed for the unit tests."""
+    super(TrillianLogRootDescriptorTest, self).setUp()
+    base_log_root = (
+        '0001'                              # version
+        '00000000000002e5'                  # tree_size
+        '20'                                # root_hash_size
+        '2d614759ad408a111a3351c0cb33c099'  # root_hash
+        '422c30a5c5104788a343332bde2b387b'
+        '15e1c97e3b4bd239'                  # timestamp
+        '00000000000002e4'                  # revision
+    )
+    self.test_log_root_without_metadata = binascii.unhexlify(
+        base_log_root + '0000')
+    self.test_log_root_with_metadata = binascii.unhexlify(
+        base_log_root + '00023132')
+
+  def test_valid_empty_descriptor(self):
+    """Tests behavior of instance creation without data."""
+    d = avbtool.TrillianLogRootDescriptor()
+    self.assertTrue(d.is_valid())
+
+  def test_valid_parsed_descriptor_without_metadata(self):
+    """Tests parsing of a Trillian log_root structure."""
+    d = avbtool.TrillianLogRootDescriptor(self.test_log_root_without_metadata)
+    self.assertTrue(d.is_valid())
+    self.assertEqual(d.version, 1)
+    self.assertEqual(d.tree_size, 741)
+    self.assertEqual(d.root_hash_size, 32)
+    self.assertEqual(binascii.hexlify(d.root_hash),
+                     '2d614759ad408a111a3351c0cb33c099'
+                     '422c30a5c5104788a343332bde2b387b')
+    self.assertEqual(d.timestamp, 1576762888554271289)
+    self.assertEqual(d.revision, 740)
+    self.assertEqual(d.metadata_size, 0)
+    self.assertEqual(d.metadata, bytearray())
+
+  def test_valid_parsed_descriptor_with_metadata(self):
+    """Tests parsing of a Trillian log_root structure with metadata field."""
+    d = avbtool.TrillianLogRootDescriptor(self.test_log_root_with_metadata)
+    self.assertTrue(d.is_valid())
+    self.assertEqual(d.metadata_size, 2)
+    self.assertEqual(d.metadata, bytearray('12'))
+
 
 if __name__ == '__main__':
   unittest.main(verbosity=2)
