@@ -2178,24 +2178,13 @@ class AvbIcpSignedRootBlob(object):
     self.leaf_hash = rfc6962_hash_leaf(afi_response.vbmeta_leaf)
     self.log_root = afi_response.vbmeta_proof.sth.log_root
     self.log_root_sig = str(afi_response.vbmeta_proof.sth.log_root_signature)
-    # Partial format string to extract the tree_size and root_hash from
-    # the log_root. THis structure is defined:
-    # https://github.com/google/trillian/blob/master/trillian.proto#L255
 
-    # TODO(danielaustin): Make this into a class.
-    partial_log_format_string = ('!H'    # Version
-                                 'Q'     # tree_size
-                                 'B'     # hash_size, verify this is 32 for now
-                                 '32s')  # The root_hash
-
-    (log_root_version, self.tree_size, root_hash_size,
-     self.root_hash) = struct.unpack(partial_log_format_string,
-                                     self.log_root[0:43])
-    if log_root_version != 1:
-      raise AvbError('Unsupported log root version: {}'.format(
-          log_root_version))
-    if len(self.root_hash) != root_hash_size:
-      raise AvbError('Unsupported hash size.')
+    # Extracts relevant values from log_root.
+    log_root_desc = TrillianLogRootDescriptor(self.log_root)
+    if not log_root_desc.is_valid():
+      raise AvbError('Invalid TrillianLogRootDescriptor.')
+    self.tree_size = log_root_desc.tree_size
+    self.root_hash = log_root_desc.root_hash
 
   def encode(self):
     """Serializes the AvbSignedRootBlob structure (584) to a bytearray.
@@ -2255,8 +2244,9 @@ class AvbIcpSignedRootBlob(object):
         binascii.hexlify(self.leaf_hash)))
     o.write('      Tree size:        {}\n'.format(
         self.tree_size))
-    o.write('      Log root:         {}\n'.format(
-        binascii.hexlify(self.log_root)))
+    o.write('      Log root:\n')
+    log_root_desc = TrillianLogRootDescriptor(self.log_root)
+    log_root_desc.print_desc(o)
     o.write('      Root hash:        {}\n'.format(
         binascii.hexlify(self.root_hash)))
 
@@ -2526,6 +2516,135 @@ class AvbIcpEntry(object):
       if i != 0:
         o.write(' ' * 24)
       o.write('{}\n'.format(binascii.hexlify(proof_hash)))
+
+
+class TrillianLogRootDescriptor(object):
+  """A class representing the Trillian log_root descriptor.
+
+  Taken from Trillian definitions:
+  https://github.com/google/trillian/blob/master/trillian.proto#L255
+
+  Attributes:
+    version: The version number of the descriptor. Currently only version=1 is
+        supported.
+    tree_size: The size of the tree.
+    root_hash_size: The size of the root hash in bytes. Valid values are between
+        0 and 128.
+    root_hash: The root hash as bytearray().
+    timestamp: The timestamp in nanoseconds.
+    revision: The revision number as long.
+    metadata_size: The size of the metadata in bytes. Valid values are between
+        0 and 65535.
+    metadata: The metadata as bytearray().
+  """
+  FORMAT_STRING_PART_1 = ('!H'  # version
+                          'Q'   # tree_size
+                          'B'   # root_hash_size
+                         )
+
+  FORMAT_STRING_PART_2 = ('!Q'  # timestamp
+                          'Q'   # revision
+                          'H'   # metadata_size
+                         )
+
+  def __init__(self, data=None):
+    """Initializes a new TrillianLogRoot descriptor."""
+    if data:
+      # Parses first part of the log_root descriptor.
+      data_length = struct.calcsize(self.FORMAT_STRING_PART_1)
+      (self.version, self.tree_size, self.root_hash_size) = struct.unpack(
+          self.FORMAT_STRING_PART_1, data[0:data_length])
+      data = data[data_length:]
+
+      # Parses the root_hash bytes if the size indicates existence.
+      if self.root_hash_size > 0:
+        self.root_hash = data[0:self.root_hash_size]
+        data = data[self.root_hash_size:]
+      else:
+        self.root_hash = bytearray()
+
+      # Parses second part of the log_root descriptor.
+      data_length = struct.calcsize(self.FORMAT_STRING_PART_2)
+      (self.timestamp, self.revision, self.metadata_size) = struct.unpack(
+          self.FORMAT_STRING_PART_2, data[0:data_length])
+      data = data[data_length:]
+
+      # Parses the metadata if the size indicates existence.
+      if self.metadata_size > 0:
+        self.metadata = data[0:self.metadata_size]
+      else:
+        self.metadata = bytearray()
+    else:
+      self.version = 1
+      self.tree_size = 0
+      self.root_hash_size = 0
+      self.root_hash = bytearray()
+      self.timestamp = 0
+      self.revision = 0
+      self.metadata_size = 0
+      self.metadata = bytearray()
+
+    if not self.is_valid():
+      raise AvbError('Invalid structure for TrillianLogRootDescriptor.')
+
+  def is_valid(self):
+    """Ensures that values in the descritor are sane.
+
+    Returns:
+      True if the values are sane; otherwise False.
+    """
+    cls = self.__class__.__name__
+    if self.version != 1:
+      sys.stderr.write('{}: Bad version value {}.'.format(cls, self.version))
+      return False
+    if self.tree_size < 0:
+      sys.stderr.write('{}: Bad tree_size value {}.'.format(cls,
+                                                            self.tree_size))
+      return False
+    if self.root_hash_size < 0 or self.root_hash_size > 128:
+      sys.stderr.write('{}: Bad root_hash_size value {}.'.format(
+          cls, self.root_hash_size))
+      return False
+    if len(self.root_hash) != self.root_hash_size:
+      sys.stderr.write('{}: root_hash_size {} does not match with length of '
+                       'root_hash {}.'.format(cls, self.root_hash_size,
+                                              len(self.root_hash)))
+      return False
+    if self.timestamp < 0:
+      sys.stderr.write('{}: Bad timestamp value {}.'.format(cls,
+                                                            self.timestamp))
+      return False
+    if self.revision < 0:
+      sys.stderr.write('{}: Bad revision value {}.'.format(cls, self.revision))
+      return False
+    if self.metadata_size < 0 or self.metadata_size > 65535:
+      sys.stderr.write('{}: Bad metadatasize value {}.'.format(
+          cls, self.metadata_size))
+    if len(self.metadata) != self.metadata_size:
+      sys.stderr.write('{}: metadata_size {} does not match with length of'
+                       'metadata {}'.format(cls, self.metadata_size,
+                                            len(self.metadata_size)))
+      return False
+    return True
+
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    i = ' ' * 8
+    o.write('{}Version:          {}\n'.format(i, self.version))
+    o.write('{}Tree size:        {}\n'.format(i, self.tree_size))
+    o.write('{}Root hash size:   {}\n'.format(i, self.root_hash_size))
+    if self.root_hash_size > 0:
+      o.write('{}Root hash:        {}\n'.format(
+          i, binascii.hexlify(self.root_hash)))
+      o.write('{}Timestamp (ns):   {}\n'.format(i, self.timestamp))
+    o.write('{}Revision:         {}\n'.format(i, self.revision))
+    o.write('{}Metadata size:    {}\n'.format(i, self.metadata_size))
+    if self.metadata_size > 0:
+      o.write('{}Metadata:         {}\n'.format(i, self.metadata))
 
 
 class AvbIcpBlob(object):
@@ -3219,7 +3338,8 @@ class Avb(object):
     # TODO(jpm): Fix up AvbIcp* records so the length of data to be read
     # can be determined more easily.
     icp_bytes = image.read(100000)
-    if not icp_bytes or len(icp_bytes) < 4 or icp_bytes[0:4] != AvbIcpHeader.MAGIC:
+    if (not icp_bytes or len(icp_bytes) < 4
+        or icp_bytes[0:4] != AvbIcpHeader.MAGIC):
       sys.stderr.write('Image does not contain AFTL inclusion proofs.\n')
       return
 
