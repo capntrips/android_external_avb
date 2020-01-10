@@ -69,18 +69,16 @@ class AvbtoolTest(AvbtoolTestCase):
     self.test_sth.log_root_sig = bytearray('root_sig' * 64)
     self.test_proofs = 'proofs'
 
-  def _validate_icp_header(self, algorithm, icp_count):
+  def _validate_icp_header(self, icp_count):
     """Validate an ICP header structure and attempt to validate it.
 
     Arguments:
-      algorithm: The algorithm to be used.
       icp_count: Number of ICPs that follow the ICP header.
 
     Returns:
       True if the ICP header validates; otherwise False.
     """
     icp_header = avbtool.AvbIcpHeader()
-    icp_header.algorithm = algorithm
     icp_header.icp_count = icp_count
     return icp_header.is_valid()
 
@@ -141,14 +139,11 @@ class AvbtoolTest(AvbtoolTestCase):
 
   def test_valid_icp_header(self):
     """Tests valid ICP header structures."""
-    # 1 is SHA256/RSA4096
-    self.assertTrue(self._validate_icp_header(algorithm=1, icp_count=4))
+    self.assertTrue(self._validate_icp_header(icp_count=4))
 
   def test_invalid_icp_header(self):
     """Tests invalid ICP header structures."""
-    self.assertFalse(self._validate_icp_header(algorithm=-12, icp_count=4))
-    self.assertFalse(self._validate_icp_header(algorithm=4, icp_count=-34))
-    self.assertFalse(self._validate_icp_header(algorithm=10, icp_count=10))
+    self.assertFalse(self._validate_icp_header(icp_count=-34))
 
   def test_default_icp_entry(self):
     """Tests default ICP entry structure."""
@@ -292,13 +287,11 @@ class AvbtoolTest(AvbtoolTestCase):
   def test_generate_icp_images(self):
     """Test cases for full AFTL ICP structure generation."""
     icp_header = avbtool.AvbIcpHeader()
-    icp_header.algorithm = 1
     icp_header.icp_count = 1
 
     # Tests ICP header encoding.
     expected_header_bytes = bytearray(b'\x41\x46\x54\x4c\x00\x00\x00\x01'
-                                      '\x00\x00\x00\x01\x00\x00\x00\x01'
-                                      '\x00\x01')
+                                      '\x00\x00\x00\x01\x00\x01')
     icp_header_bytes = icp_header.encode()
     self.assertEqual(icp_header_bytes, expected_header_bytes)
 
@@ -367,7 +360,6 @@ class AvbtoolTest(AvbtoolTestCase):
 
     # Tests ICP blob with one entry.
     icp_blob = avbtool.AvbIcpBlob()
-    icp_blob.set_algorithm(1)
     icp_blob.add_icp_entry(icp_entry)
     self.assertTrue(icp_blob.is_valid())
 
@@ -401,65 +393,6 @@ class AvbtoolTest(AvbtoolTestCase):
     # Fix the entries so this passes.
     icp_blob.icp_header.icp_count = 2
     icp_blob.icp_entries[0].next_entry = 1
-    self.assertTrue(icp_blob.is_valid())
-
-    expected_blob_bytes = bytearray(b'AFTL\x00\x00\x00\x01\x00\x00\x00\x01\x00'
-                                    '\x00\x00\x01\x00\x02\x00\x00\x00\x1b\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x01\x00\x00\x02'
-                                    '\x85\x04\x00\x00\x00\x80\x01aftl-test-serv'
-                                    'er.google.comaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-                                    'aaa\x00\x00\x00\x00\x00\x00\x00\x02\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    'ffffffffffffffffffffffffffffffffgggggggggg'
-                                    'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'ggggggggggggggggggggggggggggggggggggggggbb'
-                                    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccc'
-                                    'ccccccccccccccccccccdddddddddddddddddddddd'
-                                    'ddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
-                                    '\x00\x00\x00\x1a\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x02\x00\x00\x02\x85\x02\x00\x00\x00@'
-                                    '\x00aftl-test-server.google.chffffffffffff'
-                                    'ffffffffffffffffffff\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00eeeeeeeeeeeeeeeeeeeeeeeeee'
-                                    'eeeeeedddddddddddddddddddddddddddddddddddd'
-                                    'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'ddddddddddddddgggggggggggggggggggggggggggg'
-                                    'gggghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh')
-
-    self.assertEqual(icp_blob.encode(), expected_blob_bytes)
-
-    icp_blob = avbtool.AvbIcpBlob(expected_blob_bytes)
     self.assertTrue(icp_blob.is_valid())
 
   def test_merkle_root_hash(self):
