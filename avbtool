@@ -1973,15 +1973,14 @@ class AvbIcpHeader(object):
     magic: Magic for identifying the ICP header.
     required_icp_version_major: The major version of AVB that wrote the entry.
     required_icp_version_minor: The minor version of AVB that wrote the entry.
-    algorithm: Hash algorithm used. ID is defined in ALGORITHMS.
     icp_count: Number of inclusion proofs represented in this structure.
   """
 
-  SIZE = 18  # The size of the structure, in bytes
+  SIZE = 14  # The size of the structure, in bytes
   MAGIC = 'AFTL'
-  FORMAT_STRING = ('!4s2L'  # magic, major & minor version
-                   'L'      # algorithm type for transparency log
-                   'H')     # number of inclusion proof entries
+  FORMAT_STRING = ('!4s' # magic
+                   '2L'  # major & minor version
+                   'H')  # number of inclusion proof entries
 
   def __init__(self, data=None):
     """Initializes a new transparency header object.
@@ -1996,13 +1995,12 @@ class AvbIcpHeader(object):
 
     if data:
       (self.magic, self.required_icp_version_major,
-       self.required_icp_version_minor, self.algorithm,
+       self.required_icp_version_minor,
        self.icp_count) = struct.unpack(self.FORMAT_STRING, data)
     else:
       self.magic = self.MAGIC
       self.required_icp_version_major = AVB_VERSION_MAJOR
       self.required_icp_version_minor = AVB_VERSION_MINOR
-      self.algorithm = 0
       self.icp_count = 0
     if not self.is_valid():
       raise AvbError('Invalid structure for AvbIcpHeader')
@@ -2032,7 +2030,7 @@ class AvbIcpHeader(object):
     return struct.pack(self.FORMAT_STRING, self.magic,
                        self.required_icp_version_major,
                        self.required_icp_version_minor,
-                       self.algorithm, self.icp_count)
+                       self.icp_count)
 
   def is_valid(self):
     """Ensures that values in an AvbIcpHeader structure are sane.
@@ -2055,12 +2053,6 @@ class AvbIcpHeader(object):
           self.required_icp_version_minor))
       return False
 
-    if self.algorithm < 0 or self.algorithm >= len(ALGORITHMS):
-      sys.stderr.write(
-          'ICP header: algorithm identifier out of range: {}\n'.format(
-              self.algorithm))
-      return False
-
     if self.icp_count < 0:
       sys.stderr.write(
           'ICP header: ICP entry count out of range: {}\n'.format(
@@ -2078,8 +2070,6 @@ class AvbIcpHeader(object):
         self.required_icp_version_major))
     o.write('    Minor version:      {}\n'.format(
         self.required_icp_version_minor))
-    o.write('    Algorithm:          {}\n'.format(
-        lookup_algorithm_by_type(self.algorithm)[0]))
     o.write('    ICP entries count:  {}\n'.format(
         self.icp_count))
 
@@ -2674,10 +2664,6 @@ class AvbIcpBlob(object):
       if not self.icp_header.is_valid():
         raise AvbError('Invalid ICP header.')
       icp_count = self.icp_header.icp_count
-      algorithm_id = self.icp_header.algorithm
-      # TODO(danielaustin): make use of proof_hash_size.
-      # pylint: disable=unused-variable
-      proof_hash_size = lookup_hash_size_by_type(algorithm_id)
 
       # Jump past the header for entry deserialization.
       icp_index = AvbIcpHeader.SIZE
@@ -2705,10 +2691,6 @@ class AvbIcpBlob(object):
       self.icp_entries = []
     if not self.is_valid():
       raise AvbError('Malformed ICP blob')
-
-  def set_algorithm(self, algorithm_id):
-    """Sets algorithm to be used by the inclusion proofs in AvbIcpBlob."""
-    self.icp_header.algorithm = algorithm_id
 
   def add_icp_entry(self, avb_icp_entry):
     """Adds a new AvbIcpEntry to the AvbIcpBlob, updating fields as necessary.
@@ -3953,7 +3935,6 @@ class Avb(object):
 
     # Prepares the inclusion proof blob to be appended to the vbmeta image.
     icp_blob = AvbIcpBlob()
-    icp_blob.set_algorithm(algorithm_id)
     for icp_entry in icp_entries:
       icp_blob.add_icp_entry(icp_entry)
     if not icp_blob.is_valid():
