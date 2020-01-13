@@ -22,7 +22,7 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
-"""Integration tests for avbtool with AFTL.
+"""Integration tests for aftltool with AFTL.
 
 The test cases directly interact with a transparency log. However,
 before using this script the following environment variables
