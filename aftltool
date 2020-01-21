@@ -1246,7 +1246,7 @@ class AftlTool(avbtool.AvbTool):
 
   def info_image_icp(self, args):
     """Implements the 'info_image_icp' sub-command."""
-    self.aftl.info_image_icp(args.image.name, args.output)
+    self.aftl.info_image_icp(args.vbmeta_image_path.name, args.output)
 
 
   def run(self, argv):
@@ -1258,6 +1258,7 @@ class AftlTool(avbtool.AvbTool):
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(title='subcommands')
 
+    # Command: make_icp_from_vbmeta
     sub_parser = subparsers.add_parser('make_icp_from_vbmeta',
                                        help='Makes an ICP enhanced vbmeta image'
                                        ' from an existing vbmeta image.')
@@ -1295,11 +1296,12 @@ class AftlTool(avbtool.AvbTool):
     self._add_common_args(sub_parser)
     sub_parser.set_defaults(func=self.make_icp_from_vbmeta)
 
+    # Command: info_image_icp
     sub_parser = subparsers.add_parser(
         'info_image_icp',
         help='Show information about AFTL ICPs in vbmeta or footer.')
-    sub_parser.add_argument('--image',
-                            help='Image to show information about',
+    sub_parser.add_argument('--vbmeta_image_path',
+                            help='Path to vbmeta image to show AFTL information about.',
                             type=argparse.FileType('rb'),
                             required=True)
     sub_parser.add_argument('--output',
