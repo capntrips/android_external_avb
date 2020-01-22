@@ -24,17 +24,24 @@
 #
 """Command-line tool for AFTL support for Android Verified Boot images."""
 
+from __future__ import division
+
 import argparse
 import binascii
 import hashlib
+import multiprocessing
+import Queue  # pylint: disable=bad-python3-import
 import struct
 import subprocess
 import sys
 import tempfile
+import time
+
 
 import avbtool
 
 # Android Firmware Transparency Log Data Structures
+
 
 class AftlError(Exception):
   """Application-specific errors.
@@ -339,7 +346,7 @@ class AftlIcpSignedRootDescriptor(object):
     log_root_sig: The signed root hash. Used to verify the ICP.
   """
   SIZE = 645
-  # TODO (danielaustin): log_root structure size is not static.
+  # TODO(danielaustin): log_root structure size is not static.
   FORMAT_STRING = ('!32s'   # The leaf hash corresponding to this vbmeta.
                    'Q'      # The Merkle tree size
                    '61s'    # The log_root structure that is signed
@@ -732,6 +739,7 @@ class AftlIcpEntry(object):
         o.write(' ' * 24)
       o.write('{}\n'.format(binascii.hexlify(proof_hash)))
 
+
 class TrillianLogRootDescriptor(object):
   """A class representing the Trillian log_root descriptor.
 
@@ -978,7 +986,6 @@ class AftlDescriptor(object):
     return True
 
 
-
 class Aftl(avbtool.Avb):
   """Business logic for aftltool command-line tool."""
 
@@ -1222,6 +1229,150 @@ class Aftl(avbtool.Avb):
 
     return True
 
+  def _load_test_process_function(self, vbmeta_image_path,
+                                  transparency_log_server,
+                                  transparency_log_pub_key, manufacturer_key,
+                                  process_number, submission_count,
+                                  result_queue):
+    """Function to be used by multiprocessing.Process.
+
+    Arguments:
+      vbmeta_image_path: Path to a vbmeta image file.
+      transparency_log_server: A string in host:port format of transparency log
+        servers where a inclusion proof is requested from.
+      transparency_log_pub_key: Path to PEM file containing trusted
+        public keys that corresponds with the transparency_log_server.
+      manufacturer_key: Path to PEM file containting the key file used to sign
+        messages sent to the transparency log servers.
+      process_number: The number of the processes executing the function.
+      submission_count: Number of total submissions to perform per
+        process_count.
+      result_queue: Multiprocessing.Queue object for posting execution results.
+    """
+    for count in range(0, submission_count):
+      version_incremental = 'aftl_load_testing_{}_{}'.format(process_number,
+                                                             count)
+      output_file = '{}_icp.img'.format(version_incremental)
+      output = open(output_file, 'wb')
+
+      # Instrumented section.
+      start_time = time.time()
+      result = self.make_icp_from_vbmeta(
+          vbmeta_image_path=vbmeta_image_path,
+          output=output,
+          signing_helper=None,
+          signing_helper_with_files=None,
+          version_incremental=version_incremental,
+          transparency_log_servers=[transparency_log_server],
+          transparency_log_pub_keys=[transparency_log_pub_key],
+          manufacturer_key=manufacturer_key,
+          padding_size=0)
+      end_time = time.time()
+
+      output.close()
+      execution_time = end_time - start_time
+      result_queue.put((start_time, end_time, execution_time,
+                        version_incremental, result))
+
+  def load_test_aftl(self, vbmeta_image_path, output, transparency_log_server,
+                     transparency_log_pub_key, manufacturer_key,
+                     process_count, submission_count):
+    """Performs multi-threaded load test on a given AFTL and prints stats.
+
+    Arguments:
+      vbmeta_image_path: Path to a vbmeta image file.
+      output: File to write the report to.
+      transparency_log_server: A string in host:port format of transparency log
+        servers where a inclusion proof is requested from.
+      transparency_log_pub_key: Path to PEM file containing trusted
+        public keys that corresponds with the transparency_log_server.
+      manufacturer_key: Path to PEM file containting the key file used to sign
+        messages sent to the transparency log servers.
+      process_count: Number of processes used for parallel testing.
+      submission_count: Number of total submissions to perform per
+        process_count.
+
+    Returns:
+      True if the load tested succeeded without errors; otherwise False.
+    """
+    o = output
+    result_queue = multiprocessing.Queue()
+    processes = set()
+    stats_file_name = 'load_test_p{}_s{}.csv'.format(process_count,
+                                                     submission_count)
+    execution_times = []
+    results = []
+
+    try:
+      stats_file = open(stats_file_name, 'w')
+      stats_file.write('start_time,end_time,execution_time,version_incremental,'
+                       'result\n')
+    except IOError as e:
+      sys.stderr.write('Could not open stats file {}: {}'.format(stats_file, e))
+      return False
+
+    if process_count < 1 or submission_count < 1:
+      sys.stderr.write('--process_count and --submission_count cannot be less '
+                       'than 1.')
+      return False
+
+    # Launch all the processes with their workloads.
+    for i in range(0, process_count):
+      p = multiprocessing.Process(
+          target=self._load_test_process_function,
+          args=(vbmeta_image_path, transparency_log_server,
+                transparency_log_pub_key, manufacturer_key, i, submission_count,
+                result_queue))
+      p.start()
+      processes.add(p)
+
+    while processes:
+      # Processes the results queue and writes these to a stats file.
+      try:
+        (start_time, end_time, execution_time, version_incremental,
+         result) = result_queue.get(timeout=1)
+        stats_file.write('{},{},{},{},{}\n'.format(start_time, end_time,
+                                                   execution_time,
+                                                   version_incremental, result))
+        execution_times.append(execution_time)
+        results.append(result)
+      except Queue.Empty:
+        pass
+
+      # Checks if processes are still alive; if not clean them up. join() would
+      # have been nicer but we want to continously stream out the stats to file.
+      for p in processes.copy():
+        if not p.is_alive():
+          processes.remove(p)
+
+    # Prepares stats.
+    executions = sorted(execution_times)
+    execution_count = len(execution_times)
+    median = 0
+    if execution_count % 2 == 0:
+      median = (executions[execution_count // 2 - 1]
+                + executions[execution_count // 2]) / 2
+    else:
+      median = executions[execution_count // 2]
+
+    # Outputs the stats report.
+    o.write('Processes:               {}\n'.format(process_count))
+    o.write('Submissions per process: {}\n'.format(submission_count))
+    o.write('Submissions total:       {}\n'.format(len(executions)))
+    o.write('\n')
+    o.write('Succeeded submissions:   {}\n'.format(results.count(True)))
+    o.write('Failed submissons:       {}\n'.format(results.count(False)))
+    o.write('\n')
+    o.write('Average:                 {:.2f} sec\n'.format(
+        sum(execution_times) / execution_count))
+    o.write('Median:                  {:.2f} sec\n'.format(median))
+    o.write('Min:                     {:.2f} sec\n'.format(min(executions)))
+    o.write('Max:                     {:.2f} sec\n'.format(max(executions)))
+
+    # Close the stats file.
+    stats_file.close()
+    return True
+
 
 class AftlTool(avbtool.AvbTool):
   """Object for aftltool command-line tool."""
@@ -1248,6 +1399,15 @@ class AftlTool(avbtool.AvbTool):
     """Implements the 'info_image_icp' sub-command."""
     self.aftl.info_image_icp(args.vbmeta_image_path.name, args.output)
 
+  def load_test_aftl(self, args):
+    """Implements the 'load_test_aftl' sub-command."""
+    self.aftl.load_test_aftl(args.vbmeta_image_path,
+                             args.output,
+                             args.transparency_log_server,
+                             args.transparency_log_pub_key,
+                             args.manufacturer_key,
+                             args.processes,
+                             args.submissions)
 
   def run(self, argv):
     """Command-line processor.
@@ -1309,6 +1469,42 @@ class AftlTool(avbtool.AvbTool):
                             type=argparse.FileType('wt'),
                             default=sys.stdout)
     sub_parser.set_defaults(func=self.info_image_icp)
+
+    # Command: load_test_aftl
+    sub_parser = subparsers.add_parser(
+        'load_test_aftl',
+        help='Perform load testing against one AFTL log server. Note: This MUST'
+        ' not be performed against a production system.')
+    sub_parser.add_argument('--vbmeta_image_path',
+                            help='Path to a generate vbmeta image file.',
+                            required=True)
+    sub_parser.add_argument('--output',
+                            help='Write report to file.',
+                            type=argparse.FileType('wt'),
+                            default=sys.stdout)
+    sub_parser.add_argument('--manufacturer_key',
+                            help='Path to the PEM file containing the '
+                            'manufacturer key for use with the log.',
+                            required=True)
+    sub_parser.add_argument('--transparency_log_server',
+                            help='Transparency log servers to test against in '
+                            'host:port format.',
+                            required=True)
+    sub_parser.add_argument('--transparency_log_pub_key',
+                            help='Paths to PEM file containing transparency '
+                            'log server key.',
+                            required=True)
+    sub_parser.add_argument('--processes',
+                            help='Number of parallel processes to use for '
+                            'testing (default: 1).',
+                            type=avbtool.parse_number,
+                            default=1)
+    sub_parser.add_argument('--submissions',
+                            help='Number of submissions to perform against the '
+                            'log per process (default: 1).',
+                            type=avbtool.parse_number,
+                            default=1)
+    sub_parser.set_defaults(func=self.load_test_aftl)
 
     args = parser.parse_args(argv[1:])
     try:
