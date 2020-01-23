@@ -30,6 +30,7 @@ import argparse
 import binascii
 import hashlib
 import multiprocessing
+import os
 import Queue  # pylint: disable=bad-python3-import
 import struct
 import subprocess
@@ -1233,7 +1234,7 @@ class Aftl(avbtool.Avb):
                                   transparency_log_server,
                                   transparency_log_pub_key, manufacturer_key,
                                   process_number, submission_count,
-                                  result_queue):
+                                  preserve_icp_images, result_queue):
     """Function to be used by multiprocessing.Process.
 
     Arguments:
@@ -1247,6 +1248,8 @@ class Aftl(avbtool.Avb):
       process_number: The number of the processes executing the function.
       submission_count: Number of total submissions to perform per
         process_count.
+      preserve_icp_images: Boolean to indicate if the generated vbmeta
+        image files with inclusion proofs should preserved.
       result_queue: Multiprocessing.Queue object for posting execution results.
     """
     for count in range(0, submission_count):
@@ -1270,13 +1273,18 @@ class Aftl(avbtool.Avb):
       end_time = time.time()
 
       output.close()
+      if not preserve_icp_images:
+        os.unlink(output_file)
+
+      # Puts the result onto the result queue.
       execution_time = end_time - start_time
       result_queue.put((start_time, end_time, execution_time,
                         version_incremental, result))
 
   def load_test_aftl(self, vbmeta_image_path, output, transparency_log_server,
                      transparency_log_pub_key, manufacturer_key,
-                     process_count, submission_count):
+                     process_count, submission_count, stats_filename,
+                     preserve_icp_images):
     """Performs multi-threaded load test on a given AFTL and prints stats.
 
     Arguments:
@@ -1291,38 +1299,40 @@ class Aftl(avbtool.Avb):
       process_count: Number of processes used for parallel testing.
       submission_count: Number of total submissions to perform per
         process_count.
+      stats_filename: Path to the stats file to write the raw execution data to.
+      preserve_icp_images: Boolean to indicate if the generated vbmeta
+        image files with inclusion proofs should preserved.
 
     Returns:
       True if the load tested succeeded without errors; otherwise False.
     """
-    o = output
-    result_queue = multiprocessing.Queue()
-    processes = set()
-    stats_file_name = 'load_test_p{}_s{}.csv'.format(process_count,
-                                                     submission_count)
-    execution_times = []
-    results = []
+    if process_count < 1 or submission_count < 1:
+      sys.stderr.write('Values for --processes/--submissions '
+                       'must be at least 1.')
+      return False
 
+    if not stats_filename:
+      stats_filename = 'load_test_p{}_s{}.csv'.format(process_count,
+                                                      submission_count)
     try:
-      stats_file = open(stats_file_name, 'w')
+      stats_file = open(stats_filename, 'w')
       stats_file.write('start_time,end_time,execution_time,version_incremental,'
                        'result\n')
     except IOError as e:
       sys.stderr.write('Could not open stats file {}: {}'.format(stats_file, e))
       return False
 
-    if process_count < 1 or submission_count < 1:
-      sys.stderr.write('--process_count and --submission_count cannot be less '
-                       'than 1.')
-      return False
-
     # Launch all the processes with their workloads.
+    result_queue = multiprocessing.Queue()
+    processes = set()
+    execution_times = []
+    results = []
     for i in range(0, process_count):
       p = multiprocessing.Process(
           target=self._load_test_process_function,
           args=(vbmeta_image_path, transparency_log_server,
                 transparency_log_pub_key, manufacturer_key, i, submission_count,
-                result_queue))
+                preserve_icp_images, result_queue))
       p.start()
       processes.add(p)
 
@@ -1356,18 +1366,22 @@ class Aftl(avbtool.Avb):
       median = executions[execution_count // 2]
 
     # Outputs the stats report.
-    o.write('Processes:               {}\n'.format(process_count))
-    o.write('Submissions per process: {}\n'.format(submission_count))
-    o.write('Submissions total:       {}\n'.format(len(executions)))
+    o = output
+    o.write('Load testing results:\n')
+    o.write('  Processes:               {}\n'.format(process_count))
+    o.write('  Submissions per process: {}\n'.format(submission_count))
     o.write('\n')
-    o.write('Succeeded submissions:   {}\n'.format(results.count(True)))
-    o.write('Failed submissons:       {}\n'.format(results.count(False)))
+    o.write('  Submissions:\n')
+    o.write('    Total:                 {}\n'.format(len(executions)))
+    o.write('    Succeeded:             {}\n'.format(results.count(True)))
+    o.write('    Failed:                {}\n'.format(results.count(False)))
     o.write('\n')
-    o.write('Average:                 {:.2f} sec\n'.format(
+    o.write('  Submission execution durations:\n')
+    o.write('    Average:               {:.2f} sec\n'.format(
         sum(execution_times) / execution_count))
-    o.write('Median:                  {:.2f} sec\n'.format(median))
-    o.write('Min:                     {:.2f} sec\n'.format(min(executions)))
-    o.write('Max:                     {:.2f} sec\n'.format(max(executions)))
+    o.write('    Median:                {:.2f} sec\n'.format(median))
+    o.write('    Min:                   {:.2f} sec\n'.format(min(executions)))
+    o.write('    Max:                   {:.2f} sec\n'.format(max(executions)))
 
     # Close the stats file.
     stats_file.close()
@@ -1407,7 +1421,9 @@ class AftlTool(avbtool.AvbTool):
                              args.transparency_log_pub_key,
                              args.manufacturer_key,
                              args.processes,
-                             args.submissions)
+                             args.submissions,
+                             args.stats_file,
+                             args.preserve_icp_images)
 
   def run(self, argv):
     """Command-line processor.
@@ -1502,6 +1518,15 @@ class AftlTool(avbtool.AvbTool):
                             'log per process (default: 1).',
                             type=avbtool.parse_number,
                             default=1)
+    sub_parser.add_argument('--stats_file',
+                            help='Path to the stats file to write the raw '
+                            'execution data to (Default: '
+                            'load_test_p[processes]_s[submissions].csv.')
+    sub_parser.add_argument('--preserve_icp_images',
+                            help='Boolean flag to indicate if the generated '
+                            'vbmeta image files with inclusion proofs should '
+                            'preserved.',
+                            action='store_true')
     sub_parser.set_defaults(func=self.load_test_aftl)
 
     args = parser.parse_args(argv[1:])
