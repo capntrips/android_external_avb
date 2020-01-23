@@ -745,7 +745,7 @@ class TrillianLogRootDescriptor(object):
   """A class representing the Trillian log_root descriptor.
 
   Taken from Trillian definitions:
-  https://github.com/google/trillian/descriptor/master/trillian.proto#L255
+  https://github.com/google/trillian/blob/master/trillian.proto#L255
 
   Attributes:
     version: The version number of the descriptor. Currently only version=1 is
