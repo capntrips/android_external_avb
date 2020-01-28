@@ -233,12 +233,14 @@ class AftlIcpHeader(object):
     magic: Magic for identifying the ICP header.
     required_icp_version_major: The major version of AVB that wrote the entry.
     required_icp_version_minor: The minor version of AVB that wrote the entry.
+    aftl_descriptor_size: Total size of the header's AftlDescriptor.
     icp_count: Number of inclusion proofs represented in this structure.
   """
 
-  SIZE = 14  # The size of the structure, in bytes
+  SIZE = 18  # The size of the structure, in bytes
   MAGIC = 'AFTL'
   FORMAT_STRING = ('!4s2L'  # magic, major & minor version
+                   'L'      # descriptor size
                    'H')     # number of inclusion proof entries
 
   def __init__(self, data=None):
@@ -254,12 +256,13 @@ class AftlIcpHeader(object):
 
     if data:
       (self.magic, self.required_icp_version_major,
-       self.required_icp_version_minor,
+       self.required_icp_version_minor, self.aftl_descriptor_size,
        self.icp_count) = struct.unpack(self.FORMAT_STRING, data)
     else:
       self.magic = self.MAGIC
       self.required_icp_version_major = avbtool.AVB_VERSION_MAJOR
       self.required_icp_version_minor = avbtool.AVB_VERSION_MINOR
+      self.aftl_descriptor_size = self.SIZE
       self.icp_count = 0
     if not self.is_valid():
       raise AftlError('Invalid structure for AftlIcpHeader')
@@ -289,6 +292,7 @@ class AftlIcpHeader(object):
     return struct.pack(self.FORMAT_STRING, self.magic,
                        self.required_icp_version_major,
                        self.required_icp_version_minor,
+                       self.aftl_descriptor_size,
                        self.icp_count)
 
   def is_valid(self):
@@ -312,6 +316,11 @@ class AftlIcpHeader(object):
           self.required_icp_version_minor))
       return False
 
+    if self.aftl_descriptor_size < self.SIZE:
+      sys.stderr.write('ICP Header: Invalid descriptor size: {}\n'.format(
+          self.aftl_descriptor_size))
+      return False
+
     if self.icp_count < 0 or self.icp_count > 65535:
       sys.stderr.write(
           'ICP header: ICP entry count out of range: {}\n'.format(
@@ -329,145 +338,10 @@ class AftlIcpHeader(object):
         self.required_icp_version_major))
     o.write('    Minor version:      {}\n'.format(
         self.required_icp_version_minor))
+    o.write('    Descriptor size:    {}\n'.format(
+        self.aftl_descriptor_size))
     o.write('    ICP entries count:  {}\n'.format(
         self.icp_count))
-
-
-class AftlIcpSignedRootDescriptor(object):
-  """A class for the components required to validate the incusion proof.
-
-  This class contains the signed tree root components required to verify
-  an inclusion proof given a list of hashes.
-
-  Attributes:
-    leaf_hash: The hash of the leaf corresponding with this log entry.
-    tree_size: The size of the Merkle tree.
-    log_root: The transparency log_root data structure.
-    root_hash: The calculated root hash of the Merkle tree.
-    log_root_sig: The signed root hash. Used to verify the ICP.
-  """
-  SIZE = 645
-  # TODO(danielaustin): log_root structure size is not static.
-  FORMAT_STRING = ('!32s'   # The leaf hash corresponding to this vbmeta.
-                   'Q'      # The Merkle tree size
-                   '61s'    # The log_root structure that is signed
-                   '32s'    # The Merkle tree root hash.
-                   '512s')  # The log_root signed with the transparency log key.
-
-  def __init__(self, data=None):
-    """Initializes a new signed_root_descriptor structure.
-
-    Arguments:
-      data: If not None, must be a bytearray of size |SIZE|.
-
-    Raises:
-      AftlError: If data does not represent a well-formed
-      AftlIcpSignedRootDescriptor.
-    """
-    assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
-
-    if data:
-      (self.leaf_hash, self.tree_size, self.log_root,
-       self.root_hash, self.log_root_sig) = struct.unpack(
-           self.FORMAT_STRING, data)
-    else:
-      self.leaf_hash = bytearray()
-      self.tree_size = 0
-      self.log_root = bytearray()
-      self.root_hash = bytearray()
-      self.log_root_sig = ''
-
-    if not self.is_valid():
-      raise AftlError('Invalid structure for AftlIcpSignedDescriptor')
-
-  def translate_afi_response(self, afi_response):
-    """Translates an AddFirmwareImageResponse to an AftlIcpSignedRootDescriptor.
-
-    Arguments:
-      afi_response: An AddFirmwareImageResponse proto message.
-
-    Raises:
-      AftlError: If unsupported hash size is detected.
-    """
-    # Do the hash calculation
-    self.leaf_hash = rfc6962_hash_leaf(afi_response.vbmeta_leaf)
-    self.log_root = afi_response.vbmeta_proof.sth.log_root
-    self.log_root_sig = str(afi_response.vbmeta_proof.sth.log_root_signature)
-
-    # Extracts relevant values from log_root.
-    log_root_desc = TrillianLogRootDescriptor(self.log_root)
-    if not log_root_desc.is_valid():
-      raise AftlError('Invalid TrillianLogRootDescriptor.')
-    # TODO(danielaustin): Clean up the structures to avoid duplicate
-    # information being stored.
-    self.tree_size = log_root_desc.tree_size
-    self.root_hash = log_root_desc.root_hash
-
-  def encode(self):
-    """Serializes the AvbSignedRootDescriptor structure |SIZE| to a bytearray.
-
-    Returns:
-      A bytearray with the AvbSignedRootDescriptor.
-
-    Raises:
-      AftlError: If data does not represent a well-formed
-      AftlIcpSignedRootDescriptor.
-    """
-    if not self.is_valid():
-      raise AftlError('Invalid structure for AftlIcpSignedRootDescriptor')
-
-    return struct.pack(self.FORMAT_STRING,
-                       str(self.leaf_hash),
-                       self.tree_size,
-                       str(self.log_root),
-                       str(self.root_hash),
-                       str(self.log_root_sig))
-
-  def is_valid(self):
-    """Ensures that values in the AftlIcpSignedRootDescriptor are sane.
-
-    Returns:
-      True if the values in the AftlIcpSignedRootDescriptor are sane.
-      False otherwise.
-    """
-    # All structures being of size 0 is valid
-    if (not self.leaf_hash and self.tree_size == 0 and
-        not self.root_hash and not self.log_root_sig):
-      return True
-    if len(self.leaf_hash) != 32:
-      sys.stderr.write('AftlIcpSignedRootDescriptor: Bad leaf_hash size {}'
-                       .format(len(self.leaf_hash)))
-      return False
-    if self.tree_size < 0:
-      sys.stderr.write('AftlIcpSignedRootDescriptor: Bad tree_size value {}'
-                       .format(self.tree_size))
-      return False
-    if len(self.root_hash) != 32:
-      sys.stderr.write('AftlIcpSignedRootDescriptor: Bad root_hash size {}'
-                       .format(len(self.root_hash)))
-      return False
-    if len(self.log_root_sig) != 512:
-      sys.stderr.write('AftlIcpSignedRootDescriptor: Bad log_root_sig size {}'
-                       .format(len(self.log_root_sig)))
-      return False
-    return True
-
-  def print_desc(self, o):
-    """Print the descriptor.
-
-    Arguments:
-      o: The object to write the output to.
-    """
-    o.write('      Leaf hash:        {}\n'.format(
-        binascii.hexlify(self.leaf_hash)))
-    o.write('      Tree size:        {}\n'.format(
-        self.tree_size))
-    o.write('      Log root:\n')
-    log_root_desc = TrillianLogRootDescriptor(self.log_root)
-    log_root_desc.print_desc(o)
-    o.write('      Root hash:        {}\n'.format(
-        binascii.hexlify(self.root_hash)))
-
 
 class AftlIcpEntry(object):
   """A class for the transparency log inclusion proof entries.
@@ -479,31 +353,36 @@ class AftlIcpEntry(object):
   Attributes:
     log_url_size: Length of the string representing the transparency log URL.
     leaf_index: Leaf index in the transparency log representing this entry.
-    signed_root_descriptor_size: Size of the transparency log's SignedLogRoot.
+    log_root_descriptor_size: Size of the transparency log's SignedLogRoot.
+    fw_info_leaf_size: Size of the FirmwareInfo leaf passed to the log.
+    log_root_sig_size: Size in bytes of the log_root_signature
     proof_hash_count: Number of hashes comprising the inclusion proof.
-    proof_size: The total size of the inclusion proof, in bytes.
-    next_entry: 1 if there is a next entry, 0 otherwise.
+    inc_proof_size: The total size of the inclusion proof, in bytes.
     log_url: The URL for the transparency log that generated this inclusion
         proof.
-    signed_root_descriptor: The data comprising the signed tree head structure.
+    log_root_descriptor: The data comprising the signed tree head structure.
+    fw_info_leaf: The data comprising the FirmwareInfo leaf.
+    log_root_signature: The data comprising the log root signature.
     proofs: The hashes comprising the inclusion proof.
 
   """
-  SIZE = 22  # The size of the structure, in bytes
+  SIZE = 27  # The size of the structure, in bytes
   FORMAT_STRING = ('!L'   # transparency log server url size
                    'Q'    # leaf index
-                   'L'    # signed tree root descriptor size
+                   'L'    # log root descriptor size
+                   'L'    # firmware info leaf size
+                   'H'    # log root signature size
                    'B'    # number of hashes in the inclusion proof
-                   'L'    # size of the inclusion proof in bytes
-                   'B')   # next entry marker
-  # These are used to capture the log_url, signed_root_descriptor,
-  # and the proofs elements for the encode & save function.
+                   'L')   # size of the inclusion proof in bytes
+  # These are used to capture the log_url, log_root_descriptor,
+  # fw_info leaf, log root signature, and the proofs elements for the
+  # encode & save functions.
 
   def __init__(self, data=None):
     """Initializes a new ICP entry object.
 
     Arguments:
-      data: If not None, must be a bytearray of size >= 22.
+      data: If not None, must be a bytearray of size >= |SIZE|.
 
     Raises:
       AftlError: If data does not represent a well-formed AftlIcpEntry.
@@ -513,29 +392,28 @@ class AftlIcpEntry(object):
 
     if data:
       # Deserialize the header from the data descriptor.
-      (self.log_url_size, self.leaf_index, self.signed_root_descriptor_size,
-       self.proof_hash_count, self.proof_size, self.next_entry) = struct.unpack(
+      (self.log_url_size, self.leaf_index, self.log_root_descriptor_size,
+       self.fw_info_leaf_size, self.log_root_sig_size, self.proof_hash_count,
+       self.inc_proof_size) = struct.unpack(
            self.FORMAT_STRING, data[0:self.SIZE])
-      if len(data) >= self.SIZE:
-        # There's more data. Ensure the data entry size is valid.
-        if len(data) != self.get_expected_size():
-          if self.next_entry == 0:
-            raise AftlError('ICP entry size is not valid {}/{}.'
-                            .format(len(data), self.get_expected_size()))
-      # Deserialize ICP entry components from the data descriptor.
-      expected_format_string = '{}s{}s{}s'.format(
-          self.log_url_size,
-          AftlIcpSignedRootDescriptor.SIZE,
-          self.proof_size)
 
-      (self.log_url, signed_root_descriptor_bytes, proof_bytes) = struct.unpack(
-          expected_format_string, data[self.SIZE:self.get_expected_size()])
-      self.signed_root_descriptor = AftlIcpSignedRootDescriptor(
-          signed_root_descriptor_bytes)
+      # Deserialize ICP entry components from the data descriptor.
+      expected_format_string = '{}s{}s{}s{}s{}s'.format(
+          self.log_url_size,
+          self.log_root_descriptor_size,
+          self.fw_info_leaf_size,
+          self.log_root_sig_size,
+          self.inc_proof_size)
+
+      (self.log_url, log_root_descriptor_bytes, self.fw_info_leaf,
+       self.log_root_signature, proof_bytes) = struct.unpack(
+           expected_format_string, data[self.SIZE:self.get_expected_size()])
+      self.log_root_descriptor = TrillianLogRootDescriptor(
+          log_root_descriptor_bytes)
       self.proofs = []
       if self.proof_hash_count > 0:
         proof_idx = 0
-        hash_size = self.proof_size // self.proof_hash_count
+        hash_size = self.inc_proof_size // self.proof_hash_count
         for _ in range(self.proof_hash_count):
           proof = proof_bytes[proof_idx:(proof_idx+hash_size)]
           self.proofs.append(proof)
@@ -543,12 +421,16 @@ class AftlIcpEntry(object):
     else:
       self.log_url_size = 0
       self.leaf_index = 0
-      self.signed_root_descriptor_size = 0
+      self.fw_info_leaf_size = 0
+      self.log_root_sig_size = 0
       self.proof_hash_count = 0
-      self.proof_size = 0
-      self.next_entry = 0
+      self.inc_proof_size = 0
       self.log_url = ''
-      self.signed_root_descriptor = AftlIcpSignedRootDescriptor()
+      self.log_root_descriptor = TrillianLogRootDescriptor()
+      log_root_descriptor_size = self.log_root_descriptor.get_expected_size()
+      self.log_root_descriptor_size = log_root_descriptor_size
+      self.fw_info_leaf = ''
+      self.log_root_signature = ''
       self.proofs = []
     if not self.is_valid():
       raise AftlError('Invalid structure for AftlIcpEntry')
@@ -562,29 +444,32 @@ class AftlIcpEntry(object):
     self.log_url = log_url
     self.log_url_size = len(log_url)
 
-  def set_signed_root_descriptor(self, signed_root_descriptor):
+  def set_log_root_descriptor(self, log_root_descriptor):
     """Sets signed_root_descriptor and signed_root_descriptor_size.
 
     Arguments:
-      signed_root_descriptor: An AftlIcpSignedRootDescriptor containing the
-      SignedLogRoot for the transparency log.
+      log_root_descriptor: A TrillianLogRootDescriptor containing the
+      log_root for the transparency log.
     """
-    self.signed_root_descriptor = signed_root_descriptor
-    self.signed_root_descriptor_size = signed_root_descriptor.SIZE
+    if not isinstance(log_root_descriptor, TrillianLogRootDescriptor):
+      raise AftlError('Invalid data type passed to set_log_root_descriptor: '
+                      'Received {}.\n'.format(type(log_root_descriptor)))
+    self.log_root_descriptor = log_root_descriptor
+    self.log_root_descriptor_size = log_root_descriptor.get_expected_size()
 
   def set_proofs(self, proofs):
-    """Sets the proof_hash_count, proofs, and proof_size.
+    """Sets the proof_hash_count, proofs, and inc_proof_size.
 
     Arguments:
       proofs: A bytearray of concatenated hashes comprising the inclusion proof.
     """
     self.proof_hash_count = 0
     self.proofs = proofs
-    proof_size = 0
+    inc_proof_size = 0
     for proof in proofs:
-      proof_size += len(proof)
+      inc_proof_size += len(proof)
       self.proof_hash_count += 1
-    self.proof_size = proof_size
+    self.inc_proof_size = inc_proof_size
 
   def verify_icp(self, transparency_log_pub_key):
     """Verifies the contained inclusion proof given the public log key.
@@ -595,14 +480,15 @@ class AftlIcpEntry(object):
     Returns:
       True if the calculated signature matches AftlIcpEntry's. False otherwise.
     """
+    leaf_hash = rfc6962_hash_leaf(self.fw_info_leaf)
     calc_root = root_from_icp(self.leaf_index,
-                              self.signed_root_descriptor.tree_size,
+                              self.log_root_descriptor.tree_size,
                               self.proofs,
-                              self.signed_root_descriptor.leaf_hash)
-    if ((calc_root == self.signed_root_descriptor.root_hash) and
+                              leaf_hash)
+    if ((calc_root == self.log_root_descriptor.root_hash) and
         check_signature(
-            self.signed_root_descriptor.log_root,
-            self.signed_root_descriptor.log_root_sig,
+            self.log_root_descriptor.log_root,
+            self.log_root_signature,
             transparency_log_pub_key)):
       return True
     return False
@@ -630,19 +516,26 @@ class AftlIcpEntry(object):
     proof_bytes = bytearray()
     if not self.is_valid():
       raise AftlError('Invalid AftlIcpEntry structure')
-    expected_format_string = '{}{}s{}s{}s'.format(
-        self.FORMAT_STRING, self.log_url_size,
-        self.signed_root_descriptor.SIZE,
-        self.proof_size)
+
+    expected_format_string = '{}{}s{}s{}s{}s{}s'.format(
+        self.FORMAT_STRING,
+        self.log_url_size,
+        self.log_root_descriptor_size,
+        self.fw_info_leaf_size,
+        self.log_root_sig_size,
+        self.inc_proof_size)
 
     for proof in self.proofs:
       proof_bytes.extend(proof)
 
     return struct.pack(expected_format_string,
                        self.log_url_size, self.leaf_index,
-                       self.signed_root_descriptor_size, self.proof_hash_count,
-                       self.proof_size, self.next_entry, self.log_url,
-                       self.signed_root_descriptor.encode(),
+                       self.log_root_descriptor_size, self.fw_info_leaf_size,
+                       self.log_root_sig_size, self.proof_hash_count,
+                       self.inc_proof_size, self.log_url,
+                       self.log_root_descriptor.encode(),
+                       str(self.fw_info_leaf),
+                       str(self.log_root_signature),
                        str(proof_bytes))
 
   # TODO(danielaustin): Add unit test.
@@ -654,12 +547,14 @@ class AftlIcpEntry(object):
       afi_response: The AddFirmwareResponse object to translate.
     """
     self.set_log_url(transparency_log)
-    self.leaf_index = afi_response.vbmeta_proof.proof.leaf_index
-    self.signed_root_descriptor = AftlIcpSignedRootDescriptor()
-    self.signed_root_descriptor.translate_afi_response(afi_response)
-    self.signed_root_descriptor_size = self.signed_root_descriptor.SIZE
-    # Calculate the number of hashes.
-    proof_hashes = afi_response.vbmeta_proof.proof.hashes
+    self.leaf_index = afi_response.fw_info_proof.proof.leaf_index
+    self.log_root_descriptor = TrillianLogRootDescriptor(
+        afi_response.fw_info_proof.sth.log_root)
+    self.log_root_signature = afi_response.fw_info_proof.sth.log_root_signature
+    self.log_root_sig_size = len(self.log_root_signature)
+    self.log_root_descriptor_size = self.log_root_descriptor.get_expected_size()
+
+    proof_hashes = afi_response.fw_info_proof.proof.hashes
     self.set_proofs(proof_hashes)
 
   def get_expected_size(self):
@@ -668,8 +563,9 @@ class AftlIcpEntry(object):
     Returns:
       The expected size of the AftlIcpEntry from the header.
     """
-    return (self.SIZE + self.log_url_size +
-            self.signed_root_descriptor_size + self.proof_size)
+    return (self.SIZE + self.log_url_size + self.log_root_descriptor_size +
+            self.fw_info_leaf_size + self.log_root_sig_size +
+            self.inc_proof_size)
 
   def is_valid(self):
     """Ensures that values in an AftlIcpEntry structure are sane.
@@ -688,17 +584,23 @@ class AftlIcpEntry(object):
                        '{}\n'.format(self.leaf_index))
       return False
 
-    if (not self.signed_root_descriptor or
-        not self.signed_root_descriptor.is_valid()):
-      sys.stderr.write('ICP entry: invalid AftlIcpSignedRootDescriptor\n')
+    if (not self.log_root_descriptor or
+        not self.log_root_descriptor.is_valid()):
+      sys.stderr.write('ICP entry: invalid TrillianLogRootDescriptor\n')
       return False
 
-    if (self.signed_root_descriptor_size != 0) and (
-        self.signed_root_descriptor_size != self.signed_root_descriptor.SIZE):
+    if (self.log_root_descriptor_size !=
+        self.log_root_descriptor.get_expected_size()):
       sys.stderr.write('ICP entry: invalid signed root descriptor size: '
                        '{}, should be {}\n'.format(
-                           self.signed_root_descriptor_size,
-                           self.signed_root_descriptor.SIZE))
+                           self.log_root_descriptor_size,
+                           self.log_root_descriptor.get_expected_size()))
+      return False
+
+    if ((self.fw_info_leaf and self.fw_info_leaf_size != len(self.fw_info_leaf))
+        or (not self.fw_info_leaf and self.fw_info_leaf_size != 0)):
+      sys.stderr.write('ICP entry: invalid FirmwareInfo size: {}\n'
+                       .format(self.fw_info_leaf_size))
       return False
 
     if self.proof_hash_count < 0:
@@ -706,23 +608,20 @@ class AftlIcpEntry(object):
           self.proof_hash_count))
       return False
 
-    proof_size = 0
+    inc_proof_size = 0
     if self.proofs:
       for proof in self.proofs:
-        proof_size += len(proof)
-      if self.proof_size != proof_size:
+        inc_proof_size += len(proof)
+      if self.inc_proof_size != inc_proof_size:
         sys.stderr.write('ICP entry: invalid transparency log proof size: ')
-        sys.stderr.write('{}, calculated {}\n'.format(self.proof_size,
-                                                      proof_size))
+        sys.stderr.write('{}, calculated {}\n'.format(self.inc_proof_size,
+                                                      inc_proof_size))
         return False
-    elif self.proof_size != 0:
+    elif self.inc_proof_size != 0:
       sys.stderr.write('ICP entry: invalid transparency log proof size '
-                       '(should be 0): {}'.format(self.proof_size))
+                       '(should be 0): {}'.format(self.inc_proof_size))
       return False
-    if self.next_entry != 0 and self.next_entry != 1:
-      sys.stderr.write('ICP entry: invalid next entry value: {}\n'.format(
-          self.next_entry))
-      return False
+
     return True
 
   def print_desc(self, o):
@@ -733,7 +632,6 @@ class AftlIcpEntry(object):
     """
     o.write('    Transparency Log:   {}\n'.format(self.log_url))
     o.write('    Leaf index:         {}\n'.format(self.leaf_index))
-    o.write('    Next entry:         {}\n'.format(self.next_entry))
     o.write('    ICP hashes:         ')
     for i, proof_hash in enumerate(self.proofs):
       if i != 0:
@@ -809,6 +707,38 @@ class TrillianLogRootDescriptor(object):
 
     if not self.is_valid():
       raise AftlError('Invalid structure for TrillianLogRootDescriptor.')
+
+  def get_expected_size(self):
+    """Calculates the expected size of the TrillianLogRootDescriptor.
+
+    Returns:
+      The expected size of the TrillianLogRootDescriptor.
+    """
+    return (struct.calcsize(self.FORMAT_STRING_PART_1) + self.root_hash_size +
+            struct.calcsize(self.FORMAT_STRING_PART_2) + self.metadata_size)
+
+  def encode(self):
+    """Serializes the TrillianLogDescriptor to a bytearray().
+
+    Returns:
+      A bytearray() with the encoded header.
+
+    Raises:
+      AftlError: If invalid entry structure.
+    """
+    if not self.is_valid():
+      raise AftlError('Invalid structure for TrillianLogRootDescriptor.')
+
+    expected_format_string = '{}{}s{}{}s'.format(
+        self.FORMAT_STRING_PART_1,
+        self.root_hash_size,
+        self.FORMAT_STRING_PART_2[1:],
+        self.metadata_size)
+
+    return struct.pack(expected_format_string,
+                       self.version, self.tree_size, self.root_hash_size,
+                       str(self.root_hash), self.timestamp, self.revision,
+                       self.metadata_size, str(self.metadata))
 
   def is_valid(self):
     """Ensures that values in the descritor are sane.
@@ -911,13 +841,8 @@ class AftlDescriptor(object):
         cur_icp_entry_size = cur_icp_entry.get_expected_size()
         # Now validate the entry structure.
         if not cur_icp_entry.is_valid():
-          raise AftlError('Validation of ICP entry failed.')
+          raise AftlError('Validation of ICP entry {} failed.'.format(i))
         self.add_icp_entry(cur_icp_entry)
-        # Check if there is a next entry.
-        if cur_icp_entry.next_entry == 0:
-          if i != icp_count - 1:
-            raise AftlError('ICP entry count mismatch')
-          break
         icp_index += cur_icp_entry_size
     else:
       self.icp_header = AftlIcpHeader()
@@ -933,8 +858,6 @@ class AftlDescriptor(object):
     """
 
     # Set the next entry field to denote that a new ICP entry will follow.
-    if self.icp_entries:
-      self.icp_entries[-1].next_entry = 1
     self.icp_entries.append(avb_icp_entry)
     self.icp_header.icp_count += 1
 
@@ -1009,13 +932,19 @@ class Aftl(avbtool.Avb):
                header.authentication_data_block_size +
                header.auxiliary_data_block_size)
 
-    # TODO(jpm): Fix up AftlIcp* records so the length of data to be read
-    # can be determined more easily.
-    icp_bytes = image.read(100000)
-    if (not icp_bytes or len(icp_bytes) < 4
-        or icp_bytes[0:4] != AftlIcpHeader.MAGIC):
-      sys.stderr.write('Image does not contain AFTL inclusion proofs.\n')
+    # Parse the header out to get the AftlDescriptor size.
+    tmp_header_bytes = image.read(AftlIcpHeader.SIZE)
+    try:
+      tmp_header = AftlIcpHeader(tmp_header_bytes)
+    except AftlError:
+      sys.stderr.write('This image does not contain a valid AftlDescriptor.\n')
       return
+    # Reset to the beginning of the AftlDescriptor.
+    image.seek(offset +
+               header.SIZE +
+               header.authentication_data_block_size +
+               header.auxiliary_data_block_size)
+    icp_bytes = image.read(tmp_header.aftl_descriptor_size)
 
     icp_descriptor = AftlDescriptor(icp_bytes)
     o.write('Android Firmware Transparency Descriptor:\n')
@@ -1024,8 +953,8 @@ class Aftl(avbtool.Avb):
     for i, icp_entry in enumerate(icp_descriptor.icp_entries):
       o.write('  Entry #{}:\n'.format(i + 1))
       icp_entry.print_desc(o)
-      o.write('    Signed Root Descriptor:\n')
-      icp_entry.signed_root_descriptor.print_desc(o)
+      o.write('    Log Root Descriptor:\n')
+      icp_entry.log_root_descriptor.print_desc(o)
 
   # TODO(danielaustin): Add unit tests.
   def request_inclusion_proof(self, transparency_log, vbmeta_descriptor,
@@ -1091,6 +1020,7 @@ class Aftl(avbtool.Avb):
       raise AftlError('Error: grpc failure ({})'.format(e))
     # Return an AftlIcpEntry representing this response.
     icp_entry = AftlIcpEntry()
+    icp_entry.fw_info_leaf = fw_info
     icp_entry.translate_response(transparency_log, response)
     return icp_entry
 
@@ -1477,7 +1407,8 @@ class AftlTool(avbtool.AvbTool):
         'info_image_icp',
         help='Show information about AFTL ICPs in vbmeta or footer.')
     sub_parser.add_argument('--vbmeta_image_path',
-                            help='Path to vbmeta image to show AFTL information about.',
+                            help='Path to vbmeta image to show AFTL'
+                            ' information about.',
                             type=argparse.FileType('rb'),
                             required=True)
     sub_parser.add_argument('--output',

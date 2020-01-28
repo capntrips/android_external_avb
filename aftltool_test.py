@@ -62,29 +62,31 @@ class AftltoolTest(AftltoolTestCase):
     super(AftltoolTest, self).setUp()
 
     self.test_url = 'test'
-    self.test_sth = aftltool.AftlIcpSignedRootDescriptor()
+    self.test_sth = aftltool.TrillianLogRootDescriptor()
     self.test_sth.leaf_hash = bytearray('leaf' * 8)
     self.test_sth.tree_size = 2
     self.test_sth.root_hash = bytearray('root' * 8)
+    self.test_sth.root_hash_size = 32
     self.test_sth.log_root_sig = bytearray('root_sig' * 64)
     self.test_proofs = 'proofs'
 
-  def _validate_icp_header(self, icp_count):
+  def _validate_icp_header(self, aftl_descriptor_size, icp_count):
     """Validate an ICP header structure and attempt to validate it.
 
     Arguments:
+      aftl_descriptor_size: Total size of the AftlDescriptor.
       icp_count: Number of ICPs that follow the ICP header.
 
     Returns:
       True if the ICP header validates; otherwise False.
     """
     icp_header = aftltool.AftlIcpHeader()
+    icp_header.aftl_descriptor_size = aftl_descriptor_size
     icp_header.icp_count = icp_count
     return icp_header.is_valid()
 
   def _validate_icp_entry_with_setters(
-      self, log_url, leaf_index, signed_root_descriptor, proofs,
-      next_entry):
+      self, log_url, leaf_index, log_root_descriptor, proofs):
     """Create an ICP entry structure and attempt to validate it.
 
     Returns:
@@ -92,16 +94,14 @@ class AftltoolTest(AftltoolTestCase):
     """
     icp_entry = aftltool.AftlIcpEntry()
     icp_entry.leaf_index = leaf_index
-    icp_entry.next_entry = next_entry
     icp_entry.set_log_url(log_url)
-    icp_entry.set_signed_root_descriptor(signed_root_descriptor)
+    icp_entry.set_log_root_descriptor(log_root_descriptor)
     icp_entry.set_proofs(proofs)
     return icp_entry.is_valid()
 
   def _validate_icp_entry_without_setters(
-      self, log_url, log_url_size, leaf_index, signed_root_descriptor,
-      signed_root_descriptor_size, proof_hash_count, proofs, proof_size,
-      next_entry):
+      self, log_url, log_url_size, leaf_index, log_root_descriptor,
+      log_root_descriptor_size, proof_hash_count, proofs, inc_proof_size):
     """Create an ICP entry structure and attempt to validate it.
 
     Returns:
@@ -111,27 +111,12 @@ class AftltoolTest(AftltoolTestCase):
     icp_entry.log_url = log_url
     icp_entry.log_url_size = log_url_size
     icp_entry.leaf_index = leaf_index
-    icp_entry.signed_root_descriptor = signed_root_descriptor
-    icp_entry.signed_root_descriptor_size = signed_root_descriptor_size
+    icp_entry.log_root_descriptor = log_root_descriptor
+    icp_entry.log_root_descriptor_size = log_root_descriptor_size
     icp_entry.proof_hash_count = proof_hash_count
     icp_entry.proofs = proofs
-    icp_entry.proof_size = proof_size
-    icp_entry.next_entry = next_entry
+    icp_entry.inc_proof_size = inc_proof_size
     return icp_entry.is_valid()
-
-  def _validate_icp_signed_root_descriptor(self, leaf_hash, tree_size,
-                                           root_hash, log_root_sig):
-    """Create an ICP SignedRootBlob and attempt to validate it.
-
-    Returns:
-      True if the tests pass, False otherwise.
-    """
-    icp_signed_root_descriptor = aftltool.AftlIcpSignedRootDescriptor()
-    icp_signed_root_descriptor.leaf_hash = leaf_hash
-    icp_signed_root_descriptor.tree_size = tree_size
-    icp_signed_root_descriptor.root_hash = root_hash
-    icp_signed_root_descriptor.log_root_sig = log_root_sig
-    return icp_signed_root_descriptor.is_valid()
 
   def test_default_icp_header(self):
     """Tests default ICP header structure."""
@@ -140,11 +125,15 @@ class AftltoolTest(AftltoolTestCase):
 
   def test_valid_icp_header(self):
     """Tests valid ICP header structures."""
-    self.assertTrue(self._validate_icp_header(icp_count=4))
+    self.assertTrue(self._validate_icp_header(icp_count=4,
+                                              aftl_descriptor_size=18))
 
   def test_invalid_icp_header(self):
     """Tests invalid ICP header structures."""
-    self.assertFalse(self._validate_icp_header(icp_count=-34))
+    self.assertFalse(self._validate_icp_header(icp_count=-34,
+                                               aftl_descriptor_size=18))
+    self.assertFalse(self._validate_icp_header(icp_count=3,
+                                               aftl_descriptor_size=10))
 
   def test_default_icp_entry(self):
     """Tests default ICP entry structure."""
@@ -156,134 +145,114 @@ class AftltoolTest(AftltoolTestCase):
     self.assertTrue(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2, self.test_sth,
-            self.test_sth.SIZE, 2, self.test_proofs, len(self.test_proofs), 0))
+            self.test_sth.get_expected_size(), 2, self.test_proofs,
+            len(self.test_proofs)))
 
     self.assertTrue(
         self._validate_icp_entry_with_setters(
-            self.test_url, 2, self.test_sth, self.test_proofs, 0))
+            self.test_url, 2, self.test_sth, self.test_proofs))
 
     self.assertTrue(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2, self.test_sth,
-            self.test_sth.SIZE, 2, self.test_proofs, len(self.test_proofs), 1))
+            self.test_sth.get_expected_size(), 2, self.test_proofs,
+            len(self.test_proofs)))
 
     self.assertTrue(
         self._validate_icp_entry_with_setters(
-            self.test_url, 2, self.test_sth, self.test_proofs, 1))
+            self.test_url, 2, self.test_sth, self.test_proofs))
 
   def test_icp_entry_invalid_log_url(self):
     """Tests ICP entry with invalid log_url / log_url_size combination."""
     self.assertFalse(
         self._validate_icp_entry_without_setters(
-            None, 10, 2, self.test_sth, self.test_sth.SIZE,
-            2, self.test_proofs, len(self.test_proofs), 0))
+            None, 10, 2, self.test_sth, self.test_sth.get_expected_size(),
+            2, self.test_proofs, len(self.test_proofs)))
 
     self.assertFalse(
         self._validate_icp_entry_without_setters(
-            '', 10, 2, self.test_sth, self.test_sth.SIZE,
-            2, self.test_proofs, len(self.test_proofs), 0))
+            '', 10, 2, self.test_sth, self.test_sth.get_expected_size(),
+            2, self.test_proofs, len(self.test_proofs)))
 
     self.assertFalse(
         self._validate_icp_entry_without_setters(
-            self.test_url, -2, 2, self.test_sth, self.test_sth.SIZE,
-            2, self.test_proofs, len(self.test_proofs), 0))
+            self.test_url, -2, 2, self.test_sth,
+            self.test_sth.get_expected_size(),
+            2, self.test_proofs, len(self.test_proofs)))
 
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url) - 3, 2, self.test_sth,
-            self.test_sth.SIZE, 2, self.test_proofs, len(self.test_proofs), 0))
+            self.test_sth.get_expected_size(), 2, self.test_proofs,
+            len(self.test_proofs)))
 
   def test_icp_entry_invalid_leaf_index(self):
     """Tests ICP entry with invalid leaf_index."""
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), -1, self.test_sth,
-            self.test_sth.SIZE, 2, self.test_proofs, len(self.test_proofs), 1))
+            self.test_sth.get_expected_size(), 2, self.test_proofs,
+            len(self.test_proofs)))
 
   def test_icp_entry_invalid_sth(self):
     """Tests ICP entry with invalid STH / STH length."""
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2, None, 3,
-            2, self.test_proofs, len(self.test_proofs), 0))
+            2, self.test_proofs, len(self.test_proofs)))
 
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2, '', 3,
-            2, self.test_proofs, len(self.test_proofs), 0))
+            2, self.test_proofs, len(self.test_proofs)))
 
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2, bytearray(), 3,
-            2, self.test_proofs, len(self.test_proofs), 0))
+            2, self.test_proofs, len(self.test_proofs)))
 
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2, self.test_sth, -2,
-            2, self.test_proofs, len(self.test_proofs), 0))
+            2, self.test_proofs, len(self.test_proofs)))
 
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2,
-            self.test_sth, self.test_sth.SIZE + 14,
-            2, self.test_proofs, len(self.test_proofs), 0))
+            self.test_sth, self.test_sth.get_expected_size() + 14,
+            2, self.test_proofs, len(self.test_proofs)))
 
   def test_icp_entry_invalid_proof_hash_count(self):
     """Tests ICP entry with invalid proof_hash_count."""
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2, self.test_sth,
-            self.test_sth.SIZE, -2, self.test_proofs, len(self.test_proofs), 1))
+            self.test_sth.get_expected_size(), -2, self.test_proofs,
+            len(self.test_proofs)))
 
   def test_icp_entry_invalid_proofs(self):
     """Tests ICP entry with invalid proofs / proof size."""
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2, self.test_sth,
-            self.test_sth.SIZE, 2, [], len(self.test_proofs), 0))
+            self.test_sth.get_expected_size(), 2, [], len(self.test_proofs)))
 
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2, self.test_sth,
-            self.test_sth.SIZE, 2, '', len(self.test_proofs), 0))
+            self.test_sth.get_expected_size(), 2, '', len(self.test_proofs)))
 
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2, self.test_sth,
-            self.test_sth.SIZE, 2, bytearray(), len(self.test_proofs), 0))
+            self.test_sth.get_expected_size(), 2, bytearray(),
+            len(self.test_proofs)))
 
     self.assertFalse(
         self._validate_icp_entry_without_setters(
             self.test_url, len(self.test_url), 2, self.test_sth,
-            self.test_sth.SIZE, 2, self.test_proofs,
-            len(self.test_proofs) - 3, 0))
-
-  def test_icp_entry_invalid_next_entry(self):
-    """Tests ICP entry with invalid next_entry."""
-    self.assertFalse(self._validate_icp_entry_without_setters(
-        self.test_url, len(self.test_url), 2, self.test_sth, self.test_sth.SIZE,
-        2, self.test_proofs, len(self.test_proofs), 2))
-
-  def test_icp_signed_root_descriptor(self):
-    """Tests ICP SignedRootBlob."""
-    self.assertTrue(self._validate_icp_signed_root_descriptor(
-        self.test_sth.leaf_hash, self.test_sth.tree_size,
-        self.test_sth.root_hash, self.test_sth.log_root_sig))
-    self.assertTrue(self._validate_icp_signed_root_descriptor(bytearray(), 0,
-                                                              bytearray(),
-                                                              bytearray()))
-    self.assertFalse(self._validate_icp_signed_root_descriptor(
-        bytearray(), self.test_sth.tree_size, self.test_sth.root_hash,
-        self.test_sth.log_root_sig))
-    self.assertFalse(self._validate_icp_signed_root_descriptor(
-        self.test_sth.leaf_hash, -2, self.test_sth.root_hash,
-        self.test_sth.log_root_sig))
-    self.assertFalse(self._validate_icp_signed_root_descriptor(
-        self.test_sth.leaf_hash, self.test_sth.tree_size, bytearray(),
-        self.test_sth.log_root_sig))
-    self.assertFalse(self._validate_icp_signed_root_descriptor(
-        self.test_sth.leaf_hash, self.test_sth.tree_size,
-        self.test_sth.root_hash, bytearray()))
+            self.test_sth.get_expected_size(), 2, self.test_proofs,
+            len(self.test_proofs) - 3))
 
   def test_generate_icp_images(self):
     """Test cases for full AFTL ICP structure generation."""
@@ -291,8 +260,8 @@ class AftltoolTest(AftltoolTestCase):
     icp_header.icp_count = 1
 
     # Tests ICP header encoding.
-    expected_header_bytes = bytearray(b'\x41\x46\x54\x4c\x00\x00\x00\x01'
-                                      '\x00\x00\x00\x01\x00\x01')
+    expected_header_bytes = bytearray(b'\x41\x46\x54\x4c\x00\x00\x00\x01\x00'
+                                      '\x00\x00\x01\x00\x00\x00\x12\x00\x01')
     icp_header_bytes = icp_header.encode()
     self.assertEqual(icp_header_bytes, expected_header_bytes)
 
@@ -301,12 +270,11 @@ class AftltoolTest(AftltoolTestCase):
     self.assertTrue(icp_header.is_valid())
 
     tl_url = 'aftl-test-server.google.com'
-    sth = aftltool.AftlIcpSignedRootDescriptor()
+    sth = aftltool.TrillianLogRootDescriptor()
     sth.leaf_hash = bytearray('a' * 32)
     sth.tree_size = 2
     sth.root_hash = bytearray('f' * 32)
-    sth.log_root_sig = 'g' * 512  # bytearray('g' * 512)
-
+    sth.root_hash_size = 32
     # Fill each structure with an easily observable pattern for easy validation.
     proof_hashes = []
     proof_hashes.append(bytearray('b' * 32))
@@ -314,29 +282,25 @@ class AftltoolTest(AftltoolTestCase):
     proof_hashes.append(bytearray('d' * 32))
     proof_hashes.append(bytearray('e' * 32))
     self.assertTrue(self._validate_icp_entry_with_setters(
-        tl_url, 1, sth, proof_hashes, 0))
+        tl_url, 1, sth, proof_hashes))
 
     # Tests ICP entry encoding.
     icp_entry = aftltool.AftlIcpEntry()
     icp_entry.set_log_url(tl_url)
     icp_entry.leaf_index = 1
-    icp_entry.set_signed_root_descriptor(sth)
+    icp_entry.set_log_root_descriptor(sth)
     icp_entry.set_proofs(proof_hashes)
-    icp_entry.next_entry = 0
+    icp_entry.log_root_signature = 'g' * 512  # bytearray('g' * 512)
+    icp_entry.log_root_sig_size = 512
     icp_bytes = icp_entry.encode()
 
     expected_entry_bytes = bytearray(b'\x00\x00\x00\x1b\x00\x00\x00\x00\x00\x00'
-                                     '\x00\x01\x00\x00\x02\x85\x04\x00\x00\x00'
-                                     '\x80\x00aftl-test-server.google.comaaaaaa'
-                                     'aaaaaaaaaaaaaaaaaaaaaaaaaa\x00\x00\x00'
-                                     '\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00'
-                                     '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                     '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                     '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                     '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                     '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                     '\x00\x00\x00\x00\x00\x00fffffffffffffffff'
-                                     'fffffffffffffffgggggggggggggggggggggggggg'
+                                     '\x00\x01\x00\x00\x00=\x00\x00\x00\x00\x02'
+                                     '\x00\x04\x00\x00\x00\x80aftl-test-server.'
+                                     'google.com\x00\x01\x00\x00\x00\x00\x00'
+                                     '\x00\x00\x02 ffffffffffffffffffffffffffff'
+                                     'ffff\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+                                     '\x00\x00\x00\x00\x00\x00\x00\x00\x00ggggg'
                                      'ggggggggggggggggggggggggggggggggggggggggg'
                                      'ggggggggggggggggggggggggggggggggggggggggg'
                                      'ggggggggggggggggggggggggggggggggggggggggg'
@@ -348,10 +312,11 @@ class AftltoolTest(AftltoolTestCase):
                                      'ggggggggggggggggggggggggggggggggggggggggg'
                                      'ggggggggggggggggggggggggggggggggggggggggg'
                                      'ggggggggggggggggggggggggggggggggggggggggg'
-                                     'gggggggggggggggggggggggggggggggggggbbbbbb'
-                                     'bbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccc'
-                                     'cccccccccccccccccdddddddddddddddddddddddd'
-                                     'ddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
+                                     'ggggggggggggggggggggggggggggggggggggggggg'
+                                     'gggggggggggggggbbbbbbbbbbbbbbbbbbbbbbbbbb'
+                                     'bbbbbbccccccccccccccccccccccccccccccccddd'
+                                     'dddddddddddddddddddddddddddddeeeeeeeeeeee'
+                                     'eeeeeeeeeeeeeeeeeeee')
 
     self.assertEqual(icp_bytes, expected_entry_bytes)
 
@@ -366,24 +331,24 @@ class AftltoolTest(AftltoolTestCase):
 
     # Now add a 2nd entry (this should fail).
     tl_url2 = 'aftl-test-server.google.ch'
-    sth2 = aftltool.AftlIcpSignedRootDescriptor()
+    sth2 = aftltool.TrillianLogRootDescriptor()
     sth2.leaf_hash = bytearray('f' * 32)
     sth2.tree_size = 4
     sth2.root_hash = bytearray('e' * 32)
-    sth2.log_root_sig = bytearray('d' * 512)
-
+    sth2.root_hash_size = 32
     proof_hashes2 = []
     proof_hashes2.append(bytearray('g' * 32))
     proof_hashes2.append(bytearray('h' * 32))
     self.assertTrue(self, self._validate_icp_entry_with_setters(
-        tl_url2, 2, sth2, proof_hashes2, 0))
+        tl_url2, 2, sth2, proof_hashes2))
 
     icp_entry2 = aftltool.AftlIcpEntry()
     icp_entry2.set_log_url(tl_url2)
     icp_entry2.leaf_index = 2
-    icp_entry2.set_signed_root_descriptor(sth2)
+    icp_entry2.set_log_root_descriptor(sth2)
+    icp_entry2.log_root_signature = bytearray('d' * 512)
+    icp_entry2.log_root_sig_size = 512
     icp_entry2.set_proofs(proof_hashes2)
-    icp_entry2.next_entry = 0
     icp_blob.add_icp_entry(icp_entry2)
     self.assertTrue(icp_blob.is_valid())
 
@@ -393,22 +358,17 @@ class AftltoolTest(AftltoolTestCase):
 
     # Fix the entries so this passes.
     icp_blob.icp_header.icp_count = 2
-    icp_blob.icp_entries[0].next_entry = 1
     self.assertTrue(icp_blob.is_valid())
 
-    expected_blob_bytes = bytearray(b'AFTL\x00\x00\x00\x01\x00\x00\x00\x01'
-                                    '\x00\x02\x00\x00\x00\x1b\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x01\x00\x00\x02'
-                                    '\x85\x04\x00\x00\x00\x80\x01aftl-test-serv'
-                                    'er.google.comaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-                                    'aaa\x00\x00\x00\x00\x00\x00\x00\x02\x00'
+    expected_blob_bytes = bytearray(b'AFTL\x00\x00\x00\x01\x00\x00\x00\x01\x00'
+                                    '\x00\x00\x12\x00\x02\x00\x00\x00\x1b\x00'
+                                    '\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00='
+                                    '\x00\x00\x00\x00\x02\x00\x04\x00\x00\x00'
+                                    '\x80aftl-test-server.google.com\x00\x01'
+                                    '\x00\x00\x00\x00\x00\x00\x00\x02 fffffffff'
+                                    'fffffffffffffffffffffff\x00\x00\x00\x00'
                                     '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    'ffffffffffffffffffffffffffffffffgggggggggg'
+                                    '\x00\x00\x00\x00gggggggggggggggggggggggggg'
                                     'gggggggggggggggggggggggggggggggggggggggggg'
                                     'gggggggggggggggggggggggggggggggggggggggggg'
                                     'gggggggggggggggggggggggggggggggggggggggggg'
@@ -420,22 +380,17 @@ class AftltoolTest(AftltoolTestCase):
                                     'gggggggggggggggggggggggggggggggggggggggggg'
                                     'gggggggggggggggggggggggggggggggggggggggggg'
                                     'gggggggggggggggggggggggggggggggggggggggggg'
-                                    'ggggggggggggggggggggggggggggggggggggggggbb'
-                                    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccc'
-                                    'ccccccccccccccccccccdddddddddddddddddddddd'
-                                    'ddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
-                                    '\x00\x00\x00\x1a\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x02\x00\x00\x02\x85\x02\x00\x00\x00@'
-                                    '\x00aftl-test-server.google.chffffffffffff'
-                                    'ffffffffffffffffffff\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00'
+                                    'ggggggggggggggggggggggggbbbbbbbbbbbbbbbbbb'
+                                    'bbbbbbbbbbbbbbcccccccccccccccccccccccccccc'
+                                    'ccccddddddddddddddddddddddddddddddddeeeeee'
+                                    'eeeeeeeeeeeeeeeeeeeeeeeeee\x00\x00\x00\x1a'
+                                    '\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00'
+                                    '\x00=\x00\x00\x00\x00\x02\x00\x02\x00\x00'
+                                    '\x00@aftl-test-server.google.ch\x00\x01'
+                                    '\x00\x00\x00\x00\x00\x00\x00\x04 eeeeeeeee'
+                                    'eeeeeeeeeeeeeeeeeeeeeee\x00\x00\x00\x00'
                                     '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-                                    '\x00\x00\x00\x00eeeeeeeeeeeeeeeeeeeeeeeeee'
-                                    'eeeeeedddddddddddddddddddddddddddddddddddd'
+                                    '\x00\x00\x00\x00dddddddddddddddddddddddddd'
                                     'dddddddddddddddddddddddddddddddddddddddddd'
                                     'dddddddddddddddddddddddddddddddddddddddddd'
                                     'dddddddddddddddddddddddddddddddddddddddddd'
@@ -447,9 +402,9 @@ class AftltoolTest(AftltoolTestCase):
                                     'dddddddddddddddddddddddddddddddddddddddddd'
                                     'dddddddddddddddddddddddddddddddddddddddddd'
                                     'dddddddddddddddddddddddddddddddddddddddddd'
-                                    'ddddddddddddddgggggggggggggggggggggggggggg'
-                                    'gggghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh')
-
+                                    'ddddddddddddddddddddddddgggggggggggggggggg'
+                                    'gggggggggggggghhhhhhhhhhhhhhhhhhhhhhhhhhhh'
+                                    'hhhh')
     self.assertEqual(icp_blob.encode(), expected_blob_bytes)
 
     icp_blob = aftltool.AftlDescriptor(expected_blob_bytes)
