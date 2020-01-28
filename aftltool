@@ -958,7 +958,8 @@ class Aftl(avbtool.Avb):
 
   # TODO(danielaustin): Add unit tests.
   def request_inclusion_proof(self, transparency_log, vbmeta_descriptor,
-                              version_inc, manufacturer_key_path):
+                              version_inc, manufacturer_key_path,
+                              signing_helper, signing_helper_with_files):
     """Packages and sends a request to the specified transparency log.
 
     Arguments:
@@ -967,19 +968,21 @@ class Aftl(avbtool.Avb):
       version_inc: Subcomponent of the build fingerprint.
       manufacturer_key_path: Path to key used to sign messages sent to the
          transparency log servers.
-
+      signing_helper: Program which signs a hash and returns a signature.
+      signing_helper_with_files: Same as signing_helper but uses files instead.
     Returns:
       An AftlIcpEntry with the inclusion proof for the log entry.
 
     Raises:
       AftlError: If grpc or the proto modules cannot be loaded, if there is an
-         error communicating with the log or if the manufacturer_key_path
-         cannot be decoded.
+         error communicating with the log, if the manufacturer_key_path
+         cannot be decoded, or if the log submission cannot be signed.
     """
     # Import grpc and proto.api_pb2_grpc now to avoid global dependencies.
     try:
       import grpc
       import proto.api_pb2_grpc
+      import proto.crypto.sigpb
     except ImportError as e:
       err_str = 'grpc can be installed with python pip install grpcio.\n'
       raise AftlError('Failed to import module: ({}).\n{}'.format(e, err_str))
@@ -1006,8 +1009,39 @@ class Aftl(avbtool.Avb):
     fw_info = proto.aftl_pb2.FirmwareInfo(vbmeta_hash=vbmeta_hash,
                                           version_incremental=version_inc,
                                           manufacturer_key_hash=m_key_hash)
-    # TODO(danielaustin): Sign the message with the manufacturer key.
-    sfw_info = proto.aftl_pb2.SignedFirmwareInfo(info=fw_info)
+    signed_fw_info = bytearray()
+    # AFTL supports SHA256_SA4096 for now, more will be available.
+    algorithm_name = 'SHA256_RSA4096'
+    sig_num_bytes = 0
+    alg_padding = ''
+    try:
+      alg = avbtool.ALGORITHMS[algorithm_name]
+      sig_num_bytes = alg.signature_num_bytes
+      alg_padding = alg.padding
+    except KeyError:
+      raise AftlError('Unknown algorithm with name {}'.format(algorithm_name))
+
+    hasher = hashlib.sha256()
+    hasher.update(fw_info.SerializeToString())
+    fw_info_hash = hasher.digest()
+    padding_and_hash = str(bytearray(alg_padding)) + fw_info_hash
+    try:
+      signed_fw_info = avbtool.raw_sign(signing_helper,
+                                        signing_helper_with_files,
+                                        algorithm_name,
+                                        sig_num_bytes,
+                                        manufacturer_key_path,
+                                        padding_and_hash)
+    except avbtool.AvbError as e:
+      raise AftlError('Failed to sign FirmwareInfo with '
+                      '--manufacturer_key: {}'.format(e))
+    fw_info_sig = proto.crypto.sigpb.sigpb_pb2.DigitallySigned(
+        hash_algorithm='SHA256',
+        signature_algorithm='RSA',
+        signature=str(signed_fw_info))
+
+    sfw_info = proto.aftl_pb2.SignedFirmwareInfo(info=fw_info,
+                                                 info_signature=fw_info_sig)
     request = proto.api_pb2.AddFirmwareInfoRequest(vbmeta=bytes(
         str(vbmeta_descriptor)), fw_info=sfw_info)
     # Attempt to transmit to the transparency log.
@@ -1091,11 +1125,6 @@ class Aftl(avbtool.Avb):
     if not manufacturer_key:
       raise AftlError('No manufacturer key path given.')
 
-    # TODO(danielaustin): add support for signing_helper and
-    # signing_helper_with_files
-    if signing_helper is not None or signing_helper_with_files is not None:
-      raise AftlError('signing_helper support not yet implemented for ICP.')
-
     # Retrieves vbmeta structure from given partition image.
     image = avbtool.ImageHandler(vbmeta_image_path)
     (footer, header, _, _) = self._parse_image(image)
@@ -1113,7 +1142,9 @@ class Aftl(avbtool.Avb):
       try:
         icp_entry = self.request_inclusion_proof(transparency_log, vbmeta_image,
                                                  version_incremental,
-                                                 manufacturer_key)
+                                                 manufacturer_key,
+                                                 signing_helper,
+                                                 signing_helper_with_files)
         # TODO(danielaustin): Update icp_entry to validate if the vbmeta image
         # matches with the ICP stored data, and store the correct ICP
         # in the icp_entry.
@@ -1407,8 +1438,7 @@ class AftlTool(avbtool.AvbTool):
         'info_image_icp',
         help='Show information about AFTL ICPs in vbmeta or footer.')
     sub_parser.add_argument('--vbmeta_image_path',
-                            help='Path to vbmeta image to show AFTL'
-                            ' information about.',
+                            help='Path to vbmeta image for AFTL information.',
                             type=argparse.FileType('rb'),
                             required=True)
     sub_parser.add_argument('--output',
