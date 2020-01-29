@@ -28,11 +28,13 @@
 from __future__ import print_function
 
 import binascii
+import io
 import os
 import sys
 import unittest
 
 import aftltool
+import avbtool
 import proto.aftl_pb2
 import proto.api_pb2
 import proto.trillian_pb2
@@ -307,18 +309,6 @@ class AftltoolTest(AftltoolTestCase):
 
   def test_generate_icp_images(self):
     """Test cases for full AFTL ICP structure generation."""
-    icp_header = aftltool.AftlIcpHeader()
-    icp_header.icp_count = 1
-
-    # Tests ICP header encoding.
-    expected_header_bytes = bytearray(b'\x41\x46\x54\x4c\x00\x00\x00\x01\x00'
-                                      '\x00\x00\x01\x00\x00\x00\x12\x00\x01')
-    icp_header_bytes = icp_header.encode()
-    self.assertEqual(icp_header_bytes, expected_header_bytes)
-
-    # Tests ICP header decoding.
-    icp_header = aftltool.AftlIcpHeader(expected_header_bytes)
-    self.assertTrue(icp_header.is_valid())
 
     tl_url = 'aftl-test-server.google.com'
     sth = aftltool.TrillianLogRootDescriptor()
@@ -543,6 +533,103 @@ class AftltoolTest(AftltoolTestCase):
       leaf_hash = aftltool.rfc6962_hash_leaf(leaves[leaf_id])
       root_hash = aftltool.root_from_icp(leaf_id, icp[1], icp[2], leaf_hash)
       self.assertEqual(root_hash, roots[icp[1] -1])
+
+
+class AftlIcpHeaderTest(AftltoolTestCase):
+  """Test suite for testing the AftlIcpHeader descriptor."""
+
+  def setUp(self):
+    """Sets up the test bed for the unit tests."""
+    super(AftlIcpHeaderTest, self).setUp()
+
+    self.test_header_valid = aftltool.AftlIcpHeader()
+    self.test_header_valid.icp_count = 1
+
+    self.test_header_invalid = aftltool.AftlIcpHeader()
+    self.test_header_invalid.icp_count = -34
+
+    self.test_header_bytes = bytearray(b'\x41\x46\x54\x4c\x00\x00\x00\x01'
+                                       '\x00\x00\x00\x01\x00\x00\x00\x12'
+                                       '\x00\x01')
+
+  def test__init__(self):
+    """Tests default ICP header structure."""
+
+    # Calls constructor without data.
+    header = aftltool.AftlIcpHeader()
+    self.assertEqual(header.magic, 'AFTL')
+    self.assertEqual(header.required_icp_version_major,
+                     avbtool.AVB_VERSION_MAJOR)
+    self.assertEqual(header.required_icp_version_minor,
+                     avbtool.AVB_VERSION_MINOR)
+    self.assertEqual(header.aftl_descriptor_size, aftltool.AftlIcpHeader.SIZE)
+    self.assertEqual(header.icp_count, 0)
+    self.assertTrue(header.is_valid())
+
+    # Calls constructor with data.
+    header = aftltool.AftlIcpHeader(self.test_header_bytes)
+    self.assertEqual(header.magic, 'AFTL')
+    self.assertEqual(header.required_icp_version_major, 1)
+    self.assertEqual(header.required_icp_version_minor, 1)
+    self.assertEqual(header.aftl_descriptor_size, aftltool.AftlIcpHeader.SIZE)
+    self.assertTrue(header.icp_count, 1)
+    self.assertTrue(header.is_valid())
+
+  def test_save(self):
+    """Tests ICP header save method."""
+    buf = io.BytesIO()
+    self.test_header_valid.save(buf)
+    self.assertEqual(buf.getvalue(), self.test_header_bytes)
+
+  def test_encode(self):
+    """Tests ICP header encoding."""
+    # Valid header.
+    header_bytes = self.test_header_valid.encode()
+    self.assertEqual(header_bytes, self.test_header_bytes)
+
+    # Invalid header
+    with self.assertRaises(aftltool.AftlError):
+      header_bytes = self.test_header_invalid.encode()
+
+  def test_is_valid(self):
+    """Tests valid ICP header structures."""
+    # Invalid magic.
+    header = aftltool.AftlIcpHeader()
+    self.assertTrue(header.is_valid())
+
+    # Invalid magic.
+    header = aftltool.AftlIcpHeader()
+    header.magic = 'YOLO'
+    self.assertFalse(header.is_valid())
+
+    # Valid ICP count.
+    self.assertTrue(self.test_header_valid.is_valid())
+
+    # Invalid ICP count.
+    self.assertFalse(self.test_header_invalid.is_valid())
+
+    header = aftltool.AftlIcpHeader()
+    header.icp_count = 10000000
+    self.assertFalse(header.is_valid())
+
+    # Invalid ICP major version.
+    header = aftltool.AftlIcpHeader()
+    header.required_icp_version_major = avbtool.AVB_VERSION_MAJOR + 1
+    self.assertFalse(header.is_valid())
+
+    # Invalid ICP minor version.
+    header = aftltool.AftlIcpHeader()
+    header.required_icp_version_minor = avbtool.AVB_VERSION_MINOR + 1
+    self.assertFalse(header.is_valid())
+
+  def test_print_desc(self):
+    buf = io.BytesIO()
+    self.test_header_valid.print_desc(buf)
+    desc = buf.getvalue()
+
+    # Cursory check if the printed description contains something.
+    self.assertGreater(len(desc), 0)
+    self.assertTrue('Major version' in desc)
 
 
 class TrillianLogRootDescriptorTest(AftltoolTestCase):
