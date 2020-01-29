@@ -776,10 +776,11 @@ class TrillianLogRootDescriptor(object):
     if self.metadata_size < 0 or self.metadata_size > 65535:
       sys.stderr.write('{}: Bad metadatasize value {}.'.format(
           cls, self.metadata_size))
+      return False
     if len(self.metadata) != self.metadata_size:
       sys.stderr.write('{}: metadata_size {} does not match with length of'
                        'metadata {}'.format(cls, self.metadata_size,
-                                            len(self.metadata_size)))
+                                            len(self.metadata)))
       return False
     return True
 
