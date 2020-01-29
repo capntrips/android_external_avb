@@ -33,6 +33,10 @@ import sys
 import unittest
 
 import aftltool
+import proto.aftl_pb2
+import proto.api_pb2
+import proto.trillian_pb2
+
 
 class AftltoolTestCase(unittest.TestCase):
 
@@ -46,6 +50,53 @@ class AftltoolTestCase(unittest.TestCase):
     self.stderr = sys.stderr
     self.null = open(os.devnull, 'wb')
     sys.stderr = self.null
+
+    # Sets up test data.
+    # pylint: disable=no-member
+    self.test_afi_resp = proto.api_pb2.AddFirmwareInfoResponse()
+    self.test_afi_resp.fw_info_proof.proof.leaf_index = 6263
+    hashes = [
+        '3ad99869646980c0a51d637a9791f892d12e0bc83f6bac5d305a9e289e7f7e8b',
+        '2e5c664d2aee64f71cb4d292e787d0eae7ca9ed80d1e08abb41d26baca386c05',
+        'a671dd99f8d97e9155cc2f0a9dc776a112a5ec5b821ec71571bb258ac790717a',
+        '78046b839595e4e49ad4b0c73f92bf4803aacd4a3351181086509d057ef0d7a9',
+        'c0a7e013f03e7c69e9402070e113dadb345868cf144ccb174fabc384b5605abf',
+        'dc36e5dbe36abe9f4ad10f14170aa0148b6fe3fcaba9df43deaf4dede01b02e8',
+        'b063e7fb665370a361718208756c363dc5206e2e9af9b4d847d81289cdae30de',
+        'a69ea5ba88a221103636d3f4245c800570eb86ad9276121481521f97d0a04a81']
+    for h in hashes:
+      self.test_afi_resp.fw_info_proof.proof.hashes.append(
+          binascii.unhexlify(h))
+    self.test_afi_resp.fw_info_proof.sth.key_hint = binascii.unhexlify(
+        '5af859abce8fe1ea')
+    self.test_afi_resp.fw_info_proof.sth.log_root = binascii.unhexlify(
+        '000100000000000018782053b182b55dc1377197c938637f50093131daea4'
+        'd0696b1eae5b8a014bfde884a15edb28f1fc7954400000000000013a50000'
+    )
+    self.test_afi_resp.vbmeta_proof.sth.log_root_signature = binascii.unhexlify(
+        'c264bc7986a1cf56364ca4dd04989f45515cb8764d05b4fb2b880172585ea404'
+        '2105f95a0e0471fb6e0f8c762b14b2e526fb78eaddcc61484917795a12f6ab3b'
+        '557b5571d492d07d7950595f9ad8647a606c7c633f4697c5eb59c272aeca0419'
+        '397c70a3b9b51537537c4ea6b49d356110e70a9286902f814cc6afbeafe612e4'
+        '9e180146140e902bdd9e9dae66b37b4943150a9571949027a648db88a4eea3ad'
+        'f930b4fa6a183e97b762ab0e55a3a26aa6b0fd44d30531e2541ecb94bf645e62'
+        '59e8e3151e7c3b51a09fe24557ce2fd2c0ecdada7ce99c390d2ef10e5d075801'
+        '7c10d49c55cdee930959cc35f0104e04f296591eeb5defbc9ebb237da7b204ca'
+        'a4608cb98d6bc3a01f18585a04441caf8ec7a35aa2d35f7483b92b14fd0f4a41'
+        '3a91133545579309adc593222ca5032a103b00d8fcaea911936dbec11349e4dd'
+        '419b091ea7d1130570d70e2589dd9445fd77fd7492507e1c87736847b9741cc6'
+        '236868af42558ff6e833e12010c8ede786e43ada40ff488f5f1870d1619887d7'
+        '66a24ad0a06a47cc14e2f7db07361be191172adf3155f49713807c7c265f5a84'
+        '040fc84246ccf7913e44721f0043cea05ee774e457e13206775eee992620c3f9'
+        'd2b2584f58aac19e4afe35f0a17df699c45729f94101083f9fc4302659a7e6e0'
+        'e7eb36f8d1ca0be2c9010160d329bd2d17bb707b010fdd63c30b667a0b886cf9'
+    )
+    self.test_afi_resp.fw_info_leaf = (
+        '{\"timestamp\":{\"seconds\":1580115370,\"nanos\":621454825},\"Va'
+        'lue\":{\"FwInfo\":{\"info\":{\"info\":{\"vbmeta_hash\":\"ViNzEQS'
+        '/oc/bJ13yl40fk/cvXw90bxHQbzCRxgHDIGc=\",\"version_incremental\":'
+        '\"1\",\"manufacturer_key_hash\":\"yBCrUOdjvaAh4git5EgqWa5neegUao'
+        'XeLlB67+N8ObY=\"}}}}}')
 
   def tearDown(self):
     """Tears down the test bed for the unit tests."""
@@ -540,6 +591,80 @@ class TrillianLogRootDescriptorTest(AftltoolTestCase):
     self.assertEqual(d.metadata_size, 2)
     self.assertEqual(d.metadata, bytearray('12'))
 
+
+class AftlMockCommunication(aftltool.AftlCommunication):
+  """Testing Mock implementation of AftlCommunication."""
+
+  def __init__(self, transparency_log, canned_response):
+    """Initializes the object.
+
+    Arguments:
+      transparency_log: String containing the URL of a transparency log server.
+      canned_response: AddFirmwareInfoResponse to return or the Exception to
+        raise.
+    """
+    super(AftlMockCommunication, self).__init__(transparency_log)
+    self.request = None
+    self.canned_response = canned_response
+
+  def AddFirmwareInfo(self, request):
+    """Records the request and returns the canned response."""
+    self.request = request
+
+    if isinstance(self.canned_response, aftltool.AftlError):
+      raise self.canned_response
+    return self.canned_response
+
+
+class AftlTest(AftltoolTestCase):
+
+  def setUp(self):
+    """Sets up the test bed for the unit tests."""
+    super(AftlTest, self).setUp()
+    self.mock_aftl_host = 'test.foo.bar:9000'
+
+  # pylint: disable=no-member
+  def test_request_inclusion_proof(self):
+    """Tests the request_inclusion_proof method."""
+    aftl_comms = AftlMockCommunication(self.mock_aftl_host, self.test_afi_resp)
+    aftl = aftltool.Aftl()
+    icp = aftl.request_inclusion_proof(self.mock_aftl_host,
+                                       'a'*1024, 'version_inc',
+                                       'test/data/testkey_rsa4096.pem',
+                                       None, None,
+                                       aftl_comms=aftl_comms)
+    self.assertEqual(icp.leaf_index,
+                     self.test_afi_resp.fw_info_proof.proof.leaf_index)
+    self.assertEqual(icp.proof_hash_count,
+                     len(self.test_afi_resp.fw_info_proof.proof.hashes))
+    self.assertEqual(icp.log_url, self.mock_aftl_host)
+    self.assertEqual(
+        icp.log_root_descriptor.root_hash, binascii.unhexlify(
+            '53b182b55dc1377197c938637f50093131daea4d0696b1eae5b8a014bfde884a'))
+
+    self.assertEqual(icp.fw_info_leaf.version_incremental, 'version_inc')
+    # To calculate the hash of the a RSA key use the following command:
+    # openssl rsa -in test/data/testkey_rsa4096.pem -pubout \
+    #    -outform DER | sha256sum
+    self.assertEqual(icp.fw_info_leaf.manufacturer_key_hash, binascii.unhexlify(
+        '9841073d16a7abbe21059e026da71976373d8f74fdb91cc46aa0a7d622b925b9'))
+
+    self.assertEqual(icp.log_root_signature,
+                     self.test_afi_resp.fw_info_proof.sth.log_root_signature)
+    self.assertEqual(icp.proofs, self.test_afi_resp.fw_info_proof.proof.hashes)
+
+  # pylint: disable=no-member
+  def test_request_inclusion_proof_failure(self):
+    """Tests the request_inclusion_proof_method in case of a comms problem."""
+    aftl_comms = AftlMockCommunication(self.mock_aftl_host,
+                                       aftltool.AftlError('Comms error'))
+    aftl = aftltool.Aftl()
+    with self.assertRaises(aftltool.AftlError):
+      aftl.request_inclusion_proof(self.mock_aftl_host,
+                                   'a'*1024, 'version_inc',
+                                   'test/data/testkey_rsa4096.pem',
+                                   None, None,
+                                   aftl_comms=aftl_comms)
 
 if __name__ == '__main__':
   unittest.main(verbosity=2)
