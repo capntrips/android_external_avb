@@ -123,21 +123,6 @@ class AftltoolTest(AftltoolTestCase):
     self.test_sth.log_root_sig = bytearray('root_sig' * 64)
     self.test_proofs = 'proofs'
 
-  def _validate_icp_header(self, aftl_descriptor_size, icp_count):
-    """Validate an ICP header structure and attempt to validate it.
-
-    Arguments:
-      aftl_descriptor_size: Total size of the AftlDescriptor.
-      icp_count: Number of ICPs that follow the ICP header.
-
-    Returns:
-      True if the ICP header validates; otherwise False.
-    """
-    icp_header = aftltool.AftlIcpHeader()
-    icp_header.aftl_descriptor_size = aftl_descriptor_size
-    icp_header.icp_count = icp_count
-    return icp_header.is_valid()
-
   def _validate_icp_entry_with_setters(
       self, log_url, leaf_index, log_root_descriptor, proofs):
     """Create an ICP entry structure and attempt to validate it.
@@ -170,23 +155,6 @@ class AftltoolTest(AftltoolTestCase):
     icp_entry.proofs = proofs
     icp_entry.inc_proof_size = inc_proof_size
     return icp_entry.is_valid()
-
-  def test_default_icp_header(self):
-    """Tests default ICP header structure."""
-    icp_header = aftltool.AftlIcpHeader()
-    self.assertTrue(icp_header.is_valid())
-
-  def test_valid_icp_header(self):
-    """Tests valid ICP header structures."""
-    self.assertTrue(self._validate_icp_header(icp_count=4,
-                                              aftl_descriptor_size=18))
-
-  def test_invalid_icp_header(self):
-    """Tests invalid ICP header structures."""
-    self.assertFalse(self._validate_icp_header(icp_count=-34,
-                                               aftl_descriptor_size=18))
-    self.assertFalse(self._validate_icp_header(icp_count=3,
-                                               aftl_descriptor_size=10))
 
   def test_default_icp_entry(self):
     """Tests default ICP entry structure."""
@@ -623,20 +591,24 @@ class AftlIcpHeaderTest(AftltoolTestCase):
     self.assertFalse(header.is_valid())
 
   def test_print_desc(self):
+    """Tests print_desc method."""
     buf = io.BytesIO()
     self.test_header_valid.print_desc(buf)
     desc = buf.getvalue()
 
-    # Cursory check if the printed description contains something.
+    # Cursory whether the printed description contains something useful.
     self.assertGreater(len(desc), 0)
-    self.assertTrue('Major version' in desc)
+    self.assertTrue('Major version:' in desc)
 
 
 class TrillianLogRootDescriptorTest(AftltoolTestCase):
+  """Test suite for testing the TrillianLogRootDescriptorTest descriptor."""
 
   def setUp(self):
     """Sets up the test bed for the unit tests."""
     super(TrillianLogRootDescriptorTest, self).setUp()
+
+    # Creates basic log root without metadata fields.
     base_log_root = (
         '0001'                              # version
         '00000000000002e5'                  # tree_size
@@ -646,37 +618,166 @@ class TrillianLogRootDescriptorTest(AftltoolTestCase):
         '15e1c97e3b4bd239'                  # timestamp
         '00000000000002e4'                  # revision
     )
-    self.test_log_root_without_metadata = binascii.unhexlify(
+
+    # Create valid log roots with metadata fields w/ and w/o metadata.
+    self.test_log_root_bytes_wo_metadata = binascii.unhexlify(
         base_log_root + '0000')
-    self.test_log_root_with_metadata = binascii.unhexlify(
+    self.test_log_root_bytes_with_metadata = binascii.unhexlify(
         base_log_root + '00023132')
 
-  def test_valid_empty_descriptor(self):
-    """Tests behavior of instance creation without data."""
+  def test__init__(self):
+    """Tests constructor."""
+    # Calls constructor without data.
     d = aftltool.TrillianLogRootDescriptor()
     self.assertTrue(d.is_valid())
+    self.assertEqual(d.version, 1)
+    self.assertEqual(d.tree_size, 0)
+    self.assertEqual(d.root_hash_size, 0)
+    self.assertEqual(d.root_hash, bytearray())
+    self.assertEqual(d.timestamp, 0)
+    self.assertEqual(d.revision, 0)
+    self.assertEqual(d.metadata_size, 0)
+    self.assertEqual(d.metadata, bytearray())
 
-  def test_valid_parsed_descriptor_without_metadata(self):
-    """Tests parsing of a Trillian log_root structure."""
-    d = aftltool.TrillianLogRootDescriptor(self.test_log_root_without_metadata)
+    # Calls constructor with log_root w/o metadata
+    d = aftltool.TrillianLogRootDescriptor(self.test_log_root_bytes_wo_metadata)
     self.assertTrue(d.is_valid())
     self.assertEqual(d.version, 1)
     self.assertEqual(d.tree_size, 741)
     self.assertEqual(d.root_hash_size, 32)
-    self.assertEqual(binascii.hexlify(d.root_hash),
-                     '2d614759ad408a111a3351c0cb33c099'
-                     '422c30a5c5104788a343332bde2b387b')
+    self.assertEqual(d.root_hash,
+                     binascii.unhexlify('2d614759ad408a111a3351c0cb33c099'
+                                        '422c30a5c5104788a343332bde2b387b'))
     self.assertEqual(d.timestamp, 1576762888554271289)
     self.assertEqual(d.revision, 740)
     self.assertEqual(d.metadata_size, 0)
     self.assertEqual(d.metadata, bytearray())
 
-  def test_valid_parsed_descriptor_with_metadata(self):
-    """Tests parsing of a Trillian log_root structure with metadata field."""
-    d = aftltool.TrillianLogRootDescriptor(self.test_log_root_with_metadata)
-    self.assertTrue(d.is_valid())
+    # Calls constructor with log_root with metadata
+    d = aftltool.TrillianLogRootDescriptor(
+        self.test_log_root_bytes_with_metadata)
     self.assertEqual(d.metadata_size, 2)
     self.assertEqual(d.metadata, bytearray('12'))
+
+  def test_get_expected_size(self):
+    """Tests get_expected_size method."""
+    # Default constructor.
+    d = aftltool.TrillianLogRootDescriptor()
+    self.assertEqual(d.get_expected_size(), 11 + 18)
+
+    # Log root without metadata.
+    d = aftltool.TrillianLogRootDescriptor(self.test_log_root_bytes_wo_metadata)
+    self.assertEqual(d.get_expected_size(), 11 + 18 + 32)
+
+    # Log root with metadata.
+    d = aftltool.TrillianLogRootDescriptor(
+        self.test_log_root_bytes_with_metadata)
+    self.assertEqual(d.get_expected_size(), 11 + 18 + 32 + 2)
+
+  def test_encode(self):
+    """Tests encode method."""
+    # Log root from default constructor.
+    d = aftltool.TrillianLogRootDescriptor()
+    expected_bytes = (
+        '0001'                              # version
+        '0000000000000000'                  # tree_size
+        '00'                                # root_hash_size
+        ''                                  # root_hash (empty)
+        '0000000000000000'                  # timestamp
+        '0000000000000000'                  # revision
+        '0000'                              # metadata size
+        ''                                  # metadata (empty)
+    )
+    self.assertEqual(d.encode(), binascii.unhexlify(expected_bytes))
+
+    # Log root without metadata.
+    d = aftltool.TrillianLogRootDescriptor(self.test_log_root_bytes_wo_metadata)
+    self.assertEqual(d.encode(), self.test_log_root_bytes_wo_metadata)
+
+    # Log root with metadata.
+    d = aftltool.TrillianLogRootDescriptor(
+        self.test_log_root_bytes_with_metadata)
+    self.assertEqual(d.encode(), self.test_log_root_bytes_with_metadata)
+
+  def test_is_valid(self):
+    """Tests the is_valid method."""
+    d = aftltool.TrillianLogRootDescriptor()
+    self.assertTrue(d.is_valid())
+
+    # Invalid version.
+    d = aftltool.TrillianLogRootDescriptor()
+    d.version = 2
+    self.assertFalse(d.is_valid())
+
+    # Invalid tree_size.
+    d = aftltool.TrillianLogRootDescriptor()
+    d.tree_size = -1
+    self.assertFalse(d.is_valid())
+
+    # Invalid root_hash_size.
+    d = aftltool.TrillianLogRootDescriptor()
+    d.root_hash_size = -1
+    self.assertFalse(d.is_valid())
+    d.root_hash_size = 300
+    self.assertFalse(d.is_valid())
+
+    # Invalid/valid root_hash_size / root_hash combination.
+    d = aftltool.TrillianLogRootDescriptor()
+    d.root_hash_size = 4
+    d.root_hash = '123'
+    self.assertFalse(d.is_valid())
+    d.root_hash = '1234'
+    self.assertTrue(d.is_valid())
+
+    # Invalid timestamp.
+    d = aftltool.TrillianLogRootDescriptor()
+    d.timestamp = -1
+    self.assertFalse(d.is_valid())
+
+    # Invalid revision.
+    d = aftltool.TrillianLogRootDescriptor()
+    d.revision = -1
+    self.assertFalse(d.is_valid())
+
+    # Invalid metadata_size.
+    d = aftltool.TrillianLogRootDescriptor()
+    d.metadata_size = -1
+    self.assertFalse(d.is_valid())
+    d.metadata_size = 70000
+    self.assertFalse(d.is_valid())
+
+    # Invalid/valid metadata_size / metadata combination.
+    d = aftltool.TrillianLogRootDescriptor()
+    d.metadata_size = 4
+    d.metadata = '123'
+    self.assertFalse(d.is_valid())
+    d.metadata = '1234'
+    self.assertTrue(d.is_valid())
+
+  def test_print_desc(self):
+    """Tests print_desc method."""
+    # Log root without metadata
+    buf = io.BytesIO()
+    d = aftltool.TrillianLogRootDescriptor(self.test_log_root_bytes_wo_metadata)
+    d.print_desc(buf)
+    desc = buf.getvalue()
+
+    # Cursory whether the printed description contains something useful.
+    self.assertGreater(len(desc), 0)
+    self.assertTrue('Version:' in desc)
+    self.assertFalse('Metadata:' in desc)
+
+    # Log root with metadata
+    buf = io.BytesIO()
+    d = aftltool.TrillianLogRootDescriptor(
+        self.test_log_root_bytes_with_metadata)
+    d.print_desc(buf)
+    desc = buf.getvalue()
+
+    # Cursory whether the printed description contains something useful.
+    self.assertGreater(len(desc), 0)
+    self.assertTrue('Version:' in desc)
+    self.assertTrue('Metadata:' in desc)
 
 
 class AftlMockCommunication(aftltool.AftlCommunication):
