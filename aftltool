@@ -1172,19 +1172,11 @@ class Aftl(avbtool.Avb):
     # log.
 
     # Validates command line parameters.
-    if not vbmeta_image_path:
-      raise AftlError('No vbmeta image path found.')
-    if not transparency_log_servers:
-      raise AftlError('No transparency log servers given.')
-    if not transparency_log_pub_keys:
-      raise AftlError('No transparency log public keys given.')
     if len(transparency_log_servers) != len(transparency_log_pub_keys):
       raise AftlError('Transparency log count and public key count mismatch: '
                       '{} servers and {} public keys'.format(
                           len(transparency_log_servers),
                           len(transparency_log_pub_keys)))
-    if not manufacturer_key:
-      raise AftlError('No manufacturer key path given.')
 
     # Retrieves vbmeta structure from given partition image.
     image = avbtool.ImageHandler(vbmeta_image_path)
@@ -1465,25 +1457,32 @@ class AftlTool(avbtool.AvbTool):
                             type=argparse.FileType('wb'),
                             default=sys.stdout)
     sub_parser.add_argument('--vbmeta_image_path',
-                            help='Path to a generate vbmeta image file.')
-    sub_parser.add_argument('--version_incremental', help='Current build ID.')
+                            help='Path to a generate vbmeta image file.',
+                            required=True)
+    sub_parser.add_argument('--version_incremental',
+                            help='Current build ID.',
+                            required=True)
     sub_parser.add_argument('--manufacturer_key',
                             help='Path to the PEM file containing the '
-                            'manufacturer key for use with the log.')
+                            'manufacturer key for use with the log.',
+                            required=True)
     sub_parser.add_argument('--transparency_log_servers',
                             help='List of transparency log servers in '
                             'host:port format. This must not be None and must '
                             'be the same size as transparency_log_pub_keys. '
                             'Also, transparency_log_servers[n] must correspond '
                             'to transparency_log_pub_keys[n] for all values n.',
-                            nargs='*')
+                            nargs='*',
+                            required=True)
     sub_parser.add_argument('--transparency_log_pub_keys',
                             help='Paths to PEM files containing transparency '
                             'log server key(s). This must not be None and must '
                             'be the same size as transparency_log_servers. '
                             'Also, transparency_log_pub_keys[n] must '
                             'correspond to transparency_log_servers[n] for all '
-                            'values n.', nargs='*')
+                            'values n.',
+                            nargs='*',
+                            required=True)
     sub_parser.add_argument('--padding_size',
                             metavar='NUMBER',
                             help='If non-zero, pads output with NUL bytes so '
