@@ -248,6 +248,22 @@ cc_library_host_static {
 }
 
 cc_library_host_static {
+    name: "libavb_aftl_host",
+    defaults: [
+        "avb_defaults",
+        "avb_sources"],
+    header_libs: ["avb_headers"],
+    export_header_lib_headers: ["avb_headers"],
+    cflags: [
+        "-fno-stack-protector",
+    ],
+    srcs: [
+      "libavb_aftl/avb_aftl_validate.c",
+      "libavb_aftl/avb_aftl_util.c",
+    ],
+}
+
+cc_library_host_static {
     name: "libavb_atx_host",
     defaults: ["avb_defaults"],
     header_libs: [
@@ -298,6 +314,7 @@ cc_test_host {
     static_libs: [
         "libavb",
         "libavb_ab_host",
+        "libavb_aftl_host",
         "libavb_atx_host",
         "libavb_things_example",
         "libgmock_host",
@@ -314,6 +331,7 @@ cc_test_host {
     ],
     srcs: [
         "test/avb_ab_flow_unittest.cc",
+        "test/avb_aftl_validate_unittest.cc",
         "test/avb_atx_validate_unittest.cc",
         "test/avb_atx_slot_verify_unittest.cc",
         "test/avb_slot_verify_unittest.cc",
