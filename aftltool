@@ -913,6 +913,21 @@ class AftlDescriptor(object):
         return False
     return True
 
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    o.write('Android Firmware Transparency Descriptor:\n')
+    o.write('  Header:\n')
+    self.icp_header.print_desc(o)
+    for i, icp_entry in enumerate(self.icp_entries):
+      o.write('  Entry #{}:\n'.format(i + 1))
+      icp_entry.print_desc(o)
+      o.write('    Log Root Descriptor:\n')
+      icp_entry.log_root_descriptor.print_desc(o)
+
 
 class AftlCommunication(object):
   """Class to abstract the communication layer with the transparency log."""
@@ -1023,14 +1038,7 @@ class Aftl(avbtool.Avb):
     icp_bytes = image.read(tmp_header.aftl_descriptor_size)
 
     icp_descriptor = AftlDescriptor(icp_bytes)
-    o.write('Android Firmware Transparency Descriptor:\n')
-    o.write('  Header:\n')
-    icp_descriptor.icp_header.print_desc(o)
-    for i, icp_entry in enumerate(icp_descriptor.icp_entries):
-      o.write('  Entry #{}:\n'.format(i + 1))
-      icp_entry.print_desc(o)
-      o.write('    Log Root Descriptor:\n')
-      icp_entry.log_root_descriptor.print_desc(o)
+    icp_descriptor.print_desc(o)
 
   def request_inclusion_proof(self, transparency_log, vbmeta_descriptor,
                               version_inc, manufacturer_key_path,
