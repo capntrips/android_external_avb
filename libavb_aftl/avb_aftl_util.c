@@ -211,14 +211,13 @@ bool avb_aftl_chain_border_right(uint8_t* seed,
                                  uint32_t proof_entry_count,
                                  uint8_t* hash) {
   size_t i;
-  uint8_t* tmp;
   uint8_t* tmp_hash;
-  bool retval;
+  uint8_t* tmp = seed;
+  bool retval = true;
 
   avb_assert(seed_size == AFTL_HASH_SIZE);
   avb_assert(seed != NULL && proof != NULL && hash != NULL);
 
-  tmp = seed;
   tmp_hash = (uint8_t*)avb_malloc(AFTL_HASH_SIZE);
   if (tmp_hash == NULL) {
     avb_error("Allocation failure in avb_aftl_chain_border_right.\n");
@@ -232,6 +231,7 @@ bool avb_aftl_chain_border_right(uint8_t* seed,
                                             tmp_hash);
     if (!retval) {
       avb_error("Failed to hash Merkle tree children.\n");
+      break;
     }
     tmp = tmp_hash;
   }
@@ -250,14 +250,13 @@ bool avb_aftl_chain_inner(uint8_t* seed,
                           uint64_t leaf_index,
                           uint8_t* hash) {
   size_t i;
-  uint8_t* tmp = seed;
   uint8_t* tmp_hash;
-  bool retval;
+  uint8_t* tmp = seed;
+  bool retval = true;
 
   avb_assert(seed_size == AFTL_HASH_SIZE);
   avb_assert(seed != NULL && proof != NULL && hash != NULL);
 
-  tmp = seed;
   tmp_hash = (uint8_t*)avb_malloc(AFTL_HASH_SIZE);
   if (tmp_hash == NULL) {
     avb_error("Allocation failure in avb_aftl_chain_inner.\n");
