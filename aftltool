@@ -27,8 +27,10 @@
 from __future__ import division
 
 import argparse
+import base64
 import binascii
 import hashlib
+import json
 import multiprocessing
 import os
 import Queue  # pylint: disable=bad-python3-import
@@ -337,14 +339,12 @@ class AftlIcpHeader(object):
     Arguments:
       o: The object to write the output to.
     """
-    o.write('    Major version:      {}\n'.format(
-        self.required_icp_version_major))
-    o.write('    Minor version:      {}\n'.format(
-        self.required_icp_version_minor))
-    o.write('    Descriptor size:    {}\n'.format(
-        self.aftl_descriptor_size))
-    o.write('    ICP entries count:  {}\n'.format(
-        self.icp_count))
+    i = ' ' * 4
+    fmt = '{}{:25}{}\n'
+    o.write(fmt.format(i, 'Major version:', self.required_icp_version_major))
+    o.write(fmt.format(i, 'Minor version:', self.required_icp_version_minor))
+    o.write(fmt.format(i, 'Descriptor size:', self.aftl_descriptor_size))
+    o.write(fmt.format(i, 'ICP entries count:', self.icp_count))
 
 
 class AftlIcpEntry(object):
@@ -402,10 +402,10 @@ class AftlIcpEntry(object):
        self._fw_info_leaf_size_expected,
        self._log_root_sig_size_expected,
        self._proof_hash_count_expected,
-       self._inc_proof_size_expected) = struct.unpack(
-           self.FORMAT_STRING, data[0:self.SIZE])
+       self._inc_proof_size_expected) = struct.unpack(self.FORMAT_STRING,
+                                                      data[0:self.SIZE])
 
-      # Deserialize ICP entry components from the data descriptor.
+      # Deserialize ICP entry components from the data.
       expected_format_string = '{}s{}s{}s{}s{}s'.format(
           self._log_url_size_expected,
           self._log_root_descriptor_size_expected,
@@ -413,11 +413,14 @@ class AftlIcpEntry(object):
           self._log_root_sig_size_expected,
           self._inc_proof_size_expected)
 
-      (self.log_url, log_root_descriptor_bytes, self.fw_info_leaf,
+      (self.log_url, log_root_descriptor_bytes, fw_info_leaf_bytes,
        self.log_root_signature, proof_bytes) = struct.unpack(
            expected_format_string, data[self.SIZE:self.get_expected_size()])
+
       self.log_root_descriptor = TrillianLogRootDescriptor(
           log_root_descriptor_bytes)
+      self.fw_info_leaf = FirmwareInfoLeaf(fw_info_leaf_bytes)
+
       self.proofs = []
       if self._proof_hash_count_expected > 0:
         proof_idx = 0
@@ -430,7 +433,7 @@ class AftlIcpEntry(object):
       self.leaf_index = 0
       self.log_url = ''
       self.log_root_descriptor = TrillianLogRootDescriptor()
-      self.fw_info_leaf = ''
+      self.fw_info_leaf = FirmwareInfoLeaf()
       self.log_root_signature = ''
       self.proofs = []
     if not self.is_valid():
@@ -454,7 +457,7 @@ class AftlIcpEntry(object):
   def fw_info_leaf_size(self):
     """Gets the size of the fw_info_leaf attribute."""
     if hasattr(self, 'fw_info_leaf'):
-      return len(self.fw_info_leaf)
+      return self.fw_info_leaf.get_expected_size()
     return self._fw_info_leaf_size_expected
 
   @property
@@ -490,14 +493,14 @@ class AftlIcpEntry(object):
     Returns:
       True if the calculated signature matches AftlIcpEntry's. False otherwise.
     """
-    leaf_hash = rfc6962_hash_leaf(self.fw_info_leaf)
+    leaf_hash = rfc6962_hash_leaf(self.fw_info_leaf.encode())
     calc_root = root_from_icp(self.leaf_index,
                               self.log_root_descriptor.tree_size,
                               self.proofs,
                               leaf_hash)
     if ((calc_root == self.log_root_descriptor.root_hash) and
         check_signature(
-            self.log_root_descriptor.log_root,
+            self.log_root_descriptor.encode(),
             self.log_root_signature,
             transparency_log_pub_key)):
       return True
@@ -544,7 +547,7 @@ class AftlIcpEntry(object):
                        self.log_root_sig_size, self.proof_hash_count,
                        self.inc_proof_size, self.log_url,
                        self.log_root_descriptor.encode(),
-                       str(self.fw_info_leaf),
+                       str(self.fw_info_leaf.encode()),
                        str(self.log_root_signature),
                        str(proof_bytes))
 
@@ -556,9 +559,12 @@ class AftlIcpEntry(object):
       afi_response: The AddFirmwareResponse object to translate.
     """
     self.log_url = transparency_log
+
+    # Deserializes from AddFirmwareInfoResponse.
     self.leaf_index = afi_response.fw_info_proof.proof.leaf_index
     self.log_root_descriptor = TrillianLogRootDescriptor(
         afi_response.fw_info_proof.sth.log_root)
+    self.fw_info_leaf = FirmwareInfoLeaf(afi_response.fw_info_leaf)
     self.log_root_signature = afi_response.fw_info_proof.sth.log_root_signature
     self.proofs = afi_response.fw_info_proof.proof.hashes
 
@@ -589,10 +595,9 @@ class AftlIcpEntry(object):
       sys.stderr.write('ICP entry: invalid TrillianLogRootDescriptor\n')
       return False
 
-    if ((self.fw_info_leaf and self.fw_info_leaf_size != len(self.fw_info_leaf))
-        or (not self.fw_info_leaf and self.fw_info_leaf_size != 0)):
-      sys.stderr.write('ICP entry: invalid FirmwareInfo size: {}\n'
-                       .format(self.fw_info_leaf_size))
+    if (not self.fw_info_leaf or
+        not isinstance(self.fw_info_leaf, FirmwareInfoLeaf)):
+      sys.stderr.write('ICP entry: invalid FirmwareInfo\n')
       return False
     return True
 
@@ -602,13 +607,17 @@ class AftlIcpEntry(object):
     Arguments:
       o: The object to write the output to.
     """
-    o.write('    Transparency Log:   {}\n'.format(self.log_url))
-    o.write('    Leaf index:         {}\n'.format(self.leaf_index))
-    o.write('    ICP hashes:         ')
+    i = ' ' * 4
+    fmt = '{}{:25}{}\n'
+    o.write(fmt.format(i, 'Transparency Log:', self.log_url))
+    o.write(fmt.format(i, 'Leaf index:', self.leaf_index))
+    o.write('    ICP hashes:              ')
     for i, proof_hash in enumerate(self.proofs):
       if i != 0:
-        o.write(' ' * 24)
+        o.write(' ' * 29)
       o.write('{}\n'.format(binascii.hexlify(proof_hash)))
+    self.log_root_descriptor.print_desc(o)
+    self.fw_info_leaf.print_desc(o)
 
 
 class TrillianLogRootDescriptor(object):
@@ -759,18 +768,159 @@ class TrillianLogRootDescriptor(object):
     Arguments:
       o: The object to write the output to.
     """
-    i = ' ' * 8
-    o.write('{}Version:          {}\n'.format(i, self.version))
-    o.write('{}Tree size:        {}\n'.format(i, self.tree_size))
-    o.write('{}Root hash size:   {}\n'.format(i, self.root_hash_size))
+    o.write('    Log Root Descriptor:\n')
+    i = ' ' * 6
+    fmt = '{}{:23}{}\n'
+    o.write(fmt.format(i, 'Version:', self.version))
+    o.write(fmt.format(i, 'Tree size:', self.tree_size))
+    o.write(fmt.format(i, 'Root hash size:', self.root_hash_size))
     if self.root_hash_size > 0:
-      o.write('{}Root hash:        {}\n'.format(
-          i, binascii.hexlify(self.root_hash)))
-      o.write('{}Timestamp (ns):   {}\n'.format(i, self.timestamp))
-    o.write('{}Revision:         {}\n'.format(i, self.revision))
-    o.write('{}Metadata size:    {}\n'.format(i, self.metadata_size))
+      o.write(fmt.format(i, 'Root hash:', binascii.hexlify(self.root_hash)))
+      o.write(fmt.format(i, 'Timestamp (ns):', self.timestamp))
+    o.write(fmt.format(i, 'Revision:', self.revision))
+    o.write(fmt.format(i, 'Metadata size:', self.metadata_size))
     if self.metadata_size > 0:
-      o.write('{}Metadata:         {}\n'.format(i, self.metadata))
+      o.write(fmt.format(i, 'Metadata:', binascii.hexlify(self.metadata)))
+
+
+class FirmwareInfoLeaf(object):
+  """A class representing the FirmwareInfo leaf.
+
+  AFTL returns the fw_info_leaf as a JSON blob and this class is able to
+  parse the blog and provide necessary attributes needed for validation.
+
+  Attributes:
+    vbmeta_hash: This is the SHA256 hash of vbmeta.
+    version_incremental: Subcomponent of the build fingerprint as defined at
+      https://source.android.com/compatibility/android-cdd#3_2_2_build_parameters.
+      For example, a Pixel device with the following build fingerprint
+      google/crosshatch/crosshatch:9/PQ3A.190605.003/5524043:user/release-keys,
+      would have 5524043 for the version incremental.
+    platform_key: Public key of the platform. This is the same key used to sign
+      the vbmeta.
+    manufacturer_key_hash:  SHA256 of the manufacturer public key (DER-encoded,
+      x509 subjectPublicKeyInfo format). The public key MUST already be in the
+      list of root keys known and trusted by the AFTL.
+    description: Free form description field. It can be used to annotate this
+      message with further context on the build (e.g., carrier specific build).
+  """
+
+  def __init__(self, data=None):
+    """Initializes a new FirmwareInfoLeaf descriptor."""
+    if data:
+      # We have to preserve the original fw_info_leaf bytes in order to preserve
+      # hash equivalence with what is stored in the Trillian log and matches up
+      # with the proofs.
+      self._fw_info_leaf_bytes = data
+
+      # Deserialize the JSON blob and keep only the FirmwareInfo parts.
+      try:
+        fw_info_leaf = json.loads(self._fw_info_leaf_bytes)
+        self._fw_info_leaf_dict = (
+            fw_info_leaf['Value']['FwInfo']['info']['info'])
+      except (ValueError, KeyError) as e:
+        raise AftlError('Invalid structure for FirmwareInfoLeaf: {}'.format(e))
+    else:
+      self._fw_info_leaf_bytes = ''
+      self._fw_info_leaf_dict = dict()
+
+    if not self.is_valid():
+      raise AftlError('Invalid structure for FirmwareInfoLeaf.')
+
+  @property
+  def vbmeta_hash(self):
+    """Gets the vbmeta_hash attribute."""
+    return self._lookup_base64_attribute('vbmeta_hash')
+
+  @property
+  def version_incremental(self):
+    """Gets the version_incremental attribute."""
+    return self._fw_info_leaf_dict.get('version_incremental')
+
+  @property
+  def platform_key(self):
+    """Gets the platform key attribute."""
+    return self._lookup_base64_attribute('platform_key')
+
+  @property
+  def manufacturer_key_hash(self):
+    """Gets the manufacturer_key_hash attribute."""
+    return self._lookup_base64_attribute('manufacturer_key_hash')
+
+  @property
+  def description(self):
+    """Gets the description attribute."""
+    return self._fw_info_leaf_dict.get('description')
+
+  def _lookup_base64_attribute(self, key):
+    """Looks up an attribute that is Base64 encoded and decodes it.
+
+    Arguments:
+      key: The name of the attribute to look up.
+
+    Returns:
+      The attribute value or None if not defined.
+    """
+    result = self._fw_info_leaf_dict.get(key)
+    if result:
+      result = base64.b64decode(result)
+    return result
+
+  def get_expected_size(self):
+    """Gets the expected size of the JSON-serialized FirmwareInfoLeaf.
+
+    Returns:
+      The expected size of the FirmwareInfo leaf in byte or 0 if not initalized.
+    """
+    if not self._fw_info_leaf_bytes:
+      return 0
+    return len(self._fw_info_leaf_bytes)
+
+  def encode(self):
+    """Serializes the FirmwareInfoLeaf.
+
+    Returns:
+      A bytearray() with the JSON-serialized FirmwareInfoLeaf.
+    """
+    return self._fw_info_leaf_bytes
+
+  def is_valid(self):
+    """Ensures that values in the descritor are sane.
+
+    Returns:
+      True if the values are sane; otherwise False.
+    """
+    # Checks that the decode fw_info_leaf at max contains values defined in the
+    # FirmwareInfo proto buf.
+    expected_fields = set(proto.aftl_pb2.FirmwareInfo()
+                          .DESCRIPTOR.fields_by_name.keys())
+    actual_fields = set(self._fw_info_leaf_dict.keys())
+    if actual_fields.issubset(expected_fields):
+      return True
+    return False
+
+  def print_desc(self, o):
+    """Print the descriptor.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    o.write('    Firmware Info Leaf:\n')
+    # The order of the fields is based on the definition in
+    # proto.aftl_pb2.FirmwareInfo.
+    i = ' ' * 6
+    fmt = '{}{:23}{}\n'
+    if self.vbmeta_hash:
+      o.write(fmt.format(i, 'VBMeta hash:', binascii.hexlify(self.vbmeta_hash)))
+    if self.version_incremental:
+      o.write(fmt.format(i, 'Version incremental:', self.version_incremental))
+    if self.platform_key:
+      o.write(fmt.format(i, 'Platform key:', self.platform_key))
+    if self.manufacturer_key_hash:
+      o.write(fmt.format(i, 'Manufacturer key hash:',
+                         binascii.hexlify(self.manufacturer_key_hash)))
+    if self.description:
+      o.write(fmt.format(i, 'Description:', self.description))
 
 
 class AftlDescriptor(object):
@@ -829,10 +979,9 @@ class AftlDescriptor(object):
     Arguments:
       avb_icp_entry: An AftlIcpEntry structure.
     """
-
-    # Set the next entry field to denote that a new ICP entry will follow.
     self.icp_entries.append(avb_icp_entry)
     self.icp_header.icp_count += 1
+    self.icp_header.aftl_descriptor_size += avb_icp_entry.get_expected_size()
 
   def save(self, output):
     """Serializes the AftlDescriptor to disk.
@@ -894,8 +1043,6 @@ class AftlDescriptor(object):
     for i, icp_entry in enumerate(self.icp_entries):
       o.write('  Entry #{}:\n'.format(i + 1))
       icp_entry.print_desc(o)
-      o.write('    Log Root Descriptor:\n')
-      icp_entry.log_root_descriptor.print_desc(o)
 
 
 class AftlCommunication(object):
@@ -1092,7 +1239,6 @@ class Aftl(avbtool.Avb):
 
     # Return an AftlIcpEntry representing this response.
     icp_entry = AftlIcpEntry()
-    icp_entry.fw_info_leaf = fw_info
     icp_entry.translate_response(transparency_log, response)
     return icp_entry
 
