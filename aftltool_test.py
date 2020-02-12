@@ -27,6 +27,7 @@
 # pylint: disable=unused-import
 from __future__ import print_function
 
+import base64
 import binascii
 import io
 import os
@@ -160,11 +161,10 @@ class AftltoolTestCase(unittest.TestCase):
     self.test_aftl_desc.add_icp_entry(self.test_entry_2)
 
     self.test_expected_aftl_descriptor_bytes = bytearray(
-        # AftlIcpHeader
         'AFTL'                              # Magic.
-        '\x00\x00\x00\x01'                  # Descriptor size.
         '\x00\x00\x00\x01'                  # Major version.
-        '\x00\x00\x00\x12'                  # Minor version.
+        '\x00\x00\x00\x01'                  # Minor version.
+        '\x00\x00\x05\xb9'                  # Descriptor size.
         '\x00\x02'                          # Number of ICP entries.
         + self.test_entry_1_bytes
         + self.test_entry_2_bytes)
@@ -215,6 +215,9 @@ class AftltoolTestCase(unittest.TestCase):
         '/oc/bJ13yl40fk/cvXw90bxHQbzCRxgHDIGc=\",\"version_incremental\":'
         '\"1\",\"manufacturer_key_hash\":\"yBCrUOdjvaAh4git5EgqWa5neegUao'
         'XeLlB67+N8ObY=\"}}}}}')
+
+    self.test_fw_info_leaf = aftltool.FirmwareInfoLeaf(
+        self.test_afi_resp.fw_info_leaf)
 
   def tearDown(self):
     """Tears down the test bed for the unit tests."""
@@ -605,7 +608,7 @@ class AftlIcpEntryTest(AftltoolTestCase):
 
 
 class TrillianLogRootDescriptorTest(AftltoolTestCase):
-  """Test suite for testing the TrillianLogRootDescriptorTest descriptor."""
+  """Test suite for testing the TrillianLogRootDescriptor descriptor."""
 
   def setUp(self):
     """Sets up the test bed for the unit tests."""
@@ -783,6 +786,101 @@ class TrillianLogRootDescriptorTest(AftltoolTestCase):
     self.assertIn('Metadata:', desc)
 
 
+class FirmwareInfoLeafTest(AftltoolTestCase):
+  """Test suite for testing the FirmwareInfoLeaf."""
+
+  def test__init__(self):
+    """Tests constructor and properties methods."""
+    # Calls constructor without data.
+    leaf = aftltool.FirmwareInfoLeaf()
+    self.assertTrue(leaf.is_valid())
+    self.assertEqual(leaf.vbmeta_hash, None)
+    self.assertEqual(leaf.version_incremental, None)
+    self.assertEqual(leaf.platform_key, None)
+    self.assertEqual(leaf.manufacturer_key_hash, None)
+    self.assertEqual(leaf.description, None)
+
+    # Calls constructor with data.
+    leaf = aftltool.FirmwareInfoLeaf(self.test_afi_resp.fw_info_leaf)
+    self.assertTrue(leaf.is_valid())
+    self.assertEqual(
+        leaf.vbmeta_hash,
+        base64.b64decode('ViNzEQS/oc/bJ13yl40fk/cvXw90bxHQbzCRxgHDIGc='))
+    self.assertEqual(leaf.version_incremental, '1')
+    self.assertEqual(leaf.platform_key, None)
+    self.assertEqual(
+        leaf.manufacturer_key_hash,
+        base64.b64decode('yBCrUOdjvaAh4git5EgqWa5neegUaoXeLlB67+N8ObY='))
+    self.assertEqual(leaf.description, None)
+
+    # Calls constructor with invalid JSON data.
+    with self.assertRaises(aftltool.AftlError):
+      leaf = aftltool.FirmwareInfoLeaf('Invalid JSON.')
+
+  def test_get_expected_size(self):
+    """Tests get_expected_size method."""
+    # Calls constructor without data.
+    leaf = aftltool.FirmwareInfoLeaf()
+    self.assertEqual(leaf.get_expected_size(), 0)
+
+    # Calls constructor with data.
+    leaf = aftltool.FirmwareInfoLeaf(self.test_afi_resp.fw_info_leaf)
+    self.assertEqual(leaf.get_expected_size(),
+                     len(self.test_afi_resp.fw_info_leaf))
+
+  def test_encode(self):
+    """Tests encode method."""
+    # Calls constructor without data.
+    leaf = aftltool.FirmwareInfoLeaf()
+    self.assertEqual(leaf.encode(), '')
+
+    # Calls constructor with data.
+    self.assertEqual(self.test_fw_info_leaf.encode(),
+                     self.test_afi_resp.fw_info_leaf)
+
+  def test_is_valid(self):
+    """Tests is_valid method."""
+    # Calls constructor without data.
+    leaf = aftltool.FirmwareInfoLeaf()
+    self.assertTrue(leaf.is_valid())
+
+    # Calls constructor with data.
+    self.assertTrue(self.test_fw_info_leaf.is_valid())
+
+    # Incorrect name for Value key.
+    invalid_value_key_name = (
+        '{\"timestamp\":{\"seconds\":1580115370,\"nanos\":621454825},\"In'
+        'val\":{\"FwInfo\":{\"info\":{\"info\":{\"vbmeta_hash\":\"ViNzEQS'
+        '/oc/bJ13yl40fk/cvXw90bxHQbzCRxgHDIGc=\",\"version_incremental\":'
+        '\"1\",\"manufacturer_key_hash\":\"yBCrUOdjvaAh4git5EgqWa5neegUao'
+        'XeLlB67+N8ObY=\"}}}}}')
+
+    with self.assertRaises(aftltool.AftlError):
+      aftltool.FirmwareInfoLeaf(invalid_value_key_name)
+
+    # Within Firmware Info having a field which does not exist in
+    # proto.aftl_pb2.FirmwareInfo.
+    invalid_fields = (
+        '{\"timestamp\":{\"seconds\":1580115370,\"nanos\":621454825},\"Va'
+        'lue\":{\"FwInfo\":{\"info\":{\"info\":{\"invalid_field\":\"ViNzEQS'
+        '/oc/bJ13yl40fk/cvXw90bxHQbzCRxgHDIGc=\",\"version_incremental\":'
+        '\"1\",\"manufacturer_key_hash\":\"yBCrUOdjvaAh4git5EgqWa5neegUao'
+        'XeLlB67+N8ObY=\"}}}}}')
+
+    with self.assertRaises(aftltool.AftlError):
+      aftltool.FirmwareInfoLeaf(invalid_fields)
+
+  def test_print_desc(self):
+    """Tests print_desc method."""
+    buf = io.BytesIO()
+    self.test_fw_info_leaf.print_desc(buf)
+    desc = buf.getvalue()
+
+    # Cursory check whether the printed description contains something useful.
+    self.assertGreater(len(desc), 0)
+    self.assertIn('VBMeta hash:', desc)
+
+
 class AftlMockCommunication(aftltool.AftlCommunication):
   """Testing Mock implementation of AftlCommunication."""
 
@@ -822,7 +920,7 @@ class AftlTest(AftltoolTestCase):
     # TODO(jpm@): Investigate how path to testkey_rsa4096.pem can be passed so
     # atest can be run out of any directory.
     icp = aftl.request_inclusion_proof(self.mock_aftl_host,
-                                       'a'*1024, 'version_inc',
+                                       'a'*1024, '1',
                                        'test/data/testkey_rsa4096.pem',
                                        None, None,
                                        aftl_comms=aftl_comms)
@@ -835,12 +933,12 @@ class AftlTest(AftltoolTestCase):
         icp.log_root_descriptor.root_hash, binascii.unhexlify(
             '53b182b55dc1377197c938637f50093131daea4d0696b1eae5b8a014bfde884a'))
 
-    self.assertEqual(icp.fw_info_leaf.version_incremental, 'version_inc')
+    self.assertEqual(icp.fw_info_leaf.version_incremental, '1')
     # To calculate the hash of the a RSA key use the following command:
     # openssl rsa -in test/data/testkey_rsa4096.pem -pubout \
     #    -outform DER | sha256sum
-    self.assertEqual(icp.fw_info_leaf.manufacturer_key_hash, binascii.unhexlify(
-        '9841073d16a7abbe21059e026da71976373d8f74fdb91cc46aa0a7d622b925b9'))
+    self.assertEqual(icp.fw_info_leaf.manufacturer_key_hash, base64.b64decode(
+        'yBCrUOdjvaAh4git5EgqWa5neegUaoXeLlB67+N8ObY='))
 
     self.assertEqual(icp.log_root_signature,
                      self.test_afi_resp.fw_info_proof.sth.log_root_signature)
