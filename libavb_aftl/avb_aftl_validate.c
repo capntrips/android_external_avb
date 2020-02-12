@@ -109,42 +109,28 @@ static bool get_raw_fw_image_info(AftlIcpEntry* icp_entry,
     avb_memcpy(buffer + offset,
                icp_entry->fw_info_leaf.version_incremental,
                icp_entry->fw_info_leaf.version_incremental_size);
-    if (!avb_safe_add_to(&offset,
-                         icp_entry->fw_info_leaf.version_incremental_size)) {
-      avb_error("Invalid version incremental size.\n");
-      return false;
-    }
+    offset += icp_entry->fw_info_leaf.version_incremental_size;
   }
 
   if (icp_entry->fw_info_leaf.platform_key != NULL) {
     avb_memcpy(buffer + offset,
                icp_entry->fw_info_leaf.platform_key,
                icp_entry->fw_info_leaf.platform_key_size);
-    if (!avb_safe_add_to(&offset, icp_entry->fw_info_leaf.platform_key_size)) {
-      avb_error("Invalid platform key size.\n");
-      return false;
-    }
+    offset += icp_entry->fw_info_leaf.platform_key_size;
   }
 
   if (icp_entry->fw_info_leaf.manufacturer_key_hash != NULL) {
     avb_memcpy(buffer + offset,
                icp_entry->fw_info_leaf.manufacturer_key_hash,
                icp_entry->fw_info_leaf.manufacturer_key_hash_size);
-    if (!avb_safe_add_to(&offset,
-                         icp_entry->fw_info_leaf.manufacturer_key_hash_size)) {
-      avb_error("Invalid manufacturer key hash size.\n");
-      return false;
-    }
+    offset += icp_entry->fw_info_leaf.manufacturer_key_hash_size;
   }
 
   if (icp_entry->fw_info_leaf.description != NULL) {
     avb_memcpy(buffer + offset,
                icp_entry->fw_info_leaf.description,
                icp_entry->fw_info_leaf.description_size);
-    if (!avb_safe_add_to(&offset, icp_entry->fw_info_leaf.description_size)) {
-      avb_error("Invalid description size.\n");
-      return false;
-    }
+    offset += icp_entry->fw_info_leaf.description_size;
   }
   return true;
 }
