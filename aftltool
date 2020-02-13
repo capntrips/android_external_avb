@@ -46,8 +46,6 @@ import proto.aftl_pb2
 import proto.api_pb2
 import proto.crypto.sigpb
 
-# Android Firmware Transparency Log Data Structures
-
 
 class AftlError(Exception):
   """Application-specific errors.
@@ -973,15 +971,15 @@ class AftlDescriptor(object):
     if not self.is_valid():
       raise AftlError('Malformed AFTLDescriptor')
 
-  def add_icp_entry(self, avb_icp_entry):
+  def add_icp_entry(self, icp_entry):
     """Adds a new AftlIcpEntry to the AftlDescriptor, updating fields as needed.
 
     Arguments:
-      avb_icp_entry: An AftlIcpEntry structure.
+      icp_entry: An AftlIcpEntry structure.
     """
-    self.icp_entries.append(avb_icp_entry)
+    self.icp_entries.append(icp_entry)
     self.icp_header.icp_count += 1
-    self.icp_header.aftl_descriptor_size += avb_icp_entry.get_expected_size()
+    self.icp_header.aftl_descriptor_size += icp_entry.get_expected_size()
 
   def save(self, output):
     """Serializes the AftlDescriptor to disk.
