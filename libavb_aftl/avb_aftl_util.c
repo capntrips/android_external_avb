@@ -34,7 +34,7 @@
 /* Performs a SHA256 hash operation on data. */
 bool avb_aftl_sha256(uint8_t* data,
                      uint64_t length,
-                     uint8_t hash[AFTL_HASH_SIZE]) {
+                     uint8_t hash[AVB_AFTL_HASH_SIZE]) {
   AvbSHA256Ctx context;
   uint8_t* tmp;
 
@@ -43,7 +43,7 @@ bool avb_aftl_sha256(uint8_t* data,
   avb_sha256_init(&context);
   avb_sha256_update(&context, data, length);
   tmp = avb_sha256_final(&context);
-  avb_memcpy(hash, tmp, AFTL_HASH_SIZE);
+  avb_memcpy(hash, tmp, AVB_AFTL_HASH_SIZE);
   return true;
 }
 
@@ -65,7 +65,7 @@ bool avb_aftl_hash_log_root_descriptor(AftlIcpEntry* icp_entry, uint8_t* hash) {
   /* Size of the non-pointer elements of the TrillianLogRootDescriptor. */
   tlrd_size = sizeof(uint16_t) * 2 + sizeof(uint64_t) * 3 + sizeof(uint8_t);
   /* Ensure the log_root_descriptor size is correct. */
-  if (icp_entry->log_root_descriptor_size > AFTL_MAX_LOG_ROOT_DESCRIPTOR_SIZE) {
+  if (icp_entry->log_root_descriptor_size > AVB_AFTL_MAX_TLRD_SIZE) {
     avb_error("Invalid log root descriptor size.\n");
     return false;
   }
@@ -149,7 +149,7 @@ bool avb_aftl_rfc6962_hash_leaf(uint8_t* leaf,
   bool retval;
 
   avb_assert(leaf != NULL && hash != NULL);
-  avb_assert(leaf_size != AFTL_ULONG_MAX);
+  avb_assert(leaf_size != AVB_AFTL_ULONG_MAX);
 
   buffer = (uint8_t*)avb_malloc(leaf_size + 1);
 
@@ -180,7 +180,7 @@ bool avb_aftl_rfc6962_hash_children(uint8_t* left_child,
   avb_assert(left_child != NULL && right_child != NULL && hash != NULL);
 
   /* Check for integer overflow. */
-  avb_assert(left_child_size < AFTL_ULONG_MAX - right_child_size);
+  avb_assert(left_child_size < AVB_AFTL_ULONG_MAX - right_child_size);
 
   data_size = left_child_size + right_child_size + 1;
   buffer = (uint8_t*)avb_malloc(data_size);
@@ -215,19 +215,19 @@ bool avb_aftl_chain_border_right(uint8_t* seed,
   uint8_t* tmp = seed;
   bool retval = true;
 
-  avb_assert(seed_size == AFTL_HASH_SIZE);
+  avb_assert(seed_size == AVB_AFTL_HASH_SIZE);
   avb_assert(seed != NULL && proof != NULL && hash != NULL);
 
-  tmp_hash = (uint8_t*)avb_malloc(AFTL_HASH_SIZE);
+  tmp_hash = (uint8_t*)avb_malloc(AVB_AFTL_HASH_SIZE);
   if (tmp_hash == NULL) {
     avb_error("Allocation failure in avb_aftl_chain_border_right.\n");
     return false;
   }
   for (i = 0; i < proof_entry_count; i++) {
-    retval = avb_aftl_rfc6962_hash_children(proof + (i * AFTL_HASH_SIZE),
-                                            AFTL_HASH_SIZE,
+    retval = avb_aftl_rfc6962_hash_children(proof + (i * AVB_AFTL_HASH_SIZE),
+                                            AVB_AFTL_HASH_SIZE,
                                             tmp,
-                                            AFTL_HASH_SIZE,
+                                            AVB_AFTL_HASH_SIZE,
                                             tmp_hash);
     if (!retval) {
       avb_error("Failed to hash Merkle tree children.\n");
@@ -236,7 +236,7 @@ bool avb_aftl_chain_border_right(uint8_t* seed,
     tmp = tmp_hash;
   }
 
-  if (retval) avb_memcpy(hash, tmp, AFTL_HASH_SIZE);
+  if (retval) avb_memcpy(hash, tmp, AVB_AFTL_HASH_SIZE);
 
   avb_free(tmp_hash);
   return retval;
@@ -254,10 +254,10 @@ bool avb_aftl_chain_inner(uint8_t* seed,
   uint8_t* tmp = seed;
   bool retval = true;
 
-  avb_assert(seed_size == AFTL_HASH_SIZE);
+  avb_assert(seed_size == AVB_AFTL_HASH_SIZE);
   avb_assert(seed != NULL && proof != NULL && hash != NULL);
 
-  tmp_hash = (uint8_t*)avb_malloc(AFTL_HASH_SIZE);
+  tmp_hash = (uint8_t*)avb_malloc(AVB_AFTL_HASH_SIZE);
   if (tmp_hash == NULL) {
     avb_error("Allocation failure in avb_aftl_chain_inner.\n");
     return false;
@@ -266,12 +266,12 @@ bool avb_aftl_chain_inner(uint8_t* seed,
     if ((leaf_index >> i & 1) == 0) {
       retval = avb_aftl_rfc6962_hash_children(tmp,
                                               seed_size,
-                                              proof + (i * AFTL_HASH_SIZE),
-                                              AFTL_HASH_SIZE,
+                                              proof + (i * AVB_AFTL_HASH_SIZE),
+                                              AVB_AFTL_HASH_SIZE,
                                               tmp_hash);
     } else {
-      retval = avb_aftl_rfc6962_hash_children(proof + (i * AFTL_HASH_SIZE),
-                                              AFTL_HASH_SIZE,
+      retval = avb_aftl_rfc6962_hash_children(proof + (i * AVB_AFTL_HASH_SIZE),
+                                              AVB_AFTL_HASH_SIZE,
                                               tmp,
                                               seed_size,
                                               tmp_hash);
@@ -282,7 +282,7 @@ bool avb_aftl_chain_inner(uint8_t* seed,
     }
     tmp = tmp_hash;
   }
-  if (retval) avb_memcpy(hash, tmp, AFTL_HASH_SIZE);
+  if (retval) avb_memcpy(hash, tmp, AVB_AFTL_HASH_SIZE);
   avb_free(tmp_hash);
   return retval;
 }
@@ -322,7 +322,7 @@ unsigned int avb_aftl_count_leading_zeros(uint64_t val) {
 /* Calculates the expected Merkle tree hash. */
 bool avb_aftl_root_from_icp(uint64_t leaf_index,
                             uint64_t tree_size,
-                            uint8_t proof[][AFTL_HASH_SIZE],
+                            uint8_t proof[][AVB_AFTL_HASH_SIZE],
                             uint32_t proof_entry_count,
                             uint8_t* leaf_hash,
                             uint64_t leaf_hash_size,
@@ -330,7 +330,7 @@ bool avb_aftl_root_from_icp(uint64_t leaf_index,
   uint64_t inner_proof_size;
   uint64_t border_proof_size;
   size_t i;
-  uint8_t hash[AFTL_HASH_SIZE];
+  uint8_t hash[AVB_AFTL_HASH_SIZE];
   uint8_t* inner_proof;
   uint8_t* border_proof;
   bool retval;
@@ -350,12 +350,12 @@ bool avb_aftl_root_from_icp(uint64_t leaf_index,
   }
   border_proof_size = proof_entry_count - inner_proof_size;
   /* Split the proof into two parts based on the calculated pivot point. */
-  inner_proof = (uint8_t*)avb_malloc(inner_proof_size * AFTL_HASH_SIZE);
+  inner_proof = (uint8_t*)avb_malloc(inner_proof_size * AVB_AFTL_HASH_SIZE);
   if (inner_proof == NULL) {
     avb_error("Allocation failure in avb_aftl_root_from_icp.\n");
     return false;
   }
-  border_proof = (uint8_t*)avb_malloc(border_proof_size * AFTL_HASH_SIZE);
+  border_proof = (uint8_t*)avb_malloc(border_proof_size * AVB_AFTL_HASH_SIZE);
   if (border_proof == NULL) {
     avb_free(inner_proof);
     avb_error("Allocation failure in avb_aftl_root_from_icp.\n");
@@ -363,12 +363,13 @@ bool avb_aftl_root_from_icp(uint64_t leaf_index,
   }
 
   for (i = 0; i < inner_proof_size; i++) {
-    avb_memcpy(inner_proof + (AFTL_HASH_SIZE * i), proof[i], AFTL_HASH_SIZE);
+    avb_memcpy(
+        inner_proof + (AVB_AFTL_HASH_SIZE * i), proof[i], AVB_AFTL_HASH_SIZE);
   }
   for (i = 0; i < border_proof_size; i++) {
-    avb_memcpy(border_proof + (AFTL_HASH_SIZE * i),
+    avb_memcpy(border_proof + (AVB_AFTL_HASH_SIZE * i),
                proof[inner_proof_size + i],
-               AFTL_HASH_SIZE);
+               AVB_AFTL_HASH_SIZE);
   }
 
   /* Calculate the root hash and store it in root_hash. */
@@ -380,7 +381,7 @@ bool avb_aftl_root_from_icp(uint64_t leaf_index,
                                 hash);
   if (retval)
     retval = avb_aftl_chain_border_right(
-        hash, AFTL_HASH_SIZE, border_proof, border_proof_size, root_hash);
+        hash, AVB_AFTL_HASH_SIZE, border_proof, border_proof_size, root_hash);
 
   if (inner_proof != NULL) avb_free(inner_proof);
   if (border_proof != NULL) avb_free(border_proof);

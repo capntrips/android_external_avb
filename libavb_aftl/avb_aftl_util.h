@@ -40,9 +40,10 @@ extern "C" {
 #endif
 
 /* Performs a SHA256 hash operation on data. */
-bool avb_aftl_sha256(uint8_t* data,                 /* Data to be hashed. */
-                     uint64_t length,               /* Size of data. */
-                     uint8_t hash[AFTL_HASH_SIZE]); /* Resulting SHA256 hash. */
+bool avb_aftl_sha256(
+    uint8_t* data,                     /* Data to be hashed. */
+    uint64_t length,                   /* Size of data. */
+    uint8_t hash[AVB_AFTL_HASH_SIZE]); /* Resulting SHA256 hash. */
 
 /* Calculates a SHA256 hash of the TrillianLogRootDescriptor in icp_entry. */
 bool avb_aftl_hash_log_root_descriptor(
@@ -57,11 +58,12 @@ bool avb_aftl_rfc6962_hash_leaf(
 
 /* Computes an inner hash as detailed by https://tools.ietf.org/html/rfc6962. */
 bool avb_aftl_rfc6962_hash_children(
-    uint8_t* left_child,           /* The left child node data. */
-    uint64_t left_child_size,      /* Size of the left child node data. */
-    uint8_t* right_child,          /* The right child node data. */
-    uint64_t right_child_size,     /* Size of the right child node data. */
-    uint8_t hash[AFTL_HASH_SIZE]); /* Resulting RFC 6962 hash of the children.*/
+    uint8_t* left_child,       /* The left child node data. */
+    uint64_t left_child_size,  /* Size of the left child node data. */
+    uint8_t* right_child,      /* The right child node data. */
+    uint64_t right_child_size, /* Size of the right child node data. */
+    uint8_t
+        hash[AVB_AFTL_HASH_SIZE]); /* Resulting RFC 6962 hash of the children.*/
 
 /* Computes a subtree hash along the left-side tree border. */
 bool avb_aftl_chain_border_right(
@@ -86,13 +88,13 @@ unsigned int avb_aftl_count_leading_zeros(
 
 /* Calculates the expected Merkle tree hash. */
 bool avb_aftl_root_from_icp(
-    uint64_t leaf_index,             /* The leaf index in the Merkle tree.*/
-    uint64_t tree_size,              /* The size of the Merkle tree. */
-    uint8_t proof[][AFTL_HASH_SIZE], /* Inclusion proof hash data. */
-    uint32_t proof_entry_count,      /* Number of inclusion proof hashes. */
-    uint8_t* leaf_hash,              /* The leaf hash to prove inclusion of. */
-    uint64_t leaf_hash_size,         /* Size of the leaf hash. */
-    uint8_t* root_hash);             /* The resulting tree root hash. */
+    uint64_t leaf_index,                 /* The leaf index in the Merkle tree.*/
+    uint64_t tree_size,                  /* The size of the Merkle tree. */
+    uint8_t proof[][AVB_AFTL_HASH_SIZE], /* Inclusion proof hash data. */
+    uint32_t proof_entry_count,          /* Number of inclusion proof hashes. */
+    uint8_t* leaf_hash,      /* The leaf hash to prove inclusion of. */
+    uint64_t leaf_hash_size, /* Size of the leaf hash. */
+    uint8_t* root_hash);     /* The resulting tree root hash. */
 
 #ifdef __cplusplus
 }
