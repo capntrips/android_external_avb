@@ -1126,35 +1126,64 @@ class Aftl(avbtool.Avb):
     Arguments:
       image_filename: Image file to get information from.
       output: Output file to write human-readable information to (file object).
+
+    Returns:
+      True if the given image has an AftlDescriptor and could successfully
+      be proccesed; otherwise False.
     """
-    image = avbtool.ImageHandler(image_filename)
-    o = output
+    # Reads and parses the vbmeta image.
+    try:
+      image = avbtool.ImageHandler(image_filename)
+    except ValueError as e:
+      sys.stderr.write('The image does not contain a valid VBMeta structure: '
+                       '{}\n'.format(e))
+      return False
     (footer, header, _, _) = self._parse_image(image)
 
+    # Searches for the start of the vbmeta image.
     offset = 0
     if footer:
       offset = footer.vbmeta_offset
-    image.seek(offset +
-               header.SIZE +
-               header.authentication_data_block_size +
-               header.auxiliary_data_block_size)
+    try:
+      image.seek(offset +
+                 header.SIZE +
+                 header.authentication_data_block_size +
+                 header.auxiliary_data_block_size)
+    except RuntimeError as e:
+      sys.stderr.write('Given image offset is invalid: {}\n'.format(e))
+      return False
 
-    # Parse the header out to get the AftlDescriptor size.
+    # Parses the header out to get the AftlDescriptor size.
     tmp_header_bytes = image.read(AftlIcpHeader.SIZE)
     try:
       tmp_header = AftlIcpHeader(tmp_header_bytes)
-    except AftlError:
-      sys.stderr.write('This image does not contain a valid AftlDescriptor.\n')
-      return
-    # Reset to the beginning of the AftlDescriptor.
-    image.seek(offset +
-               header.SIZE +
-               header.authentication_data_block_size +
-               header.auxiliary_data_block_size)
-    icp_bytes = image.read(tmp_header.aftl_descriptor_size)
+    except AftlError as e:
+      sys.stderr.write('This image does not contain a valid AftlDescriptor: '
+                       '{}\n'.format(e))
+      return False
 
-    icp_descriptor = AftlDescriptor(icp_bytes)
-    icp_descriptor.print_desc(o)
+    # Reset to the beginning of the AftlDescriptor.
+    try:
+      image.seek(offset +
+                 header.SIZE +
+                 header.authentication_data_block_size +
+                 header.auxiliary_data_block_size)
+    except RuntimeError as e:
+      sys.stderr.write('Given image offset is invalid: {}\n'.format(e))
+      return False
+
+    # Parses the full AftlDescriptor.
+    icp_bytes = image.read(tmp_header.aftl_descriptor_size)
+    try:
+      icp_descriptor = AftlDescriptor(icp_bytes)
+    except AftlError as e:
+      sys.stderr.write('The image does not contain a valid AftlDescriptor: '
+                       '{}\n'.format(e))
+      return False
+
+    # Prints the AftlDescriptor to the output.
+    icp_descriptor.print_desc(output)
+    return True
 
   def request_inclusion_proof(self, transparency_log, vbmeta_descriptor,
                               version_inc, manufacturer_key_path,
@@ -1284,7 +1313,7 @@ class Aftl(avbtool.Avb):
 
     Returns:
       True if the inclusion proofs could be fetched from the transparency log
-      servers and could be successfully validated, False otherwise.
+      servers and could be successfully validated; otherwise False.
 
     Raises:
       AftlError: If any parameters are invalid, communication with the log
@@ -1312,7 +1341,7 @@ class Aftl(avbtool.Avb):
                               header.authentication_data_block_size +
                               header.auxiliary_data_block_size)
 
-    #  Fetches inclusion proofs for vbmeta structure from all transparency logs.
+    # Fetches inclusion proofs for vbmeta structure from all transparency logs.
     icp_entries = []
     for i, transparency_log in enumerate(transparency_log_servers):
       try:
@@ -1365,6 +1394,8 @@ class Aftl(avbtool.Avb):
       padding_needed = padded_size - descriptor_size
       output.write('\0' * padding_needed)
 
+    sys.stdout.write('VBMeta image with AFTL inclusion proofs successfully '
+                     'created.\n')
     return True
 
   def _load_test_process_function(self, vbmeta_image_path,
@@ -1445,7 +1476,7 @@ class Aftl(avbtool.Avb):
     """
     if process_count < 1 or submission_count < 1:
       sys.stderr.write('Values for --processes/--submissions '
-                       'must be at least 1.')
+                       'must be at least 1.\n')
       return False
 
     if not stats_filename:
@@ -1536,31 +1567,31 @@ class AftlTool(avbtool.AvbTool):
   def make_icp_from_vbmeta(self, args):
     """Implements the 'make_icp_from_vbmeta' sub-command."""
     args = self._fixup_common_args(args)
-    self.aftl.make_icp_from_vbmeta(args.vbmeta_image_path,
-                                   args.output,
-                                   args.signing_helper,
-                                   args.signing_helper_with_files,
-                                   args.version_incremental,
-                                   args.transparency_log_servers,
-                                   args.transparency_log_pub_keys,
-                                   args.manufacturer_key,
-                                   args.padding_size)
+    return self.aftl.make_icp_from_vbmeta(args.vbmeta_image_path,
+                                          args.output,
+                                          args.signing_helper,
+                                          args.signing_helper_with_files,
+                                          args.version_incremental,
+                                          args.transparency_log_servers,
+                                          args.transparency_log_pub_keys,
+                                          args.manufacturer_key,
+                                          args.padding_size)
 
   def info_image_icp(self, args):
     """Implements the 'info_image_icp' sub-command."""
-    self.aftl.info_image_icp(args.vbmeta_image_path.name, args.output)
+    return self.aftl.info_image_icp(args.vbmeta_image_path.name, args.output)
 
   def load_test_aftl(self, args):
     """Implements the 'load_test_aftl' sub-command."""
-    self.aftl.load_test_aftl(args.vbmeta_image_path,
-                             args.output,
-                             args.transparency_log_server,
-                             args.transparency_log_pub_key,
-                             args.manufacturer_key,
-                             args.processes,
-                             args.submissions,
-                             args.stats_file,
-                             args.preserve_icp_images)
+    return self.aftl.load_test_aftl(args.vbmeta_image_path,
+                                    args.output,
+                                    args.transparency_log_server,
+                                    args.transparency_log_pub_key,
+                                    args.manufacturer_key,
+                                    args.processes,
+                                    args.submissions,
+                                    args.stats_file,
+                                    args.preserve_icp_images)
 
   def run(self, argv):
     """Command-line processor.
@@ -1677,10 +1708,14 @@ class AftlTool(avbtool.AvbTool):
 
     args = parser.parse_args(argv[1:])
     try:
-      args.func(args)
-    except AftlError:
-      # Indicate failure to signal to calling tools.
-      sys.exit(1)
+      success = args.func(args)
+      if not success:
+        # Signals to calling tools that the command has failed.
+        sys.exit(1)
+    except AftlError as e:
+      # Signals to calling tools that an unhandled exeception occured.
+      sys.stderr.write('Unhandled AftlError occured: {}\n'.format(e))
+      sys.exit(2)
 
 if __name__ == '__main__':
   tool = AftlTool()
