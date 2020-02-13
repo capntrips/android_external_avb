@@ -54,6 +54,23 @@ class AftltoolTestCase(unittest.TestCase):
     self.null = open(os.devnull, 'wb')
     sys.stderr = self.null
 
+    # AFTL public key.
+    self.test_aftl_pub_key = (
+        '-----BEGIN PUBLIC KEY-----\n'
+        'MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA4ilqCNsenNA013iCdwgD\n'
+        'YPxZ853nbHG9lMBp9boXiwRcqT/8bUKHIL7YX5z7s+QoRYVY3rkMKppRabclXzyx\n'
+        'H59YnPMaU4uv7NqwWzjgaZo7E+vo7IF+KBjV3cJulId5Av0yIYUCsrwd7MpGtWdC\n'
+        'Q3S+7Vd4zwzCKEhcvliNIhnNlp1U3wNkPCxOyCAsMEn6k8O5ar12ke5TvxDv15db\n'
+        'rPDeHh8G2OYWoCkWL+lSN35L2kOJqKqVbLKWrrOd96RCYrrtbPCi580OADJRcUlG\n'
+        'lgcjwmNwmypBWvQMZ6ITj0P0ksHnl1zZz1DE2rXe1goLI1doghb5KxLaezlR8c2C\n'
+        'E3w/uo9KJgNmNgUVzzqZZ6FE0moyIDNOpP7KtZAL0DvEZj6jqLbB0ccPQElrg52m\n'
+        'Dv2/A3nYSr0mYBKeskT4+Bg7PGgoC8p7WyLSxMyzJEDYdtrj9OFx6eZaA23oqTQx\n'
+        'k3Qq5H8RfNBeeSUEeKF7pKH/7gyqZ2bNzBFMA2EBZgBozwRfaeN/HCv3qbaCnwvu\n'
+        '6caacmAsK+RxiYxSL1QsJqyhCWWGxVyenmxdc1KG/u5ypi7OIioztyzR3t2tAzD3\n'
+        'Nb+2t8lgHBRxbV24yiPlnvPmB1ZYEctXnlRR9Evpl1o9xA9NnybPHKr9rozN39CZ\n'
+        'V/USB8K6ao1y5xPZxa8CZksCAwEAAQ==\n'
+        '-----END PUBLIC KEY-----\n')
+
     # Test AftlIcpEntry #1
     self.test_tl_url_1 = 'aftl-test-server.google.com'
 
@@ -169,7 +186,6 @@ class AftltoolTestCase(unittest.TestCase):
         + self.test_entry_1_bytes
         + self.test_entry_2_bytes)
 
-    # Sets up test data.
     # pylint: disable=no-member
     self.test_afi_resp = proto.api_pb2.AddFirmwareInfoResponse()
     self.test_afi_resp.fw_info_proof.proof.leaf_index = 6263
@@ -591,10 +607,26 @@ class AftlIcpEntryTest(AftltoolTestCase):
     self.assertEqual(entry.proofs,
                      self.test_afi_resp.fw_info_proof.proof.hashes)
 
-  # TODO(jpm): Add unit test for verify_icp.
   def test_verify_icp(self):
     """Tests verify_icp method."""
-    pass
+    key_file = 'transparency_log_pub_key.pem'
+    with open(key_file, 'w') as f:
+      f.write(self.test_aftl_pub_key)
+
+    # Valid ICP.
+    entry = aftltool.AftlIcpEntry()
+    entry.translate_response(self.test_tl_url_1, self.test_afi_resp)
+    self.assertTrue(entry.verify_icp(key_file))
+
+    # Invalid ICP where fw_info_leaf is not matching up with proofs.
+    entry = aftltool.AftlIcpEntry()
+    entry.translate_response(self.test_tl_url_1, self.test_afi_resp)
+    fw_info_leaf_bytes = entry.fw_info_leaf._fw_info_leaf_bytes.replace(
+        'ViNzEQS', '1234567')
+    entry.fw_info_leaf._fw_info_leaf_bytes = fw_info_leaf_bytes
+    self.assertFalse(entry.verify_icp(key_file))
+
+    os.remove(key_file)
 
   def test_print_desc(self):
     """Tests print_desc method."""
