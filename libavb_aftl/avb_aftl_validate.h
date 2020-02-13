@@ -36,10 +36,6 @@
 extern "C" {
 #endif
 
-#define AFTL_ULONG_MAX 0xfffffffffffffffful
-#define AFTL_MAX_FW_INFO_LEAF_SIZE 16384
-#define AFTL_MAX_LOG_ROOT_DESCRIPTOR_SIZE (65565 + AFTL_HASH_SIZE)
-
 /* Verifies that the logged vbmeta hash matches the one on device. */
 bool avb_aftl_verify_vbmeta_hash(
     uint8_t* vbmeta,          /* Buffer containing the vbmeta data. */
