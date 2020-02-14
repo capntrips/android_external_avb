@@ -35,11 +35,11 @@ need to be set:
       to the transparency log in PEM format.
 """
 
+import io
 import os
 import unittest
 
 import aftltool
-import avbtool
 
 
 class AFTLIntegrationTest(unittest.TestCase):
@@ -73,6 +73,17 @@ class AFTLIntegrationTest(unittest.TestCase):
         'padding_size': 0
     }
 
+    self.info_icp_default_params = {
+        'vbmeta_image_path': self.output_filename,
+        'output': io.BytesIO()
+    }
+
+    self.verify_icp_default_params = {
+        'vbmeta_image_path': self.output_filename,
+        'transparency_log_pub_keys': [self.aftl_pubkey],
+        'output': io.BytesIO()
+    }
+
   def tearDown(self):
     """Tears down the test bed for the unit tests."""
     try:
@@ -81,91 +92,53 @@ class AFTLIntegrationTest(unittest.TestCase):
       pass
     super(AFTLIntegrationTest, self).tearDown()
 
-  def _read_icp_from_vbmeta_blob(self):
-    """Reads the ICP from the output file.
-
-    Returns:
-      AftlDescriptor for the ICP included in the given vbmeta image.
-    """
-    image = avbtool.ImageHandler(self.output_filename)
-
-    # pylint: disable=protected-access
-    (footer, header, _, _) = self.aftltool._parse_image(image)
-    offset = 0
-    if footer:
-      offset = footer.vbmeta_offset
-    image.seek(offset)
-    vbmeta_blob = image.read(header.SIZE +
-                             header.authentication_data_block_size +
-                             header.auxiliary_data_block_size)
-    image.seek(offset + len(vbmeta_blob))
-    # TODO(jpm): Fix AftlDescriptor so that the length of it can be derived
-    # without having to read the whole descriptor.
-    icp_bytes = image.read(100000)
-    self.assertGreater(len(icp_bytes), 0)
-
-    icp_blob = aftltool.AftlDescriptor(icp_bytes)
-    self.assertTrue(icp_blob.is_valid())
-    return icp_blob
-
-  def _make_icp_from_vbmeta(self):
-    """Submits vbmeta to AFTL and fetches inclusion proofs.
-
-    Returns:
-      True if make_icp_from_vbmeta command succeeds; otherwise False.
-    """
+  def test_make_and_verify_icp_with_1_log(self):
+    """Tests integration of aftltool with one AFTL."""
+    # Make a VBmeta image with ICP.
     with open(self.output_filename, 'wb') as output_file:
       self.make_icp_default_params['output'] = output_file
       result = self.aftltool.make_icp_from_vbmeta(
           **self.make_icp_default_params)
-    return result
+      self.assertTrue(result)
 
-  def test_make_icp_with_one_transparency_log(self):
-    """Tests integration of aftltool with one AFTL."""
-    # Submits vbmeta to AFTL and fetches ICP.
-    result = self._make_icp_from_vbmeta()
+    # Checks that there is 1 ICP.
+    aftl_descriptor = self.aftltool.get_aftl_descriptor(self.output_filename)
+    self.assertEqual(aftl_descriptor.icp_header.icp_count, 1)
+
+    # Verifies the generated image.
+    result = self.aftltool.verify_image_icp(**self.verify_icp_default_params)
     self.assertTrue(result)
 
-    # Reads back the vbmeta image with the ICP.
-    icp_blob = self._read_icp_from_vbmeta_blob()
+    # Prints the image details.
+    result = self.aftltool.info_image_icp(**self.info_icp_default_params)
+    self.assertTrue(result)
 
-    # Checks ICP proof blob for correctness.
-    icp_header = icp_blob.icp_header
-    self.assertIsNotNone(icp_header)
-    self.assertEqual(icp_header.magic, 'AFTL')
-    self.assertEqual(icp_header.icp_count, 1)
-
-    self.assertEqual(len(icp_blob.icp_entries), 1)
-    for icp in icp_blob.icp_entries:
-      self.assertEqual(icp.log_url, self.aftl_host)
-      self.assertTrue(icp.verify_icp(self.aftl_pubkey))
-
-  def test_make_icp_with_two_transparency_log(self):
-    """Tests integration of aftltool with two AFTLs."""
+  def test_make_and_verify_icp_with_2_logs(self):
     # Reconfigures default parameters with two transparency logs.
     self.make_icp_default_params['transparency_log_servers'] = [
         self.aftl_host, self.aftl_host]
     self.make_icp_default_params['transparency_log_pub_keys'] = [
         self.aftl_pubkey, self.aftl_pubkey]
 
-    # Submits vbmeta to two AFTLs and fetches their ICPs.
-    result = self._make_icp_from_vbmeta()
+    # Make a VBmeta image with ICP.
+    with open(self.output_filename, 'wb') as output_file:
+      self.make_icp_default_params['output'] = output_file
+      result = self.aftltool.make_icp_from_vbmeta(
+          **self.make_icp_default_params)
+      self.assertTrue(result)
+
+    # Checks that there are 2 ICPs.
+    aftl_descriptor = self.aftltool.get_aftl_descriptor(self.output_filename)
+    self.assertEqual(aftl_descriptor.icp_header.icp_count, 2)
+
+    # Verifies the generated image.
+    result = self.aftltool.verify_image_icp(**self.verify_icp_default_params)
     self.assertTrue(result)
 
-    # Reads back the vbmeta image with the ICP.
-    icp_blob = self._read_icp_from_vbmeta_blob()
-
-    # Checks ICP proof blob for correctness.
-    icp_header = icp_blob.icp_header
-    self.assertIsNotNone(icp_header)
-    self.assertEqual(icp_header.magic, 'AFTL')
-    self.assertEqual(icp_header.icp_count, 2)
-
-    self.assertEqual(len(icp_blob.icp_entries), 2)
-    for icp in icp_blob.icp_entries:
-      self.assertEqual(icp.log_url, self.aftl_host)
-      self.assertTrue(icp.verify_icp(self.aftl_pubkey))
+    # Prints the image details.
+    result = self.aftltool.info_image_icp(**self.info_icp_default_params)
+    self.assertTrue(result)
 
 
 if __name__ == '__main__':
-  unittest.main()
+  unittest.main(verbosity=2)
