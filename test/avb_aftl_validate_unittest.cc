@@ -36,7 +36,7 @@ namespace {
 const char kAftlKeyBytesPath[] = "test/data/aftl_key_bytes.bin";
 const char kAftlLogSigPath[] = "test/data/aftl_log_sig.bin";
 
-}  // namespace
+} /* namespace */
 
 namespace avb {
 
@@ -71,13 +71,13 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
 
     /* Read in test data from the key and log_sig binaries. */
     base::GetFileSize(base::FilePath(kAftlKeyBytesPath), &key_size_);
-    if (key_size_ != 1032) return;
+    if (key_size_ != AVB_AFTL_PUB_KEY_SIZE) return;
     key_bytes_ = (uint8_t*)avb_malloc(key_size_);
     if (!key_bytes_) return;
     base::ReadFile(
         base::FilePath(kAftlKeyBytesPath), (char*)key_bytes_, key_size_);
     base::GetFileSize(base::FilePath(kAftlLogSigPath), &log_sig_size_);
-    if (log_sig_size_ != 512) return;
+    if (log_sig_size_ != AVB_AFTL_SIGNATURE_SIZE) return;
     log_sig_bytes_ = (uint8_t*)avb_malloc(log_sig_size_);
     if (!log_sig_bytes_) return;
     base::ReadFile(
@@ -172,7 +172,7 @@ TEST_F(AvbAftlValidateTest, AvbAftlHashLogRootDescriptor) {
   /* Initialize the icp_entry components used with the test. */
 
   avb_aftl_hash_log_root_descriptor(icp_entry_, hash);
-  EXPECT_EQ("c3476ca3dc8bae8559dd9b87d00b18e625612671ce5248790d0fd46ff6e6c24d",
+  EXPECT_EQ("4f932f328f4b1c9b16500d6d09005c46abebf5c4dc761bbd1e8602378789edac",
             mem_to_hexstring(hash, AVB_AFTL_HASH_SIZE));
 }
 
