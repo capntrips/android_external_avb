@@ -258,8 +258,8 @@ cc_library_host_static {
         "-fno-stack-protector",
     ],
     srcs: [
+      "libavb_aftl/avb_aftl_util.c",	
       "libavb_aftl/avb_aftl_validate.c",
-      "libavb_aftl/avb_aftl_util.c",
     ],
 }
 
@@ -331,6 +331,7 @@ cc_test_host {
     ],
     srcs: [
         "test/avb_ab_flow_unittest.cc",
+	"test/avb_aftl_util_unittest.cc",
         "test/avb_aftl_validate_unittest.cc",
         "test/avb_atx_validate_unittest.cc",
         "test/avb_atx_slot_verify_unittest.cc",
