@@ -1648,6 +1648,8 @@ class Aftl(avbtool.Avb):
 
     # Close the stats file.
     stats_file.close()
+    if results.count(False):
+      return False
     return True
 
 

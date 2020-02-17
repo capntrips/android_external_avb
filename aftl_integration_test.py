@@ -22,7 +22,7 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
-"""Integration tests for avbtool with AFTL.
+"""Integration tests for the avbtool with an actual AFTL.
 
 The test cases directly interact with a transparency log. However,
 before using this script the following environment variables
@@ -42,12 +42,12 @@ import unittest
 import aftltool
 
 
-class AFTLIntegrationTest(unittest.TestCase):
-  """Test suite for testing aftltool with a AFTL."""
+class AftlIntegrationTest(unittest.TestCase):
+  """Test suite for integration testing aftltool with an actual AFTL."""
 
   def setUp(self):
-    """Sets up the test bed for the unit tests."""
-    super(AFTLIntegrationTest, self).setUp()
+    """Sets up the test bed for the integration tests."""
+    super(AftlIntegrationTest, self).setUp()
     self.aftltool = aftltool.Aftl()
     self.output_filename = 'vbmeta_icp.img'
 
@@ -84,13 +84,34 @@ class AFTLIntegrationTest(unittest.TestCase):
         'output': io.BytesIO()
     }
 
+    self.load_test_aftl_default_params = {
+        'vbmeta_image_path': self.vbmeta_image,
+        'output': io.BytesIO(),
+        'transparency_log_server': self.aftl_host,
+        'transparency_log_pub_key': self.aftl_pubkey,
+        'manufacturer_key': self.manufacturer_key,
+        'process_count': 1,
+        'submission_count': 1,
+        'stats_filename': None,
+        'preserve_icp_images': False
+    }
+    self.load_test_stats_file_p1_s1 = 'load_test_p1_s1.csv'
+    self.load_test_stats_file_p2_p2 = 'load_test_p2_s2.csv'
+
+    self.files_to_cleanup = [
+        self.output_filename,
+        self.load_test_stats_file_p1_s1,
+        self.load_test_stats_file_p2_p2
+    ]
+
   def tearDown(self):
     """Tears down the test bed for the unit tests."""
-    try:
-      os.remove(self.output_filename)
-    except IOError:
-      pass
-    super(AFTLIntegrationTest, self).tearDown()
+    for filename in self.files_to_cleanup:
+      try:
+        os.remove(filename)
+      except OSError:
+        pass
+    super(AftlIntegrationTest, self).tearDown()
 
   def test_make_and_verify_icp_with_1_log(self):
     """Tests integration of aftltool with one AFTL."""
@@ -138,6 +159,51 @@ class AFTLIntegrationTest(unittest.TestCase):
     # Prints the image details.
     result = self.aftltool.info_image_icp(**self.info_icp_default_params)
     self.assertTrue(result)
+
+  def test_make_icp_with_invalid_grpc_service(self):
+    """Tests make_icp_from_vbmeta command with a host that does not support GRPC."""
+    self.make_icp_default_params[
+        'transparency_log_servers'] = ['www.google.com:80']
+    with open(self.output_filename, 'wb') as output_file:
+      self.make_icp_default_params['output'] = output_file
+      result = self.aftltool.make_icp_from_vbmeta(
+          **self.make_icp_default_params)
+      self.assertFalse(result)
+
+  def test_load_test_single_process_single_submission(self):
+    """Tests load_test_aftl command with 1 process which does 1 submission."""
+    result = self.aftltool.load_test_aftl(**self.load_test_aftl_default_params)
+    self.assertTrue(result)
+
+    output = self.load_test_aftl_default_params['output'].getvalue()
+    self.assertRegexpMatches(output, 'Succeeded:.+?1\n')
+    self.assertRegexpMatches(output, 'Failed:.+?0\n')
+
+    self.assertTrue(os.path.exists(self.load_test_stats_file_p1_s1))
+
+  def test_load_test_multi_procces_multi_submission(self):
+    """Tests load_test_aftl command with 2 processes and 2 submissions each."""
+    self.load_test_aftl_default_params['process_count'] = 2
+    self.load_test_aftl_default_params['submission_count'] = 2
+    result = self.aftltool.load_test_aftl(**self.load_test_aftl_default_params)
+    self.assertTrue(result)
+
+    output = self.load_test_aftl_default_params['output'].getvalue()
+    self.assertRegexpMatches(output, 'Succeeded:.+?4\n')
+    self.assertRegexpMatches(output, 'Failed:.+?0\n')
+
+    self.assertTrue(os.path.exists(self.load_test_stats_file_p2_p2))
+
+  def test_load_test_invalid_grpc_service(self):
+    """Tests load_test_aftl command with a host that does not support GRPC."""
+    self.load_test_aftl_default_params[
+        'transparency_log_server'] = 'www.google.com:80'
+    result = self.aftltool.load_test_aftl(**self.load_test_aftl_default_params)
+    self.assertFalse(result)
+
+    output = self.load_test_aftl_default_params['output'].getvalue()
+    self.assertRegexpMatches(output, 'Succeeded:.+?0\n')
+    self.assertRegexpMatches(output, 'Failed:.+?1\n')
 
 
 if __name__ == '__main__':
