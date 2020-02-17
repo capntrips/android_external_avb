@@ -41,6 +41,12 @@ import proto.api_pb2
 import proto.trillian_pb2
 
 
+# Workaround for b/149307145 in order to pick up the test data from the right
+# location independent where the script is called from.
+# TODO(b/149307145): Remove workaround once the referenced bug is fixed.
+TESTDATA_PATH = os.path.dirname(os.path.realpath(__file__))
+
+
 class AftltoolTestCase(unittest.TestCase):
 
   def setUp(self):
@@ -949,11 +955,11 @@ class AftlTest(AftltoolTestCase):
     """Tests the request_inclusion_proof method."""
     aftl_comms = AftlMockCommunication(self.mock_aftl_host, self.test_afi_resp)
     aftl = aftltool.Aftl()
-    # TODO(jpm@): Investigate how path to testkey_rsa4096.pem can be passed so
-    # atest can be run out of any directory.
     icp = aftl.request_inclusion_proof(self.mock_aftl_host,
                                        'a'*1024, '1',
-                                       'test/data/testkey_rsa4096.pem',
+                                       os.path.join(TESTDATA_PATH, 'test',
+                                                    'data',
+                                                    'testkey_rsa4096.pem'),
                                        None, None,
                                        aftl_comms=aftl_comms)
     self.assertEqual(icp.leaf_index,
