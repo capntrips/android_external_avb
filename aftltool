@@ -1089,14 +1089,19 @@ class AftlDescriptor(object):
 class AftlCommunication(object):
   """Class to abstract the communication layer with the transparency log."""
 
-  def __init__(self, transparency_log):
+  def __init__(self, transparency_log, timeout):
     """Initializes the object.
 
     Arguments:
       transparency_log: String containing the URL of a transparency log server.
-
+      timeout: Duration in seconds before requests to the AFTL times out. A
+        value of 0 or None means there will be no timeout.
     """
     self.transparency_log = transparency_log
+    if timeout:
+      self.timeout = timeout
+    else:
+      self.timeout = None
 
   def add_firmware_info(self, request):
     """Calls the AddFirmwareInfo RPC on the AFTL server.
@@ -1151,8 +1156,7 @@ class AftlGrpcCommunication(AftlCommunication):
     sys.stdout.write('ICP is about to be requested from transparency log '
                      'with domain {}.\n'.format(self.transparency_log))
     try:
-      # TODO(danielaustin): Set a reasonable timeout deadline here.
-      response = stub.AddFirmwareInfo(request)
+      response = stub.AddFirmwareInfo(request, timeout=self.timeout)
     except grpc.RpcError as e:
       raise AftlError('Error: grpc failure ({})'.format(e))
     return response
@@ -1299,7 +1303,7 @@ class Aftl(avbtool.Avb):
   def request_inclusion_proof(self, transparency_log, vbmeta_descriptor,
                               version_inc, manufacturer_key_path,
                               signing_helper, signing_helper_with_files,
-                              aftl_comms=None):
+                              timeout, aftl_comms=None):
     """Packages and sends a request to the specified transparency log.
 
     Arguments:
@@ -1310,6 +1314,8 @@ class Aftl(avbtool.Avb):
         transparency log servers.
       signing_helper: Program which signs a hash and returns a signature.
       signing_helper_with_files: Same as signing_helper but uses files instead.
+      timeout: Duration in seconds before requests to the transparency log
+        timeout.
       aftl_comms: A subclass of the AftlCommunication class. The default is
         to use AftlGrpcCommunication.
 
@@ -1370,7 +1376,7 @@ class Aftl(avbtool.Avb):
 
     # Submit signed FirmwareInfo to the server.
     if not aftl_comms:
-      aftl_comms = AftlGrpcCommunication(transparency_log)
+      aftl_comms = AftlGrpcCommunication(transparency_log, timeout)
     response = aftl_comms.add_firmware_info(request)
 
     # Return an AftlIcpEntry representing this response.
@@ -1382,7 +1388,7 @@ class Aftl(avbtool.Avb):
                            signing_helper, signing_helper_with_files,
                            version_incremental, transparency_log_servers,
                            transparency_log_pub_keys, manufacturer_key,
-                           padding_size):
+                           padding_size, timeout):
     """Generates a vbmeta image with inclusion proof given a vbmeta image.
 
     The descriptor (struct AftlDescriptor) contains the information required to
@@ -1417,6 +1423,8 @@ class Aftl(avbtool.Avb):
       manufacturer_key: Path to PEM file containting the key file used to sign
         messages sent to the transparency log servers.
       padding_size: If not 0, pads output so size is a multiple of the number.
+      timeout: Duration in seconds before requests to the AFTL times out. A
+        value of 0 or None means there will be no timeout.
 
     Returns:
       True if the inclusion proofs could be fetched from the transparency log
@@ -1442,7 +1450,8 @@ class Aftl(avbtool.Avb):
                                                  version_incremental,
                                                  manufacturer_key,
                                                  signing_helper,
-                                                 signing_helper_with_files)
+                                                 signing_helper_with_files,
+                                                 timeout)
         if not icp_entry.verify_vbmeta_image(vbmeta_image, pub_key):
           sys.stderr.write('The inclusion proof from {} could not be verified\n'
                            .format(host))
@@ -1497,7 +1506,7 @@ class Aftl(avbtool.Avb):
                                   transparency_log_server,
                                   transparency_log_pub_key, manufacturer_key,
                                   process_number, submission_count,
-                                  preserve_icp_images, result_queue):
+                                  preserve_icp_images, timeout, result_queue):
     """Function to be used by multiprocessing.Process.
 
     Arguments:
@@ -1513,6 +1522,8 @@ class Aftl(avbtool.Avb):
         process_count.
       preserve_icp_images: Boolean to indicate if the generated vbmeta
         image files with inclusion proofs should preserved.
+      timeout: Duration in seconds before requests to the AFTL times out. A
+        value of 0 or None means there will be no timeout.
       result_queue: Multiprocessing.Queue object for posting execution results.
     """
     for count in range(0, submission_count):
@@ -1532,7 +1543,8 @@ class Aftl(avbtool.Avb):
           transparency_log_servers=[transparency_log_server],
           transparency_log_pub_keys=[transparency_log_pub_key],
           manufacturer_key=manufacturer_key,
-          padding_size=0)
+          padding_size=0,
+          timeout=timeout)
       end_time = time.time()
 
       output.close()
@@ -1547,7 +1559,7 @@ class Aftl(avbtool.Avb):
   def load_test_aftl(self, vbmeta_image_path, output, transparency_log_server,
                      transparency_log_pub_key, manufacturer_key,
                      process_count, submission_count, stats_filename,
-                     preserve_icp_images):
+                     preserve_icp_images, timeout):
     """Performs multi-threaded load test on a given AFTL and prints stats.
 
     Arguments:
@@ -1565,6 +1577,8 @@ class Aftl(avbtool.Avb):
       stats_filename: Path to the stats file to write the raw execution data to.
       preserve_icp_images: Boolean to indicate if the generated vbmeta
         image files with inclusion proofs should preserved.
+      timeout: Duration in seconds before requests to the AFTL times out. A
+        value of 0 or None means there will be no timeout.
 
     Returns:
       True if the load tested succeeded without errors; otherwise False.
@@ -1595,7 +1609,7 @@ class Aftl(avbtool.Avb):
           target=self._load_test_process_function,
           args=(vbmeta_image_path, transparency_log_server,
                 transparency_log_pub_key, manufacturer_key, i, submission_count,
-                preserve_icp_images, result_queue))
+                preserve_icp_images, timeout, result_queue))
       p.start()
       processes.add(p)
 
@@ -1672,7 +1686,8 @@ class AftlTool(avbtool.AvbTool):
                                           args.transparency_log_servers,
                                           args.transparency_log_pub_keys,
                                           args.manufacturer_key,
-                                          args.padding_size)
+                                          args.padding_size,
+                                          args.timeout)
 
   def info_image_icp(self, args):
     """Implements the 'info_image_icp' sub-command."""
@@ -1694,7 +1709,8 @@ class AftlTool(avbtool.AvbTool):
                                     args.processes,
                                     args.submissions,
                                     args.stats_file,
-                                    args.preserve_icp_images)
+                                    args.preserve_icp_images,
+                                    args.timeout)
 
   def run(self, argv):
     """Command-line processor.
@@ -1743,10 +1759,16 @@ class AftlTool(avbtool.AvbTool):
     sub_parser.add_argument('--padding_size',
                             metavar='NUMBER',
                             help='If non-zero, pads output with NUL bytes so '
-                            'its size is a multiple of NUMBER '
-                            '(default: 0)',
+                            'its size is a multiple of NUMBER (default: 0)',
                             type=avbtool.parse_number,
                             default=0)
+    sub_parser.add_argument('--timeout',
+                            metavar='SECONDS',
+                            help='Timeout in seconds for transparency log '
+                            'requests (default: 600 sec). A value of 0 means '
+                            'no timeout.',
+                            type=avbtool.parse_number,
+                            default=600)
     self._add_common_args(sub_parser)
     sub_parser.set_defaults(func=self.make_icp_from_vbmeta)
 
@@ -1827,6 +1849,13 @@ class AftlTool(avbtool.AvbTool):
                             'vbmeta image files with inclusion proofs should '
                             'preserved.',
                             action='store_true')
+    sub_parser.add_argument('--timeout',
+                            metavar='SECONDS',
+                            help='Timeout in seconds for transparency log '
+                            'requests (default: 0). A value of 0 means '
+                            'no timeout.',
+                            type=avbtool.parse_number,
+                            default=0)
     sub_parser.set_defaults(func=self.load_test_aftl)
 
     args = parser.parse_args(argv[1:])
