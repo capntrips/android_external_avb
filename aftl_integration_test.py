@@ -70,7 +70,8 @@ class AftlIntegrationTest(unittest.TestCase):
         'transparency_log_servers': [self.aftl_host],
         'transparency_log_pub_keys': [self.aftl_pubkey],
         'manufacturer_key': self.manufacturer_key,
-        'padding_size': 0
+        'padding_size': 0,
+        'timeout': None
     }
 
     self.info_icp_default_params = {
@@ -93,7 +94,8 @@ class AftlIntegrationTest(unittest.TestCase):
         'process_count': 1,
         'submission_count': 1,
         'stats_filename': None,
-        'preserve_icp_images': False
+        'preserve_icp_images': False,
+        'timeout': None
     }
     self.load_test_stats_file_p1_s1 = 'load_test_p1_s1.csv'
     self.load_test_stats_file_p2_p2 = 'load_test_p2_s2.csv'
@@ -170,6 +172,18 @@ class AftlIntegrationTest(unittest.TestCase):
           **self.make_icp_default_params)
       self.assertFalse(result)
 
+  def test_make_icp_grpc_timeout(self):
+    """Tests make_icp_from_vbmeta command when running into GRPC timeout."""
+    # The timeout is set to 1 second which is way below the minimum processing
+    # time of the transparency log per load test results in b/139407814#2 where
+    # it was 3.43 seconds.
+    self.make_icp_default_params['timeout'] = 1
+    with open(self.output_filename, 'wb') as output_file:
+      self.make_icp_default_params['output'] = output_file
+      result = self.aftltool.make_icp_from_vbmeta(
+          **self.make_icp_default_params)
+      self.assertFalse(result)
+
   def test_load_test_single_process_single_submission(self):
     """Tests load_test_aftl command with 1 process which does 1 submission."""
     result = self.aftltool.load_test_aftl(**self.load_test_aftl_default_params)
@@ -198,6 +212,16 @@ class AftlIntegrationTest(unittest.TestCase):
     """Tests load_test_aftl command with a host that does not support GRPC."""
     self.load_test_aftl_default_params[
         'transparency_log_server'] = 'www.google.com:80'
+    result = self.aftltool.load_test_aftl(**self.load_test_aftl_default_params)
+    self.assertFalse(result)
+
+    output = self.load_test_aftl_default_params['output'].getvalue()
+    self.assertRegexpMatches(output, 'Succeeded:.+?0\n')
+    self.assertRegexpMatches(output, 'Failed:.+?1\n')
+
+  def test_load_test_grpc_timeout(self):
+    """Tests load_test_aftl command when running into timeout."""
+    self.load_test_aftl_default_params['timeout'] = 1
     result = self.aftltool.load_test_aftl(**self.load_test_aftl_default_params)
     self.assertFalse(result)
 
