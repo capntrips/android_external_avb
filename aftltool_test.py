@@ -44,7 +44,7 @@ import proto.trillian_pb2
 # Workaround for b/149307145 in order to pick up the test data from the right
 # location independent where the script is called from.
 # TODO(b/149307145): Remove workaround once the referenced bug is fixed.
-TESTDATA_PATH = os.path.dirname(os.path.realpath(__file__))
+TEST_EXEC_PATH = os.path.dirname(os.path.realpath(__file__))
 
 
 class AftltoolTestCase(unittest.TestCase):
@@ -248,6 +248,20 @@ class AftltoolTestCase(unittest.TestCase):
 
     super(AftltoolTestCase, self).tearDown()
 
+  def get_testdata_path(self, relative_path):
+    """Retrieves the absolute path for testdata given the relative path.
+
+    Arguments:
+      relative_path: The relative path to the testdata in the testdata
+        directory.
+
+    Returns:
+      The absolute path to the testdata.
+    """
+    rel_path_parts = ['test', 'data']
+    rel_path_parts.extend(relative_path.split(os.path.sep))
+    return os.path.join(TEST_EXEC_PATH, *rel_path_parts)
+
 
 class AftltoolTest(AftltoolTestCase):
 
@@ -370,6 +384,33 @@ class AftlDescriptorTest(AftltoolTestCase):
     self.assertEqual(d.icp_header.icp_count, 2)
     self.assertEqual(len(d.icp_entries), 2)
     self.assertTrue(d.is_valid())
+
+  def test_verify_vbmeta_image(self):
+    """Tests the verify_vbmeta_image method."""
+    # Valid vbmeta image without footer with 1 AftlDescriptor.
+    tool = aftltool.Aftl()
+    vbmeta_image, _ = tool.get_vbmeta_image(
+        self.get_testdata_path('aftltool/aftl_output_vbmeta_with_1_icp.img'))
+    desc = tool.get_aftl_descriptor(
+        self.get_testdata_path('aftltool/aftl_output_vbmeta_with_1_icp.img'))
+    self.assertTrue(desc.verify_vbmeta_image(
+        vbmeta_image, [self.get_testdata_path('aftltool/aftl_pubkey_1.pub')]))
+
+    # Valid vbmeta image without footer with 2 AftlDescriptor.
+    vbmeta_image, _ = tool.get_vbmeta_image(
+        self.get_testdata_path('aftltool/aftl_output_vbmeta_with_2_icp.img'))
+    desc = tool.get_aftl_descriptor(
+        self.get_testdata_path('aftltool/aftl_output_vbmeta_with_2_icp.img'))
+    self.assertTrue(desc.verify_vbmeta_image(
+        vbmeta_image, [self.get_testdata_path('aftltool/aftl_pubkey_1.pub')]))
+
+    # Valid vbmeta image but checked with the public key of another log.
+    self.assertFalse(desc.verify_vbmeta_image(
+        vbmeta_image, [self.get_testdata_path('aftltool/aftl_pubkey_2.pub')]))
+
+    # Valid vbmeta image but checked with invalid public key file.
+    self.assertFalse(desc.verify_vbmeta_image(
+        vbmeta_image, [self.get_testdata_path('large_blob.bin')]))
 
   def test_save(self):
     """Tests save method."""
@@ -633,6 +674,28 @@ class AftlIcpEntryTest(AftltoolTestCase):
     self.assertFalse(entry.verify_icp(key_file))
 
     os.remove(key_file)
+
+  def test_verify_vbmeta_image(self):
+    """Tests the verify_vbmeta_image method."""
+    # Valid vbmeta image without footer with 1 AftlDescriptor.
+    tool = aftltool.Aftl()
+    vbmeta_image, _ = tool.get_vbmeta_image(
+        self.get_testdata_path('aftltool/aftl_output_vbmeta_with_1_icp.img'))
+    desc = tool.get_aftl_descriptor(
+        self.get_testdata_path('aftltool/aftl_output_vbmeta_with_1_icp.img'))
+
+    self.assertEqual(desc.icp_header.icp_count, 1)
+    entry = desc.icp_entries[0]
+    self.assertTrue(entry.verify_vbmeta_image(
+        vbmeta_image, self.get_testdata_path('aftltool/aftl_pubkey_1.pub')))
+
+    # Valid vbmeta image but checked with the public key of another log.
+    self.assertFalse(entry.verify_vbmeta_image(
+        vbmeta_image, self.get_testdata_path('aftltool/aftl_pubkey_2.pub')))
+
+    # Valid vbmeta image but checked with invalid public key file.
+    self.assertFalse(entry.verify_vbmeta_image(
+        vbmeta_image, self.get_testdata_path('large_blob.bin')))
 
   def test_print_desc(self):
     """Tests print_desc method."""
@@ -950,18 +1013,57 @@ class AftlTest(AftltoolTestCase):
     super(AftlTest, self).setUp()
     self.mock_aftl_host = 'test.foo.bar:9000'
 
+  def test_get_vbmeta_image(self):
+    """Tests the get_vbmeta_image method."""
+    tool = aftltool.Aftl()
+
+    # Valid vbmeta image without footer and AftlDescriptor.
+    image, footer = tool.get_vbmeta_image(
+        self.get_testdata_path('aftltool/aftl_input_vbmeta.img'))
+    self.assertIsNotNone(image)
+    self.assertEqual(len(image), 4352)
+    self.assertIsNone(footer)
+
+    # Valid vbmeta image without footer but with AftlDescriptor.
+    image, footer = tool.get_vbmeta_image(
+        self.get_testdata_path('aftltool/aftl_output_vbmeta_with_1_icp.img'))
+    self.assertIsNotNone(image)
+    self.assertEqual(len(image), 4352)
+    self.assertIsNone(footer)
+
+    # Invalid vbmeta image.
+    image, footer = tool.get_vbmeta_image(
+        self.get_testdata_path('large_blob.bin'))
+    self.assertIsNone(image)
+    self.assertIsNone(footer)
+
+  def test_get_aftl_descriptor(self):
+    """Tests the get_aftl_descriptor method."""
+    tool = aftltool.Aftl()
+
+    # Valid vbmeta image without footer with AftlDescriptor.
+    desc = tool.get_aftl_descriptor(
+        self.get_testdata_path('aftltool/aftl_output_vbmeta_with_1_icp.img'))
+    self.assertIsInstance(desc, aftltool.AftlDescriptor)
+
+    # Valid vbmeta image without footer and AftlDescriptor.
+    desc = tool.get_aftl_descriptor(
+        self.get_testdata_path('aftltool/aftl_input_vbmeta.img'))
+    self.assertIsNone(desc)
+
+    # Invalid vbmeta image.
+    desc = tool.get_aftl_descriptor(self.get_testdata_path('large_blob.bin'))
+    self.assertIsNone(desc)
+
   # pylint: disable=no-member
   def test_request_inclusion_proof(self):
     """Tests the request_inclusion_proof method."""
     aftl_comms = AftlMockCommunication(self.mock_aftl_host, self.test_afi_resp)
     aftl = aftltool.Aftl()
-    icp = aftl.request_inclusion_proof(self.mock_aftl_host,
-                                       'a'*1024, '1',
-                                       os.path.join(TESTDATA_PATH, 'test',
-                                                    'data',
-                                                    'testkey_rsa4096.pem'),
-                                       None, None, None,
-                                       aftl_comms=aftl_comms)
+    icp = aftl.request_inclusion_proof(
+        self.mock_aftl_host, 'a' * 1024, '1',
+        self.get_testdata_path('testkey_rsa4096.pem'), None, None, None,
+        aftl_comms=aftl_comms)
     self.assertEqual(icp.leaf_index,
                      self.test_afi_resp.fw_info_proof.proof.leaf_index)
     self.assertEqual(icp.proof_hash_count,
@@ -989,11 +1091,10 @@ class AftlTest(AftltoolTestCase):
                                        aftltool.AftlError('Comms error'))
     aftl = aftltool.Aftl()
     with self.assertRaises(aftltool.AftlError):
-      aftl.request_inclusion_proof(self.mock_aftl_host,
-                                   'a'*1024, 'version_inc',
-                                   'test/data/testkey_rsa4096.pem',
-                                   None, None, None,
-                                   aftl_comms=aftl_comms)
+      aftl.request_inclusion_proof(
+          self.mock_aftl_host, 'a' * 1024, 'version_inc',
+          self.get_testdata_path('testkey_rsa4096.pem'), None, None, None,
+          aftl_comms=aftl_comms)
 
 if __name__ == '__main__':
   unittest.main(verbosity=2)
