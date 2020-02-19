@@ -35,22 +35,23 @@ need to be set:
       to the transparency log in PEM format.
 """
 
-import io
 import os
 import unittest
 
 import aftltool
+import aftltool_test
 
 
-class AftlIntegrationTest(unittest.TestCase):
-  """Test suite for integration testing aftltool with an actual AFTL."""
+class AftlIntegrationTest(aftltool_test.AftlTest):
+  """Test suite for integration testing aftltool with an actual AFTL.
 
-  def setUp(self):
-    """Sets up the test bed for the integration tests."""
-    super(AftlIntegrationTest, self).setUp()
-    self.aftltool = aftltool.Aftl()
-    self.output_filename = 'vbmeta_icp.img'
+  Note: The actual testcases are implemented are implemented as part of the
+  super class. This class only contains the confiruation for running the unit
+  tests against as a live log as a means of integration testing.
+  """
 
+  def set_up_environment(self):
+    """Sets up the environment for integration testing with actual AFTL."""
     self.aftl_host = os.environ.get('AFTL_HOST')
     self.aftl_pubkey = os.environ.get('AFTL_PUBKEY')
     self.vbmeta_image = os.environ.get('AFTL_VBMETA_IMAGE')
@@ -61,173 +62,17 @@ class AftlIntegrationTest(unittest.TestCase):
       self.fail('Environment variables not correctly set up. See description of'
                 ' this test case for details')
 
-    self.make_icp_default_params = {
-        'vbmeta_image_path': self.vbmeta_image,
-        'output': None,
-        'signing_helper': None,
-        'signing_helper_with_files': None,
-        'version_incremental': '1',
-        'transparency_log_servers': [self.aftl_host],
-        'transparency_log_pub_keys': [self.aftl_pubkey],
-        'manufacturer_key': self.manufacturer_key,
-        'padding_size': 0,
-        'timeout': None
-    }
+  def get_aftl_implementation(self, canned_response):
+    """Retrieves an instance if aftltool.Aftl for integration testing.
 
-    self.info_icp_default_params = {
-        'vbmeta_image_path': self.output_filename,
-        'output': io.BytesIO()
-    }
+    Arguments:
+      canned_response: Since we are using the actual implementation and not a
+      mock this gets ignored.
 
-    self.verify_icp_default_params = {
-        'vbmeta_image_path': self.output_filename,
-        'transparency_log_pub_keys': [self.aftl_pubkey],
-        'output': io.BytesIO()
-    }
-
-    self.load_test_aftl_default_params = {
-        'vbmeta_image_path': self.vbmeta_image,
-        'output': io.BytesIO(),
-        'transparency_log_server': self.aftl_host,
-        'transparency_log_pub_key': self.aftl_pubkey,
-        'manufacturer_key': self.manufacturer_key,
-        'process_count': 1,
-        'submission_count': 1,
-        'stats_filename': None,
-        'preserve_icp_images': False,
-        'timeout': None
-    }
-    self.load_test_stats_file_p1_s1 = 'load_test_p1_s1.csv'
-    self.load_test_stats_file_p2_p2 = 'load_test_p2_s2.csv'
-
-    self.files_to_cleanup = [
-        self.output_filename,
-        self.load_test_stats_file_p1_s1,
-        self.load_test_stats_file_p2_p2
-    ]
-
-  def tearDown(self):
-    """Tears down the test bed for the unit tests."""
-    for filename in self.files_to_cleanup:
-      try:
-        os.remove(filename)
-      except OSError:
-        pass
-    super(AftlIntegrationTest, self).tearDown()
-
-  def test_make_and_verify_icp_with_1_log(self):
-    """Tests integration of aftltool with one AFTL."""
-    # Make a VBmeta image with ICP.
-    with open(self.output_filename, 'wb') as output_file:
-      self.make_icp_default_params['output'] = output_file
-      result = self.aftltool.make_icp_from_vbmeta(
-          **self.make_icp_default_params)
-      self.assertTrue(result)
-
-    # Checks that there is 1 ICP.
-    aftl_descriptor = self.aftltool.get_aftl_descriptor(self.output_filename)
-    self.assertEqual(aftl_descriptor.icp_header.icp_count, 1)
-
-    # Verifies the generated image.
-    result = self.aftltool.verify_image_icp(**self.verify_icp_default_params)
-    self.assertTrue(result)
-
-    # Prints the image details.
-    result = self.aftltool.info_image_icp(**self.info_icp_default_params)
-    self.assertTrue(result)
-
-  def test_make_and_verify_icp_with_2_logs(self):
-    # Reconfigures default parameters with two transparency logs.
-    self.make_icp_default_params['transparency_log_servers'] = [
-        self.aftl_host, self.aftl_host]
-    self.make_icp_default_params['transparency_log_pub_keys'] = [
-        self.aftl_pubkey, self.aftl_pubkey]
-
-    # Make a VBmeta image with ICP.
-    with open(self.output_filename, 'wb') as output_file:
-      self.make_icp_default_params['output'] = output_file
-      result = self.aftltool.make_icp_from_vbmeta(
-          **self.make_icp_default_params)
-      self.assertTrue(result)
-
-    # Checks that there are 2 ICPs.
-    aftl_descriptor = self.aftltool.get_aftl_descriptor(self.output_filename)
-    self.assertEqual(aftl_descriptor.icp_header.icp_count, 2)
-
-    # Verifies the generated image.
-    result = self.aftltool.verify_image_icp(**self.verify_icp_default_params)
-    self.assertTrue(result)
-
-    # Prints the image details.
-    result = self.aftltool.info_image_icp(**self.info_icp_default_params)
-    self.assertTrue(result)
-
-  def test_make_icp_with_invalid_grpc_service(self):
-    """Tests make_icp_from_vbmeta command with a host that does not support GRPC."""
-    self.make_icp_default_params[
-        'transparency_log_servers'] = ['www.google.com:80']
-    with open(self.output_filename, 'wb') as output_file:
-      self.make_icp_default_params['output'] = output_file
-      result = self.aftltool.make_icp_from_vbmeta(
-          **self.make_icp_default_params)
-      self.assertFalse(result)
-
-  def test_make_icp_grpc_timeout(self):
-    """Tests make_icp_from_vbmeta command when running into GRPC timeout."""
-    # The timeout is set to 1 second which is way below the minimum processing
-    # time of the transparency log per load test results in b/139407814#2 where
-    # it was 3.43 seconds.
-    self.make_icp_default_params['timeout'] = 1
-    with open(self.output_filename, 'wb') as output_file:
-      self.make_icp_default_params['output'] = output_file
-      result = self.aftltool.make_icp_from_vbmeta(
-          **self.make_icp_default_params)
-      self.assertFalse(result)
-
-  def test_load_test_single_process_single_submission(self):
-    """Tests load_test_aftl command with 1 process which does 1 submission."""
-    result = self.aftltool.load_test_aftl(**self.load_test_aftl_default_params)
-    self.assertTrue(result)
-
-    output = self.load_test_aftl_default_params['output'].getvalue()
-    self.assertRegexpMatches(output, 'Succeeded:.+?1\n')
-    self.assertRegexpMatches(output, 'Failed:.+?0\n')
-
-    self.assertTrue(os.path.exists(self.load_test_stats_file_p1_s1))
-
-  def test_load_test_multi_procces_multi_submission(self):
-    """Tests load_test_aftl command with 2 processes and 2 submissions each."""
-    self.load_test_aftl_default_params['process_count'] = 2
-    self.load_test_aftl_default_params['submission_count'] = 2
-    result = self.aftltool.load_test_aftl(**self.load_test_aftl_default_params)
-    self.assertTrue(result)
-
-    output = self.load_test_aftl_default_params['output'].getvalue()
-    self.assertRegexpMatches(output, 'Succeeded:.+?4\n')
-    self.assertRegexpMatches(output, 'Failed:.+?0\n')
-
-    self.assertTrue(os.path.exists(self.load_test_stats_file_p2_p2))
-
-  def test_load_test_invalid_grpc_service(self):
-    """Tests load_test_aftl command with a host that does not support GRPC."""
-    self.load_test_aftl_default_params[
-        'transparency_log_server'] = 'www.google.com:80'
-    result = self.aftltool.load_test_aftl(**self.load_test_aftl_default_params)
-    self.assertFalse(result)
-
-    output = self.load_test_aftl_default_params['output'].getvalue()
-    self.assertRegexpMatches(output, 'Succeeded:.+?0\n')
-    self.assertRegexpMatches(output, 'Failed:.+?1\n')
-
-  def test_load_test_grpc_timeout(self):
-    """Tests load_test_aftl command when running into timeout."""
-    self.load_test_aftl_default_params['timeout'] = 1
-    result = self.aftltool.load_test_aftl(**self.load_test_aftl_default_params)
-    self.assertFalse(result)
-
-    output = self.load_test_aftl_default_params['output'].getvalue()
-    self.assertRegexpMatches(output, 'Succeeded:.+?0\n')
-    self.assertRegexpMatches(output, 'Failed:.+?1\n')
+    Returns:
+      An instance of aftltool.Aftl()
+    """
+    return aftltool.Aftl()
 
 
 if __name__ == '__main__':
