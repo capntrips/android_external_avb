@@ -2577,6 +2577,9 @@ class Avb(object):
       AvbVBMetaHeader, the third argument is a list of
       AvbDescriptor-derived instances, and the fourth argument is the
       size of |image|.
+
+    Raises:
+      AvbError: In case the image cannot be parsed.
     """
     assert isinstance(image, ImageHandler)
     footer = None
@@ -2796,7 +2799,6 @@ class Avb(object):
       padded_size = round_to_multiple(len(vbmeta_blob), padding_size)
       padding_needed = padded_size - len(vbmeta_blob)
       output.write('\0' * padding_needed)
-
 
   def _generate_vbmeta_blob(self, algorithm_name, key_path,
                             public_key_metadata_path, descriptors,
@@ -4094,7 +4096,6 @@ class AvbTool(object):
                             default=0)
     self._add_common_args(sub_parser)
     sub_parser.set_defaults(func=self.make_vbmeta_image)
-
 
     sub_parser = subparsers.add_parser('add_hash_footer',
                                        help='Add hashes and footer to image.')

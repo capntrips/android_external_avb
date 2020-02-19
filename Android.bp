@@ -148,7 +148,7 @@ python_test_host {
         "aftl_proto",
     ],
     data: [
-        "test/data/testkey_rsa4096.pem",
+        "test/data/**/*.*",
     ],
     test_suites: ["general-tests"],
     version: {
