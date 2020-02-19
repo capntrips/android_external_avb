@@ -1345,7 +1345,11 @@ class Aftl(avbtool.Avb):
     # Calculate the hash of the vbmeta image.
     vbmeta_hash = hashlib.sha256(vbmeta_descriptor).digest()
 
-    # Extract the key data from the PEM file.
+    # Extract the key data from the PEM file if of size 4096.
+    manufacturer_key = avbtool.RSAPublicKey(manufacturer_key_path)
+    if manufacturer_key.num_bits != 4096:
+      raise AftlError('Manufacturer keys not of size 4096: {}'.format(
+          manufacturer_key.num_bits))
     manufacturer_key_data = rsa_key_read_pem_bytes(manufacturer_key_path)
 
     # Calculate the hash of the manufacturer key data.
