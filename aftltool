@@ -1014,6 +1014,9 @@ class AftlDescriptor(object):
     Returns:
       True if the calculated signature matches AftlIcpEntry's. False otherwise.
     """
+    if not self.icp_entries:
+      return False
+
     icp_verified = 0
     for icp_entry in self.icp_entries:
       verified = False
@@ -1184,8 +1187,13 @@ class Aftl(avbtool.Avb):
     except ValueError as e:
       sys.stderr.write('The image does not contain a valid VBMeta structure: '
                        '{}.\n'.format(e))
-      return None
-    (footer, header, _, _) = self._parse_image(image)
+      return None, None
+
+    try:
+      (footer, header, _, _) = self._parse_image(image)
+    except avbtool.AvbError as e:
+      sys.stderr.write('The image cannot be parsed: {}.\n'.format(e))
+      return None, None
 
     # Seeks for the start of the vbmeta image and calculates its size.
     offset = 0
@@ -1200,7 +1208,7 @@ class Aftl(avbtool.Avb):
       image.seek(offset)
     except RuntimeError as e:
       sys.stderr.write('Given vbmeta image offset is invalid: {}.\n'.format(e))
-      return None
+      return None, None
     return image.read(vbmeta_image_size), footer
 
   def get_aftl_descriptor(self, image_filename):
@@ -1214,6 +1222,8 @@ class Aftl(avbtool.Avb):
     """
     # Reads the vbmeta image bytes.
     vbmeta_image, _ = self.get_vbmeta_image(image_filename)
+    if not vbmeta_image:
+      return None
 
     try:
       image = avbtool.ImageHandler(image_filename)
@@ -1232,6 +1242,10 @@ class Aftl(avbtool.Avb):
 
     # Parses the header for the AftlDescriptor size.
     tmp_header_bytes = image.read(AftlIcpHeader.SIZE)
+    if not tmp_header_bytes or len(tmp_header_bytes) != AftlIcpHeader.SIZE:
+      sys.stderr.write('This image does not contain a AftlDescriptor.\n')
+      return None
+
     try:
       tmp_header = AftlIcpHeader(tmp_header_bytes)
     except AftlError as e:
