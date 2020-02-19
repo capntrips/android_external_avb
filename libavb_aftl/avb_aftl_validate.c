@@ -38,7 +38,6 @@ bool avb_aftl_verify_vbmeta_hash(uint8_t* vbmeta,
   uint8_t vbmeta_hash[AVB_AFTL_HASH_SIZE];
 
   avb_assert(vbmeta != NULL && icp_entry != NULL);
-
   if (!avb_aftl_sha256(vbmeta, vbmeta_size, vbmeta_hash)) return false;
 
   /* Only SHA256 hashes are currently supported. If the vbmeta hash
@@ -47,6 +46,7 @@ bool avb_aftl_verify_vbmeta_hash(uint8_t* vbmeta,
     avb_error("Invalid VBMeta hash size.\n");
     return false;
   }
+
   /* Return whether the calculated VBMeta hash matches the stored one. */
   return avb_safe_memcmp(vbmeta_hash,
                          icp_entry->fw_info_leaf.vbmeta_hash,
@@ -85,6 +85,7 @@ bool avb_aftl_verify_icp_root_hash(AftlIcpEntry* icp_entry) {
                               AVB_AFTL_HASH_SIZE,
                               result_hash))
     return false;
+
   /* Return whether the calculated root hash matches the stored one. */
   return (avb_safe_memcmp(result_hash,
                           icp_entry->log_root_descriptor.root_hash,
@@ -123,6 +124,7 @@ bool avb_aftl_verify_entry_signature(const uint8_t* key,
     avb_error("Failed to get algorithm data.\n");
     return false;
   }
+
   return avb_rsa_verify(key,
                         key_num_bytes,
                         sig,
