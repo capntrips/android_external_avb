@@ -1204,7 +1204,7 @@ class AftlTest(AftlTestCase):
 
   # pylint: disable=no-member
   def test_request_inclusion_proof_failure(self):
-    """Tests the request_inclusion_proof_method in case of a comms problem."""
+    """Tests the request_inclusion_proof method in case of a comms problem."""
     # Always work with a mock independent if run as unit or integration tests.
     aftl = AftlMock(aftltool.AftlError('Comms error'))
 
@@ -1212,6 +1212,16 @@ class AftlTest(AftlTestCase):
       aftl.request_inclusion_proof(
           self.mock_aftl_host, 'a' * 1024, 'version_inc',
           self.get_testdata_path('testkey_rsa4096.pem'), None, None, None)
+
+  def test_request_inclusion_proof_manuf_key_not_4096(self):
+    """Tests request_inclusion_proof with manufacturing key not of size 4096."""
+    # Always work with a mock independent if run as unit or integration tests.
+    aftl = AftlMock(self.test_afi_resp)
+    with self.assertRaises(aftltool.AftlError) as e:
+      aftl.request_inclusion_proof(
+          self.mock_aftl_host, 'a' * 1024, 'version_inc',
+          self.get_testdata_path('testkey_rsa2048.pem'), None, None, None)
+    self.assertIn('not of size 4096: 2048', str(e.exception))
 
   def test_make_and_verify_icp_with_1_log(self):
     """Tests make_icp_from_vbmeta, verify_image_icp & info_image_icp."""
