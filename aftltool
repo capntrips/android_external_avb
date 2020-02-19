@@ -1280,7 +1280,7 @@ class Aftl(avbtool.Avb):
 
     Returns:
       True if the given image has an AftlDescriptor and could successfully
-      be proccesed; otherwise False.
+      be processed; otherwise False.
     """
     aftl_descriptor = self.get_aftl_descriptor(vbmeta_image_path)
     if not aftl_descriptor:

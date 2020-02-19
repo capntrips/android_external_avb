@@ -1006,12 +1006,130 @@ class AftlMockCommunication(aftltool.AftlCommunication):
     return self.canned_response
 
 
-class AftlTest(AftltoolTestCase):
+class AftlMock(aftltool.Aftl):
+  """Mock for aftltool.Aftl to mock the communication piece."""
+
+  def __init__(self, canned_response):
+    """Initializes the object.
+
+    Arguments:
+      canned_response: AddFirmwareInfoResponse to return or the Exception to
+        raise.
+    """
+    self.mock_canned_response = canned_response
+
+  def request_inclusion_proof(self, transparency_log, vbmeta_descriptor,
+                              version_inc, manufacturer_key_path,
+                              signing_helper, signing_helper_with_files,
+                              timeout, aftl_comms=None):
+    """Mocked request_inclusion_proof function."""
+    aftl_comms = AftlMockCommunication(transparency_log,
+                                       self.mock_canned_response)
+    return super(AftlMock, self).request_inclusion_proof(
+        transparency_log, vbmeta_descriptor, version_inc, manufacturer_key_path,
+        signing_helper, signing_helper_with_files, timeout,
+        aftl_comms=aftl_comms)
+
+
+class AftlTestCase(AftltoolTestCase):
+
+  def setUp(self):
+    """Sets up the test bed for the unit tests."""
+    super(AftlTestCase, self).setUp()
+    self.set_up_environment()
+    self.output_filename = 'vbmeta_icp.img'
+
+    self.make_icp_default_params = {
+        'vbmeta_image_path': self.vbmeta_image,
+        'output': None,
+        'signing_helper': None,
+        'signing_helper_with_files': None,
+        'version_incremental': '1',
+        'transparency_log_servers': [self.aftl_host],
+        'transparency_log_pub_keys': [self.aftl_pubkey],
+        'manufacturer_key': self.manufacturer_key,
+        'padding_size': 0,
+        'timeout': None
+    }
+
+    self.info_icp_default_params = {
+        'vbmeta_image_path': self.output_filename,
+        'output': io.BytesIO()
+    }
+
+    self.verify_icp_default_params = {
+        'vbmeta_image_path': self.output_filename,
+        'transparency_log_pub_keys': [self.aftl_pubkey],
+        'output': io.BytesIO()
+    }
+
+    self.load_test_aftl_default_params = {
+        'vbmeta_image_path': self.vbmeta_image,
+        'output': io.BytesIO(),
+        'transparency_log_server': self.aftl_host,
+        'transparency_log_pub_key': self.aftl_pubkey,
+        'manufacturer_key': self.manufacturer_key,
+        'process_count': 1,
+        'submission_count': 1,
+        'stats_filename': None,
+        'preserve_icp_images': False,
+        'timeout': None
+    }
+
+    self.load_test_stats_file_p1_s1 = 'load_test_p1_s1.csv'
+    self.load_test_stats_file_p2_p2 = 'load_test_p2_s2.csv'
+
+    self.files_to_cleanup = [
+        self.output_filename,
+        self.load_test_stats_file_p1_s1,
+        self.load_test_stats_file_p2_p2
+    ]
+
+  def tearDown(self):
+    """Tears down the test bed for the unit tests."""
+    for filename in self.files_to_cleanup:
+      try:
+        os.remove(filename)
+      except OSError:
+        pass
+    super(AftlTestCase, self).tearDown()
+
+  def set_up_environment(self):
+    """Sets up member variables for the particular test environment.
+
+    This allows to have different settings and mocking for unit tests and
+    integration tests.
+    """
+    raise NotImplementedError('set_up_environment() needs to be implemented '
+                              'by subclass.')
+
+  def get_aftl_implementation(self):
+    """Gets the aftltool.Aftl implementation used for testing.
+
+    This allows to have different Aftl implementations for unit tests and
+    integration tests.
+    """
+    raise NotImplementedError('get_aftl_implementation() needs to be'
+                              'implemented by subclass.')
+
+
+class AftlTest(AftlTestCase):
 
   def setUp(self):
     """Sets up the test bed for the unit tests."""
     super(AftlTest, self).setUp()
     self.mock_aftl_host = 'test.foo.bar:9000'
+
+  def set_up_environment(self):
+    """Sets up the environment for unit testing without networking."""
+    self.aftl_host = 'test.foo.bar:9000'
+    self.aftl_pubkey = self.get_testdata_path('aftltool/aftl_pubkey_1.pub')
+    self.vbmeta_image = self.get_testdata_path('aftltool/aftl_input_vbmeta.img')
+    self.manufacturer_key = self.get_testdata_path('testkey_rsa4096.pem')
+
+  def get_aftl_implementation(self, canned_response):
+    """Retrieves the AftlMock for unit testing without networking."""
+    return AftlMock(canned_response)
 
   def test_get_vbmeta_image(self):
     """Tests the get_vbmeta_image method."""
@@ -1058,12 +1176,12 @@ class AftlTest(AftltoolTestCase):
   # pylint: disable=no-member
   def test_request_inclusion_proof(self):
     """Tests the request_inclusion_proof method."""
-    aftl_comms = AftlMockCommunication(self.mock_aftl_host, self.test_afi_resp)
-    aftl = aftltool.Aftl()
+    # Always work with a mock independent if run as unit or integration tests.
+    aftl = AftlMock(self.test_afi_resp)
+
     icp = aftl.request_inclusion_proof(
         self.mock_aftl_host, 'a' * 1024, '1',
-        self.get_testdata_path('testkey_rsa4096.pem'), None, None, None,
-        aftl_comms=aftl_comms)
+        self.get_testdata_path('testkey_rsa4096.pem'), None, None, None)
     self.assertEqual(icp.leaf_index,
                      self.test_afi_resp.fw_info_proof.proof.leaf_index)
     self.assertEqual(icp.proof_hash_count,
@@ -1087,14 +1205,142 @@ class AftlTest(AftltoolTestCase):
   # pylint: disable=no-member
   def test_request_inclusion_proof_failure(self):
     """Tests the request_inclusion_proof_method in case of a comms problem."""
-    aftl_comms = AftlMockCommunication(self.mock_aftl_host,
-                                       aftltool.AftlError('Comms error'))
-    aftl = aftltool.Aftl()
+    # Always work with a mock independent if run as unit or integration tests.
+    aftl = AftlMock(aftltool.AftlError('Comms error'))
+
     with self.assertRaises(aftltool.AftlError):
       aftl.request_inclusion_proof(
           self.mock_aftl_host, 'a' * 1024, 'version_inc',
-          self.get_testdata_path('testkey_rsa4096.pem'), None, None, None,
-          aftl_comms=aftl_comms)
+          self.get_testdata_path('testkey_rsa4096.pem'), None, None, None)
+
+  def test_make_and_verify_icp_with_1_log(self):
+    """Tests make_icp_from_vbmeta, verify_image_icp & info_image_icp."""
+    aftl = self.get_aftl_implementation(self.test_afi_resp)
+
+    # Make a VBmeta image with ICP.
+    with open(self.output_filename, 'wb') as output_file:
+      self.make_icp_default_params['output'] = output_file
+      result = aftl.make_icp_from_vbmeta(**self.make_icp_default_params)
+    self.assertTrue(result)
+
+    # Checks that there is 1 ICP.
+    aftl_descriptor = aftl.get_aftl_descriptor(self.output_filename)
+    self.assertEqual(aftl_descriptor.icp_header.icp_count, 1)
+
+    # Verifies the generated image.
+    result = aftl.verify_image_icp(**self.verify_icp_default_params)
+    self.assertTrue(result)
+    # Prints the image details.
+    result = aftl.info_image_icp(**self.info_icp_default_params)
+    self.assertTrue(result)
+
+  def test_make_and_verify_icp_with_2_logs(self):
+    """Tests make_icp_from_vbmeta, verify_image_icp & info_image_icp."""
+    aftl = self.get_aftl_implementation(self.test_afi_resp)
+
+    # Reconfigures default parameters with two transparency logs.
+    self.make_icp_default_params['transparency_log_servers'] = [
+        self.aftl_host, self.aftl_host]
+    self.make_icp_default_params['transparency_log_pub_keys'] = [
+        self.aftl_pubkey, self.aftl_pubkey]
+
+    # Make a VBmeta image with ICP.
+    with open(self.output_filename, 'wb') as output_file:
+      self.make_icp_default_params['output'] = output_file
+      result = aftl.make_icp_from_vbmeta(
+          **self.make_icp_default_params)
+      self.assertTrue(result)
+
+    # Checks that there are 2 ICPs.
+    aftl_descriptor = aftl.get_aftl_descriptor(self.output_filename)
+    self.assertEqual(aftl_descriptor.icp_header.icp_count, 2)
+
+    # Verifies the generated image.
+    result = aftl.verify_image_icp(**self.verify_icp_default_params)
+    self.assertTrue(result)
+
+    # Prints the image details.
+    result = aftl.info_image_icp(**self.info_icp_default_params)
+    self.assertTrue(result)
+
+  def test_make_icp_with_invalid_grpc_service(self):
+    """Tests make_icp_from_vbmeta command with a host that does not support GRPC."""
+    aftl = self.get_aftl_implementation(aftltool.AftlError('Comms error'))
+    self.make_icp_default_params[
+        'transparency_log_servers'] = ['www.google.com:80']
+    with open(self.output_filename, 'wb') as output_file:
+      self.make_icp_default_params['output'] = output_file
+      result = aftl.make_icp_from_vbmeta(
+          **self.make_icp_default_params)
+      self.assertFalse(result)
+
+  def test_make_icp_grpc_timeout(self):
+    """Tests make_icp_from_vbmeta command when running into GRPC timeout."""
+    aftl = self.get_aftl_implementation(aftltool.AftlError('Comms error'))
+
+    # The timeout is set to 1 second which is way below the minimum processing
+    # time of the transparency log per load test results in b/139407814#2 where
+    # it was 3.43 seconds.
+    self.make_icp_default_params['timeout'] = 1
+    with open(self.output_filename, 'wb') as output_file:
+      self.make_icp_default_params['output'] = output_file
+      result = aftl.make_icp_from_vbmeta(
+          **self.make_icp_default_params)
+      self.assertFalse(result)
+
+  def test_load_test_single_process_single_submission(self):
+    """Tests load_test_aftl command with 1 process which does 1 submission."""
+    aftl = self.get_aftl_implementation(self.test_afi_resp)
+
+    result = aftl.load_test_aftl(**self.load_test_aftl_default_params)
+    self.assertTrue(result)
+
+    output = self.load_test_aftl_default_params['output'].getvalue()
+    self.assertRegexpMatches(output, 'Succeeded:.+?1\n')
+    self.assertRegexpMatches(output, 'Failed:.+?0\n')
+
+    self.assertTrue(os.path.exists(self.load_test_stats_file_p1_s1))
+
+  def test_load_test_multi_process_multi_submission(self):
+    """Tests load_test_aftl command with 2 processes and 2 submissions each."""
+    aftl = self.get_aftl_implementation(self.test_afi_resp)
+
+    self.load_test_aftl_default_params['process_count'] = 2
+    self.load_test_aftl_default_params['submission_count'] = 2
+    result = aftl.load_test_aftl(**self.load_test_aftl_default_params)
+    self.assertTrue(result)
+
+    output = self.load_test_aftl_default_params['output'].getvalue()
+    self.assertRegexpMatches(output, 'Succeeded:.+?4\n')
+    self.assertRegexpMatches(output, 'Failed:.+?0\n')
+
+    self.assertTrue(os.path.exists(self.load_test_stats_file_p2_p2))
+
+  def test_load_test_invalid_grpc_service(self):
+    """Tests load_test_aftl command with a host that does not support GRPC."""
+    aftl = self.get_aftl_implementation(aftltool.AftlError('Comms error'))
+
+    self.load_test_aftl_default_params[
+        'transparency_log_server'] = 'www.google.com:80'
+    result = aftl.load_test_aftl(**self.load_test_aftl_default_params)
+    self.assertFalse(result)
+
+    output = self.load_test_aftl_default_params['output'].getvalue()
+    self.assertRegexpMatches(output, 'Succeeded:.+?0\n')
+    self.assertRegexpMatches(output, 'Failed:.+?1\n')
+
+  def test_load_test_grpc_timeout(self):
+    """Tests load_test_aftl command when running into timeout."""
+    aftl = self.get_aftl_implementation(aftltool.AftlError('Comms error'))
+
+    self.load_test_aftl_default_params['timeout'] = 1
+    result = aftl.load_test_aftl(**self.load_test_aftl_default_params)
+    self.assertFalse(result)
+
+    output = self.load_test_aftl_default_params['output'].getvalue()
+    self.assertRegexpMatches(output, 'Succeeded:.+?0\n')
+    self.assertRegexpMatches(output, 'Failed:.+?1\n')
+
 
 if __name__ == '__main__':
   unittest.main(verbosity=2)
