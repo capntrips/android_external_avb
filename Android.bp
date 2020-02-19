@@ -260,6 +260,7 @@ cc_library_host_static {
     srcs: [
       "libavb_aftl/avb_aftl_util.c",
       "libavb_aftl/avb_aftl_validate.c",
+      "libavb_aftl/avb_aftl_verify.c",
     ],
 }
 
@@ -333,6 +334,7 @@ cc_test_host {
         "test/avb_ab_flow_unittest.cc",
         "test/avb_aftl_util_unittest.cc",
         "test/avb_aftl_validate_unittest.cc",
+        "test/avb_aftl_verify_unittest.cc",
         "test/avb_atx_validate_unittest.cc",
         "test/avb_atx_slot_verify_unittest.cc",
         "test/avb_slot_verify_unittest.cc",

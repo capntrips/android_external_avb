@@ -26,6 +26,14 @@
 
 #include <stdarg.h>
 
+uint16_t avb_be16toh(uint16_t in) {
+  uint8_t* d = (uint8_t*)&in;
+  uint16_t ret;
+  ret = ((uint16_t)d[0]) << 8;
+  ret |= ((uint16_t)d[1]);
+  return ret;
+}
+
 uint32_t avb_be32toh(uint32_t in) {
   uint8_t* d = (uint8_t*)&in;
   uint32_t ret;
@@ -48,6 +56,17 @@ uint64_t avb_be64toh(uint64_t in) {
   ret |= ((uint64_t)d[6]) << 8;
   ret |= ((uint64_t)d[7]);
   return ret;
+}
+
+/* Converts a 16-bit unsigned integer from host to big-endian byte order. */
+uint16_t avb_htobe16(uint16_t in) {
+  union {
+    uint16_t word;
+    uint8_t bytes[2];
+  } ret;
+  ret.bytes[0] = (in >> 8) & 0xff;
+  ret.bytes[1] = in & 0xff;
+  return ret.word;
 }
 
 /* Converts a 32-bit unsigned integer from host to big-endian byte order. */

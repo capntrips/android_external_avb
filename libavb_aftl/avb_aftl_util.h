@@ -39,6 +39,7 @@
 extern "C" {
 #endif
 
+#define AVB_AFTL_MAGIC 0x4c544641
 #define avb_aftl_member_size(type, member) sizeof(((type*)0)->member)
 
 /* Performs a SHA256 hash operation on data. */
