@@ -117,8 +117,8 @@ def check_signature(log_root, log_root_sig,
   retcode = p.wait()
   if not retcode:
     return True
-  sys.stderr.write('Error validating log_root signature with openssl {}'.
-                   format(openssl_err))
+  sys.stderr.write('Error validating log_root signature with openssl: '
+                   'exitcode={}, msg={}.\n'.format(retcode, openssl_err))
   return False
 
 
@@ -604,18 +604,18 @@ class AftlIcpEntry(object):
     """
     if self.leaf_index < 0:
       sys.stderr.write('ICP entry: leaf index out of range: '
-                       '{}\n'.format(self.leaf_index))
+                       '{}.\n'.format(self.leaf_index))
       return False
 
     if (not self.log_root_descriptor or
         not isinstance(self.log_root_descriptor, TrillianLogRootDescriptor) or
         not self.log_root_descriptor.is_valid()):
-      sys.stderr.write('ICP entry: invalid TrillianLogRootDescriptor\n')
+      sys.stderr.write('ICP entry: invalid TrillianLogRootDescriptor.\n')
       return False
 
     if (not self.fw_info_leaf or
         not isinstance(self.fw_info_leaf, FirmwareInfoLeaf)):
-      sys.stderr.write('ICP entry: invalid FirmwareInfo\n')
+      sys.stderr.write('ICP entry: invalid FirmwareInfo.\n')
       return False
     return True
 
@@ -747,36 +747,37 @@ class TrillianLogRootDescriptor(object):
     """
     cls = self.__class__.__name__
     if self.version != 1:
-      sys.stderr.write('{}: Bad version value {}.'.format(cls, self.version))
+      sys.stderr.write('{}: Bad version value {}.\n'.format(cls, self.version))
       return False
     if self.tree_size < 0:
-      sys.stderr.write('{}: Bad tree_size value {}.'.format(cls,
-                                                            self.tree_size))
+      sys.stderr.write('{}: Bad tree_size value {}.\n'.format(cls,
+                                                              self.tree_size))
       return False
     if self.root_hash_size < 0 or self.root_hash_size > 128:
-      sys.stderr.write('{}: Bad root_hash_size value {}.'.format(
+      sys.stderr.write('{}: Bad root_hash_size value {}.\n'.format(
           cls, self.root_hash_size))
       return False
     if len(self.root_hash) != self.root_hash_size:
       sys.stderr.write('{}: root_hash_size {} does not match with length of '
-                       'root_hash {}.'.format(cls, self.root_hash_size,
-                                              len(self.root_hash)))
+                       'root_hash {}.\n'.format(cls, self.root_hash_size,
+                                                len(self.root_hash)))
       return False
     if self.timestamp < 0:
-      sys.stderr.write('{}: Bad timestamp value {}.'.format(cls,
-                                                            self.timestamp))
+      sys.stderr.write('{}: Bad timestamp value {}.\n'.format(cls,
+                                                              self.timestamp))
       return False
     if self.revision < 0:
-      sys.stderr.write('{}: Bad revision value {}.'.format(cls, self.revision))
+      sys.stderr.write('{}: Bad revision value {}.\n'.format(cls,
+                                                             self.revision))
       return False
     if self.metadata_size < 0 or self.metadata_size > 65535:
-      sys.stderr.write('{}: Bad metadatasize value {}.'.format(
+      sys.stderr.write('{}: Bad metadatasize value {}.\n'.format(
           cls, self.metadata_size))
       return False
     if len(self.metadata) != self.metadata_size:
       sys.stderr.write('{}: metadata_size {} does not match with length of'
-                       'metadata {}'.format(cls, self.metadata_size,
-                                            len(self.metadata)))
+                       'metadata {}.\n'.format(cls, self.metadata_size,
+                                               len(self.metadata)))
       return False
     return True
 
@@ -1182,7 +1183,7 @@ class Aftl(avbtool.Avb):
       image = avbtool.ImageHandler(image_filename)
     except ValueError as e:
       sys.stderr.write('The image does not contain a valid VBMeta structure: '
-                       '{}\n'.format(e))
+                       '{}.\n'.format(e))
       return None
     (footer, header, _, _) = self._parse_image(image)
 
@@ -1198,7 +1199,7 @@ class Aftl(avbtool.Avb):
     try:
       image.seek(offset)
     except RuntimeError as e:
-      sys.stderr.write('Given vbmeta image offset is invalid: {}\n'.format(e))
+      sys.stderr.write('Given vbmeta image offset is invalid: {}.\n'.format(e))
       return None
     return image.read(vbmeta_image_size), footer
 
@@ -1218,14 +1219,14 @@ class Aftl(avbtool.Avb):
       image = avbtool.ImageHandler(image_filename)
     except ValueError as e:
       sys.stderr.write('The image does not contain a valid VBMeta structure: '
-                       '{}\n'.format(e))
+                       '{}.\n'.format(e))
       return None
 
     # Seeks for the start of the AftlDescriptor.
     try:
       image.seek(len(vbmeta_image))
     except RuntimeError as e:
-      sys.stderr.write('Given AftlDescriptor image offset is invalid: {}\n'
+      sys.stderr.write('Given AftlDescriptor image offset is invalid: {}.\n'
                        .format(e))
       return None
 
@@ -1235,14 +1236,14 @@ class Aftl(avbtool.Avb):
       tmp_header = AftlIcpHeader(tmp_header_bytes)
     except AftlError as e:
       sys.stderr.write('This image does not contain a valid AftlDescriptor: '
-                       '{}\n'.format(e))
+                       '{}.\n'.format(e))
       return None
 
     # Resets to the beginning of the AftlDescriptor.
     try:
       image.seek(len(vbmeta_image))
     except RuntimeError as e:
-      sys.stderr.write('Given AftlDescriptor image offset is invalid: {}\n'
+      sys.stderr.write('Given AftlDescriptor image offset is invalid: {}.\n'
                        .format(e))
       return None
 
@@ -1253,7 +1254,7 @@ class Aftl(avbtool.Avb):
       aftl_descriptor = AftlDescriptor(icp_bytes)
     except AftlError as e:
       sys.stderr.write('The image does not contain a valid AftlDescriptor: '
-                       '{}\n'.format(e))
+                       '{}.\n'.format(e))
     return aftl_descriptor
 
   def info_image_icp(self, vbmeta_image_path, output):
@@ -1433,7 +1434,7 @@ class Aftl(avbtool.Avb):
     # Validates command line parameters.
     if len(transparency_log_servers) != len(transparency_log_pub_keys):
       sys.stderr.write('Transparency log count and public key count mismatch: '
-                       '{} servers and {} public keys'.format(
+                       '{} servers and {} public keys.\n'.format(
                            len(transparency_log_servers),
                            len(transparency_log_pub_keys)))
       return False
@@ -1453,12 +1454,12 @@ class Aftl(avbtool.Avb):
                                                  signing_helper_with_files,
                                                  timeout)
         if not icp_entry.verify_vbmeta_image(vbmeta_image, pub_key):
-          sys.stderr.write('The inclusion proof from {} could not be verified\n'
-                           .format(host))
+          sys.stderr.write('The inclusion proof from {} could not be verified.'
+                           '\n'.format(host))
         aftl_descriptor.add_icp_entry(icp_entry)
       except AftlError as e:
         # The inclusion proof request failed. Continue and see if others will.
-        sys.stderr.write('AftlError: {}'.format(e))
+        sys.stderr.write('Requesting inclusion proof failed: {}.\n'.format(e))
         continue
 
     # Checks that the resulting AftlDescriptor is sane.
@@ -1469,12 +1470,12 @@ class Aftl(avbtool.Avb):
                                len(transparency_log_pub_keys)))
       return False
     if not aftl_descriptor.is_valid():
-      sys.stderr.write('Resulting AftlDescriptor structure is malformed\n.')
+      sys.stderr.write('Resulting AftlDescriptor structure is malformed.\n')
       return False
     if not aftl_descriptor.verify_vbmeta_image(vbmeta_image,
                                                transparency_log_pub_keys):
       sys.stderr.write('Resulting AftlDescriptor inclusion proofs do not'
-                       'validate.')
+                       'validate.\n')
       return False
 
     # Write the original vbmeta descriptor, followed by the AftlDescriptor.
@@ -1483,7 +1484,7 @@ class Aftl(avbtool.Avb):
       # like the system.img. Currently, we only put the main vbmeta.img in the
       # transparency log.
       sys.stderr.write('Image has a footer and ICP for this format is not '
-                       'implemented.')
+                       'implemented.\n')
       return False
 
     # Writes vbmeta image with inclusion proof into a new vbmeta image.
@@ -1596,7 +1597,8 @@ class Aftl(avbtool.Avb):
       stats_file.write('start_time,end_time,execution_time,version_incremental,'
                        'result\n')
     except IOError as e:
-      sys.stderr.write('Could not open stats file {}: {}'.format(stats_file, e))
+      sys.stderr.write('Could not open stats file {}: {}.\n'
+                       .format(stats_file, e))
       return False
 
     # Launch all the processes with their workloads.
