@@ -113,12 +113,10 @@ def check_signature(log_root, log_root_sig,
                        stdout=subprocess.PIPE,
                        stderr=subprocess.PIPE)
 
-  (_, openssl_err) = p.communicate()
+  p.communicate()
   retcode = p.wait()
   if not retcode:
     return True
-  sys.stderr.write('Error validating log_root signature with openssl: '
-                   'exitcode={}, msg={}.\n'.format(retcode, openssl_err))
   return False
 
 
@@ -486,11 +484,14 @@ class AftlIcpEntry(object):
     """Verifies the contained inclusion proof given the public log key.
 
     Arguments:
-      transparency_log_pub_key: The trusted public key for the log.
+      transparency_log_pub_key: The path to the trusted public key for the log.
 
     Returns:
       True if the calculated signature matches AftlIcpEntry's. False otherwise.
     """
+    if not transparency_log_pub_key:
+      return False
+
     leaf_hash = rfc6962_hash_leaf(self.fw_info_leaf.encode())
     calc_root = root_from_icp(self.leaf_index,
                               self.log_root_descriptor.tree_size,
@@ -516,6 +517,9 @@ class AftlIcpEntry(object):
       True if the inclusion proof validates and the vbmeta hash of the given
       descriptor matches the one in the fw_info_leaf; otherwise False.
     """
+    if not vbmeta_descriptor:
+      return False
+
     # Calculate the hash of the vbmeta image.
     vbmeta_hash = hashlib.sha256(vbmeta_descriptor).digest()
 
@@ -1012,9 +1016,10 @@ class AftlDescriptor(object):
         public keys that correspond with the transparency_logs.
 
     Returns:
-      True if the calculated signature matches AftlIcpEntry's. False otherwise.
+      True if all the inclusion proofs in the AfltDescriptor validate, are
+      signed by one of the give transparency log public keys; otherwise false.
     """
-    if not self.icp_entries:
+    if not transparency_log_pub_keys or not self.icp_entries:
       return False
 
     icp_verified = 0
@@ -1492,7 +1497,7 @@ class Aftl(avbtool.Avb):
       return False
     if not aftl_descriptor.verify_vbmeta_image(vbmeta_image,
                                                transparency_log_pub_keys):
-      sys.stderr.write('Resulting AftlDescriptor inclusion proofs do not'
+      sys.stderr.write('Resulting AftlDescriptor inclusion proofs do not '
                        'validate.\n')
       return False
 
