@@ -46,7 +46,7 @@ class AftlIntegrationTest(aftltool_test.AftlTest):
   """Test suite for integration testing aftltool with an actual AFTL.
 
   Note: The actual testcases are implemented are implemented as part of the
-  super class. This class only contains the confiruation for running the unit
+  super class. This class only contains the configuration for running the unit
   tests against as a live log as a means of integration testing.
   """
 
