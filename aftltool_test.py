@@ -1273,6 +1273,12 @@ class AftlTest(AftlTestCase):
     self.assertIsNone(image)
     self.assertIsNone(footer)
 
+    # Invalid file path.
+    image, footer = tool.get_vbmeta_image(
+        self.get_testdata_path('blabli_not_existing_file'))
+    self.assertIsNone(image)
+    self.assertIsNone(footer)
+
   def test_get_aftl_descriptor(self):
     """Tests the get_aftl_descriptor method."""
     tool = aftltool.Aftl()
@@ -1391,6 +1397,62 @@ class AftlTest(AftlTestCase):
     # Prints the image details.
     result = aftl.info_image_icp(**self.info_icp_default_params)
     self.assertTrue(result)
+
+  def test_info_image_icp(self):
+    """Tests info_image_icp with vbmeta image with 2 ICP."""
+    # Always work with a mock independent if run as unit or integration tests.
+    aftl = AftlMock(self.test_afi_resp)
+
+    image_path = self.get_testdata_path(
+        'aftltool/aftl_output_vbmeta_with_2_icp_different_logs.img')
+    self.info_icp_default_params['vbmeta_image_path'] = image_path
+
+    # Verifies the generated image.
+    result = aftl.info_image_icp(**self.info_icp_default_params)
+    self.assertTrue(result)
+
+  def test_info_image_icp_fail(self):
+    """Tests info_image_icp with invalid vbmeta image."""
+    # Always work with a mock independent if run as unit or integration tests.
+    aftl = AftlMock(self.test_afi_resp)
+
+    image_path = self.get_testdata_path('large_blob.bin')
+    self.info_icp_default_params['vbmeta_image_path'] = image_path
+
+    # Verifies the generated image.
+    result = aftl.info_image_icp(**self.info_icp_default_params)
+    self.assertFalse(result)
+
+  def test_verify_image_icp(self):
+    """Tets verify_image_icp with 2 ICP with all matching log keys."""
+    # Always work with a mock independent if run as unit or integration tests.
+    aftl = AftlMock(self.test_afi_resp)
+
+    image_path = self.get_testdata_path(
+        'aftltool/aftl_output_vbmeta_with_2_icp_different_logs.img')
+    self.verify_icp_default_params['vbmeta_image_path'] = image_path
+    self.verify_icp_default_params['transparency_log_pub_keys'] = [
+        self.get_testdata_path('aftltool/aftl_pubkey_1.pub'),
+        self.get_testdata_path('aftltool/aftl_pubkey_2.pub')
+    ]
+
+    result = aftl.verify_image_icp(**self.verify_icp_default_params)
+    self.assertTrue(result)
+
+  def test_verify_image_icp_failure(self):
+    """Tests verify_image_icp with 2 ICP but only one matching log key."""
+    # Always work with a mock independent if run as unit or integration tests.
+    aftl = AftlMock(self.test_afi_resp)
+
+    image_path = self.get_testdata_path(
+        'aftltool/aftl_output_vbmeta_with_2_icp_different_logs.img')
+    self.verify_icp_default_params['vbmeta_image_path'] = image_path
+    self.verify_icp_default_params['transparency_log_pub_keys'] = [
+        self.get_testdata_path('aftltool/aftl_pubkey_1.pub')
+    ]
+
+    result = aftl.verify_image_icp(**self.verify_icp_default_params)
+    self.assertFalse(result)
 
   def test_make_icp_with_invalid_grpc_service(self):
     """Tests make_icp_from_vbmeta command with a host that does not support GRPC."""
