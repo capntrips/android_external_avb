@@ -195,6 +195,12 @@ bool avb_str_concat(char* buf,
                     size_t str2_len) {
   uint64_t combined_len;
 
+  // Doesn't make sense to pass 0 for buf_size since there's
+  // no room for the terminating NUL byte.
+  if (buf_size == 0) {
+    return false;
+  }
+
   if (!avb_safe_add(&combined_len, str1_len, str2_len)) {
     avb_error("Overflow when adding string sizes.\n");
     return false;
