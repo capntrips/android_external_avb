@@ -623,35 +623,35 @@ static bool parse_firmware_info(AftlIcpEntry* icp_entry, uint8_t** aftl_blob) {
 /* Allocates and populates an AftlIcpEntry from a binary blob.
    The blob is expected to be pointing to the beginning of a
    serialized AftlIcpEntry structure. */
-AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
+AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size) {
   AftlIcpEntry *icp_entry, *tmp_icp_entry;
+  uint32_t proof_size;
   uint64_t parsed_size;
+
   /* Make a temp AftlIcpEntry to get the inclusion proof size
      for memory allocation purposes.*/
-  tmp_icp_entry = (AftlIcpEntry*)aftl_blob;
-  tmp_icp_entry->inc_proof_size = avb_be32toh(tmp_icp_entry->inc_proof_size);
+  tmp_icp_entry = (AftlIcpEntry*)*aftl_blob;
+  proof_size = avb_be32toh(tmp_icp_entry->inc_proof_size);
+
   /* Ensure the calculated size is sane. */
-  if (tmp_icp_entry->inc_proof_size + AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE <
-      tmp_icp_entry->inc_proof_size) {
+  if (proof_size > AVB_AFTL_MAX_PROOF_SIZE) {
     avb_error("Invalid inclusion proof size.\n");
     return NULL;
   }
 
-  if (*remaining_size >=
-      tmp_icp_entry->inc_proof_size + AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE) {
+  if (*remaining_size < proof_size + AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE) {
     avb_error("Invalid AftlDescriptor\n");
     return NULL;
   }
 
-  icp_entry = (AftlIcpEntry*)avb_calloc(tmp_icp_entry->inc_proof_size +
-                                        sizeof(AftlIcpEntry));
+  icp_entry = (AftlIcpEntry*)avb_calloc(proof_size + sizeof(AftlIcpEntry));
   if (!icp_entry) {
     avb_error("Failure allocating AftlIcpEntry\n");
     return NULL;
   }
   /* Copy in the log server URL size field. */
   avb_memcpy(&(icp_entry->log_url_size),
-             aftl_blob,
+             *aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, log_url_size));
   icp_entry->log_url_size = avb_be32toh(icp_entry->log_url_size);
   if (icp_entry->log_url_size > AVB_AFTL_MAX_URL_SIZE) {
@@ -659,18 +659,18 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
     avb_free(icp_entry);
     return NULL;
   }
-  aftl_blob += avb_aftl_member_size(AftlIcpEntry, log_url_size);
+  *aftl_blob += avb_aftl_member_size(AftlIcpEntry, log_url_size);
   parsed_size = avb_aftl_member_size(AftlIcpEntry, log_url_size);
   /* Copy in the leaf index field. */
   avb_memcpy(&(icp_entry->leaf_index),
-             aftl_blob,
+             *aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, leaf_index));
   icp_entry->leaf_index = avb_be64toh(icp_entry->leaf_index);
-  aftl_blob += avb_aftl_member_size(AftlIcpEntry, leaf_index);
+  *aftl_blob += avb_aftl_member_size(AftlIcpEntry, leaf_index);
   parsed_size += avb_aftl_member_size(AftlIcpEntry, leaf_index);
   /* Copy in the TrillianLogRootDescriptor size field. */
   avb_memcpy(&(icp_entry->log_root_descriptor_size),
-             aftl_blob,
+             *aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, log_root_descriptor_size));
   icp_entry->log_root_descriptor_size =
       avb_be32toh(icp_entry->log_root_descriptor_size);
@@ -680,11 +680,11 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
     avb_free(icp_entry);
     return NULL;
   }
-  aftl_blob += avb_aftl_member_size(AftlIcpEntry, log_root_descriptor_size);
+  *aftl_blob += avb_aftl_member_size(AftlIcpEntry, log_root_descriptor_size);
   parsed_size += avb_aftl_member_size(AftlIcpEntry, log_root_descriptor_size);
   /* Copy in the FirmwareInfo leaf size field. */
   avb_memcpy(&(icp_entry->fw_info_leaf_size),
-             aftl_blob,
+             *aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, fw_info_leaf_size));
   icp_entry->fw_info_leaf_size = avb_be32toh(icp_entry->fw_info_leaf_size);
   if (icp_entry->fw_info_leaf_size == 0 ||
@@ -693,11 +693,11 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
     avb_free(icp_entry);
     return NULL;
   }
-  aftl_blob += avb_aftl_member_size(AftlIcpEntry, fw_info_leaf_size);
+  *aftl_blob += avb_aftl_member_size(AftlIcpEntry, fw_info_leaf_size);
   parsed_size += avb_aftl_member_size(AftlIcpEntry, fw_info_leaf_size);
   /* Copy the log root signature size field. */
   avb_memcpy(&(icp_entry->log_root_sig_size),
-             aftl_blob,
+             *aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, log_root_sig_size));
   icp_entry->log_root_sig_size = avb_be16toh(icp_entry->log_root_sig_size);
   if (icp_entry->log_root_sig_size != AVB_AFTL_SIGNATURE_SIZE) {
@@ -705,17 +705,17 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
     avb_free(icp_entry);
     return NULL;
   }
-  aftl_blob += avb_aftl_member_size(AftlIcpEntry, log_root_sig_size);
+  *aftl_blob += avb_aftl_member_size(AftlIcpEntry, log_root_sig_size);
   parsed_size += avb_aftl_member_size(AftlIcpEntry, log_root_sig_size);
   /* Copy the inclusion proof hash count field. */
   avb_memcpy(&(icp_entry->proof_hash_count),
-             aftl_blob,
+             *aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, proof_hash_count));
-  aftl_blob += avb_aftl_member_size(AftlIcpEntry, proof_hash_count);
+  *aftl_blob += avb_aftl_member_size(AftlIcpEntry, proof_hash_count);
   parsed_size += avb_aftl_member_size(AftlIcpEntry, proof_hash_count);
   /* Copy the inclusion proof size field. */
   avb_memcpy(&(icp_entry->inc_proof_size),
-             aftl_blob,
+             *aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, inc_proof_size));
   icp_entry->inc_proof_size = avb_be32toh(icp_entry->inc_proof_size);
   if (icp_entry->inc_proof_size !=
@@ -724,7 +724,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
     avb_free(icp_entry);
     return NULL;
   }
-  aftl_blob += avb_aftl_member_size(AftlIcpEntry, inc_proof_size);
+  *aftl_blob += avb_aftl_member_size(AftlIcpEntry, inc_proof_size);
   parsed_size += avb_aftl_member_size(AftlIcpEntry, inc_proof_size);
   /* Copy in the log server URL from the blob. */
   if (!avb_safe_add_to(&parsed_size, icp_entry->log_url_size)) {
@@ -743,8 +743,8 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
     free_aftl_icp_entry(icp_entry);
     return NULL;
   }
-  avb_memcpy(icp_entry->log_url, aftl_blob, icp_entry->log_url_size);
-  aftl_blob += icp_entry->log_url_size;
+  avb_memcpy(icp_entry->log_url, *aftl_blob, icp_entry->log_url_size);
+  *aftl_blob += icp_entry->log_url_size;
 
   /* Populate the TrillianLogRootDescriptor elements. */
   if (!avb_safe_add_to(&parsed_size, icp_entry->log_root_descriptor_size)) {
@@ -758,7 +758,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
     return NULL;
   }
   if (!parse_trillian_log_root_descriptor(
-          icp_entry, &aftl_blob, icp_entry->log_root_descriptor_size)) {
+          icp_entry, aftl_blob, icp_entry->log_root_descriptor_size)) {
     return NULL;
   }
 
@@ -773,7 +773,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
     free_aftl_icp_entry(icp_entry);
     return NULL;
   }
-  if (!parse_firmware_info(icp_entry, &aftl_blob)) return NULL;
+  if (!parse_firmware_info(icp_entry, aftl_blob)) return NULL;
 
   /* Allocate and copy the log root signature from the blob. */
   if (!avb_safe_add_to(&parsed_size, icp_entry->log_root_sig_size)) {
@@ -794,8 +794,8 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
     return NULL;
   }
   avb_memcpy(
-      icp_entry->log_root_signature, aftl_blob, icp_entry->log_root_sig_size);
-  aftl_blob += icp_entry->log_root_sig_size;
+      icp_entry->log_root_signature, *aftl_blob, icp_entry->log_root_sig_size);
+  *aftl_blob += icp_entry->log_root_sig_size;
 
   if (!avb_safe_add_to(&parsed_size, icp_entry->inc_proof_size)) {
     avb_error("Invalid inclusion proof size.\n");
@@ -809,8 +809,8 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
   }
 
   /* Finally, copy the proof hash data from the blob to the AftlDescriptor. */
-  avb_memcpy(icp_entry->proofs, aftl_blob, icp_entry->inc_proof_size);
-  aftl_blob += icp_entry->inc_proof_size;
+  avb_memcpy(icp_entry->proofs, *aftl_blob, icp_entry->inc_proof_size);
+  *aftl_blob += icp_entry->inc_proof_size;
   *remaining_size -= parsed_size;
 
   return icp_entry;
@@ -868,7 +868,7 @@ AftlDescriptor* parse_aftl_descriptor(uint8_t* aftl_blob,
   remaining_size = aftl_blob_size - sizeof(AftlIcpHeader);
   for (i = 0; i < aftl_descriptor->header.icp_count && remaining_size > 0;
        i++) {
-    aftl_descriptor->entries[i] = parse_icp_entry(aftl_blob, &remaining_size);
+    aftl_descriptor->entries[i] = parse_icp_entry(&aftl_blob, &remaining_size);
   }
 
   return aftl_descriptor;
