@@ -286,6 +286,11 @@ void avb_uppercase(char* str);
  */
 char* avb_bin2hex(const uint8_t* data, size_t data_len);
 
+/* Writes |value| to |digits| in base 10 followed by a NUL byte.
+ * Returns number of characters written excluding the NUL byte.
+ */
+#define AVB_MAX_DIGITS_UINT64 32
+size_t avb_uint64_to_base10(uint64_t value, char digits[AVB_MAX_DIGITS_UINT64]);
 #ifdef __cplusplus
 }
 #endif
