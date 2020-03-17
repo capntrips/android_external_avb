@@ -453,3 +453,22 @@ char* avb_bin2hex(const uint8_t* data, size_t data_len) {
   hex_data[n * 2] = '\0';
   return hex_data;
 }
+
+size_t avb_uint64_to_base10(uint64_t value,
+                            char digits[AVB_MAX_DIGITS_UINT64]) {
+  char rev_digits[AVB_MAX_DIGITS_UINT64];
+  size_t n, num_digits;
+
+  for (num_digits = 0; num_digits < AVB_MAX_DIGITS_UINT64 - 1;) {
+    rev_digits[num_digits++] = avb_div_by_10(&value) + '0';
+    if (value == 0) {
+      break;
+    }
+  }
+
+  for (n = 0; n < num_digits; n++) {
+    digits[n] = rev_digits[num_digits - 1 - n];
+  }
+  digits[n] = '\0';
+  return n;
+}
