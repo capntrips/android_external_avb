@@ -2340,6 +2340,13 @@ class Avb(object):
 
     (footer, header, descriptors, image_size) = self._parse_image(image)
 
+    # To show the SHA1 of the public key.
+    vbmeta_blob = self._load_vbmeta_blob(image)
+    key_offset = (header.SIZE +
+                  header.authentication_data_block_size +
+                  header.public_key_offset)
+    key_blob = vbmeta_blob[key_offset:key_offset + header.public_key_size]
+
     if footer:
       o.write('Footer version:           {}.{}\n'.format(footer.version_major,
                                                          footer.version_minor))
@@ -2361,6 +2368,9 @@ class Avb(object):
         header.authentication_data_block_size))
     o.write('Auxiliary Block:          {} bytes\n'.format(
         header.auxiliary_data_block_size))
+    if key_blob:
+      hexdig = hashlib.sha1(key_blob).hexdigest()
+      o.write('Public key (sha1):        {}\n'.format(hexdig))
     o.write('Algorithm:                {}\n'.format(alg_name))
     o.write('Rollback Index:           {}\n'.format(header.rollback_index))
     o.write('Flags:                    {}\n'.format(header.flags))
