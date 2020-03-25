@@ -105,7 +105,7 @@ AftlDescriptor* parse_aftl_descriptor(uint8_t* aftl_blob,
 
 /* Allocates and populates an AftlIcpEntry and all sub-fields from
    a binary blob. It is assumed that the blob points to an AftlIcpEntry. */
-AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size);
+AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size);
 
 /* Frees an AftlIcpEntry and all sub-fields that were previously
    allocated by a call to allocate_icp_entry. */
