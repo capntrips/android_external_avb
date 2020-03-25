@@ -413,7 +413,7 @@ static bool parse_trillian_log_root_descriptor(AftlIcpEntry* icp_entry,
              *aftl_blob,
              avb_aftl_member_size(TrillianLogRootDescriptor, version));
   icp_entry->log_root_descriptor.version =
-      avb_htobe16(icp_entry->log_root_descriptor.version);
+      avb_be16toh(icp_entry->log_root_descriptor.version);
   *aftl_blob += avb_aftl_member_size(TrillianLogRootDescriptor, version);
   parsed_size = avb_aftl_member_size(TrillianLogRootDescriptor, version);
   /* Copy in the tree size field from the blob. */
@@ -421,7 +421,7 @@ static bool parse_trillian_log_root_descriptor(AftlIcpEntry* icp_entry,
              *aftl_blob,
              avb_aftl_member_size(TrillianLogRootDescriptor, tree_size));
   icp_entry->log_root_descriptor.tree_size =
-      avb_htobe64(icp_entry->log_root_descriptor.tree_size);
+      avb_be64toh(icp_entry->log_root_descriptor.tree_size);
   *aftl_blob += avb_aftl_member_size(TrillianLogRootDescriptor, tree_size);
   parsed_size += avb_aftl_member_size(TrillianLogRootDescriptor, tree_size);
   /* Copy in the root hash size field from the blob. */
@@ -455,7 +455,7 @@ static bool parse_trillian_log_root_descriptor(AftlIcpEntry* icp_entry,
              *aftl_blob,
              avb_aftl_member_size(TrillianLogRootDescriptor, timestamp));
   icp_entry->log_root_descriptor.timestamp =
-      avb_htobe64(icp_entry->log_root_descriptor.timestamp);
+      avb_be64toh(icp_entry->log_root_descriptor.timestamp);
   *aftl_blob += avb_aftl_member_size(TrillianLogRootDescriptor, timestamp);
   parsed_size += avb_aftl_member_size(TrillianLogRootDescriptor, timestamp);
   /* Copy in the revision field from the blob. */
@@ -463,7 +463,7 @@ static bool parse_trillian_log_root_descriptor(AftlIcpEntry* icp_entry,
              *aftl_blob,
              avb_aftl_member_size(TrillianLogRootDescriptor, revision));
   icp_entry->log_root_descriptor.revision =
-      avb_htobe64(icp_entry->log_root_descriptor.revision);
+      avb_be64toh(icp_entry->log_root_descriptor.revision);
   *aftl_blob += avb_aftl_member_size(TrillianLogRootDescriptor, revision);
   parsed_size += avb_aftl_member_size(TrillianLogRootDescriptor, revision);
   /* Copy in the metadata size field from the blob. */
@@ -471,7 +471,7 @@ static bool parse_trillian_log_root_descriptor(AftlIcpEntry* icp_entry,
              *aftl_blob,
              avb_aftl_member_size(TrillianLogRootDescriptor, metadata_size));
   icp_entry->log_root_descriptor.metadata_size =
-      avb_htobe16(icp_entry->log_root_descriptor.metadata_size);
+      avb_be16toh(icp_entry->log_root_descriptor.metadata_size);
   *aftl_blob += avb_aftl_member_size(TrillianLogRootDescriptor, metadata_size);
   parsed_size += avb_aftl_member_size(TrillianLogRootDescriptor, metadata_size);
   if (icp_entry->log_root_descriptor.metadata_size >
@@ -629,7 +629,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
   /* Make a temp AftlIcpEntry to get the inclusion proof size
      for memory allocation purposes.*/
   tmp_icp_entry = (AftlIcpEntry*)aftl_blob;
-  tmp_icp_entry->inc_proof_size = avb_htobe32(tmp_icp_entry->inc_proof_size);
+  tmp_icp_entry->inc_proof_size = avb_be32toh(tmp_icp_entry->inc_proof_size);
   /* Ensure the calculated size is sane. */
   if (tmp_icp_entry->inc_proof_size + AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE <
       tmp_icp_entry->inc_proof_size) {
@@ -653,7 +653,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
   avb_memcpy(&(icp_entry->log_url_size),
              aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, log_url_size));
-  icp_entry->log_url_size = avb_htobe32(icp_entry->log_url_size);
+  icp_entry->log_url_size = avb_be32toh(icp_entry->log_url_size);
   if (icp_entry->log_url_size > AVB_AFTL_MAX_URL_SIZE) {
     avb_error("Invalid log URL size.\n");
     avb_free(icp_entry);
@@ -665,7 +665,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
   avb_memcpy(&(icp_entry->leaf_index),
              aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, leaf_index));
-  icp_entry->leaf_index = avb_htobe64(icp_entry->leaf_index);
+  icp_entry->leaf_index = avb_be64toh(icp_entry->leaf_index);
   aftl_blob += avb_aftl_member_size(AftlIcpEntry, leaf_index);
   parsed_size += avb_aftl_member_size(AftlIcpEntry, leaf_index);
   /* Copy in the TrillianLogRootDescriptor size field. */
@@ -673,7 +673,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
              aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, log_root_descriptor_size));
   icp_entry->log_root_descriptor_size =
-      avb_htobe32(icp_entry->log_root_descriptor_size);
+      avb_be32toh(icp_entry->log_root_descriptor_size);
   if (icp_entry->log_root_descriptor_size < AVB_AFTL_MIN_TLRD_SIZE ||
       icp_entry->log_root_descriptor_size > AVB_AFTL_MAX_TLRD_SIZE) {
     avb_error("Invalid TrillianLogRootDescriptor size.\n");
@@ -686,7 +686,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
   avb_memcpy(&(icp_entry->fw_info_leaf_size),
              aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, fw_info_leaf_size));
-  icp_entry->fw_info_leaf_size = avb_htobe32(icp_entry->fw_info_leaf_size);
+  icp_entry->fw_info_leaf_size = avb_be32toh(icp_entry->fw_info_leaf_size);
   if (icp_entry->fw_info_leaf_size == 0 ||
       icp_entry->fw_info_leaf_size > AVB_AFTL_MAX_FW_INFO_SIZE) {
     avb_error("Invalid FirmwareInfo leaf size.\n");
@@ -699,7 +699,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
   avb_memcpy(&(icp_entry->log_root_sig_size),
              aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, log_root_sig_size));
-  icp_entry->log_root_sig_size = avb_htobe16(icp_entry->log_root_sig_size);
+  icp_entry->log_root_sig_size = avb_be16toh(icp_entry->log_root_sig_size);
   if (icp_entry->log_root_sig_size != AVB_AFTL_SIGNATURE_SIZE) {
     avb_error("Invalid log root signature size.\n");
     avb_free(icp_entry);
@@ -717,7 +717,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t* aftl_blob, size_t* remaining_size) {
   avb_memcpy(&(icp_entry->inc_proof_size),
              aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, inc_proof_size));
-  icp_entry->inc_proof_size = avb_htobe32(icp_entry->inc_proof_size);
+  icp_entry->inc_proof_size = avb_be32toh(icp_entry->inc_proof_size);
   if (icp_entry->inc_proof_size !=
       icp_entry->proof_hash_count * AVB_AFTL_HASH_SIZE) {
     avb_error("Invalid inclusion proof size.\n");
@@ -834,7 +834,7 @@ AftlDescriptor* parse_aftl_descriptor(uint8_t* aftl_blob,
     return NULL;
   }
   /* Extract the size out of the header. */
-  aftl_descriptor_size = avb_htobe32(icp_header->aftl_descriptor_size);
+  aftl_descriptor_size = avb_be32toh(icp_header->aftl_descriptor_size);
   if (aftl_descriptor_size > AVB_AFTL_MAX_AFTL_DESCRIPTOR_SIZE) return NULL;
   avb_assert(aftl_descriptor_size >= sizeof(AftlIcpHeader) &&
              aftl_descriptor_size < AVB_AFTL_MAX_AFTL_DESCRIPTOR_SIZE);
@@ -847,13 +847,13 @@ AftlDescriptor* parse_aftl_descriptor(uint8_t* aftl_blob,
   avb_memcpy(&(aftl_descriptor->header), aftl_blob, sizeof(AftlIcpHeader));
   /* Fix endianness. */
   aftl_descriptor->header.required_icp_version_major =
-      avb_htobe32(aftl_descriptor->header.required_icp_version_major);
+      avb_be32toh(aftl_descriptor->header.required_icp_version_major);
   aftl_descriptor->header.required_icp_version_minor =
-      avb_htobe32(aftl_descriptor->header.required_icp_version_minor);
+      avb_be32toh(aftl_descriptor->header.required_icp_version_minor);
   aftl_descriptor->header.aftl_descriptor_size =
-      avb_htobe32(aftl_descriptor->header.aftl_descriptor_size);
+      avb_be32toh(aftl_descriptor->header.aftl_descriptor_size);
   aftl_descriptor->header.icp_count =
-      avb_htobe16(aftl_descriptor->header.icp_count);
+      avb_be16toh(aftl_descriptor->header.icp_count);
   /* Allocate memory for the entry array */
   aftl_descriptor->entries = (AftlIcpEntry**)avb_calloc(
       sizeof(AftlIcpEntry*) * aftl_descriptor->header.icp_count);
