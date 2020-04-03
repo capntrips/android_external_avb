@@ -44,8 +44,8 @@ extern "C" {
 #define AVB_AFTL_SIGNATURE_SIZE 512ul
 /* Raw key size used for signature validation. */
 #define AVB_AFTL_PUB_KEY_SIZE 1032ul
-/* Limit AftlDescriptor size to 64KB. */
-#define AVB_AFTL_MAX_AFTL_DESCRIPTOR_SIZE 65536ul
+/* Limit AftlImage size to 64KB. */
+#define AVB_AFTL_MAX_AFTL_IMAGE_SIZE 65536ul
 /* Limit version.incremental size to 256 characters. */
 #define AVB_AFTL_MAX_VERSION_INCREMENTAL_SIZE 256ul
 /* AFTL trees require at most 64 hashes to reconstruct the root */
@@ -88,31 +88,31 @@ extern "C" {
    sizeof(uint32_t) + sizeof(uint8_t) + sizeof(uint32_t) + 4 +                 \
    AVB_AFTL_MIN_TLRD_SIZE + AVB_AFTL_MIN_FW_INFO_SIZE +                        \
    AVB_AFTL_SIGNATURE_SIZE + AVB_AFTL_HASH_SIZE)
-/* The maximum AftlIcpEntrySize is the max AftlDescriptor size minus the size
-   of the AftlIcpHeader. */
+/* The maximum AftlIcpEntrySize is the max AftlImage size minus the size
+   of the AftlImageHeader. */
 #define AVB_AFTL_MAX_AFTL_ICP_ENTRY_SIZE \
-  (AVB_AFTL_MAX_AFTL_DESCRIPTOR_SIZE - sizeof(AftlIcpHeader))
-/* The maximum FirmwareInfo is the max AftlDescriptor size minus the
+  (AVB_AFTL_MAX_AFTL_IMAGE_SIZE - sizeof(AftlImageHeader))
+/* The maximum FirmwareInfo is the max AftlImage size minus the
    size of the smallest valid AftlIcpEntry. */
 #define AVB_AFTL_MAX_FW_INFO_SIZE \
-  (AVB_AFTL_MAX_AFTL_DESCRIPTOR_SIZE - AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE)
+  (AVB_AFTL_MAX_AFTL_IMAGE_SIZE - AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE)
 /* The maximum metadata size in a TrillianLogRootDescriptor for AFTL is the
-   max AftlDescriptor size minus the smallest valid AftlIcpEntry size. */
+   max AftlImage size minus the smallest valid AftlIcpEntry size. */
 #define AVB_AFTL_MAX_METADATA_SIZE \
-  (AVB_AFTL_MAX_AFTL_DESCRIPTOR_SIZE - AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE)
+  (AVB_AFTL_MAX_AFTL_IMAGE_SIZE - AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE)
 /* The maximum TrillianLogRootDescriptor is the size of the smallest valid
 TrillianLogRootDescriptor + the largest possible metadata size. */
 #define AVB_AFTL_MAX_TLRD_SIZE \
   (AVB_AFTL_MIN_TLRD_SIZE + AVB_AFTL_MAX_METADATA_SIZE)
 
 /* Data structure containing AFTL header information. */
-typedef struct AftlIcpHeader {
+typedef struct AftlImageHeader {
   uint32_t magic;
   uint32_t required_icp_version_major;
   uint32_t required_icp_version_minor;
-  uint32_t aftl_descriptor_size; /* Total size of the AftlDescriptor. */
+  uint32_t image_size; /* Total size of the AftlImage, including this header */
   uint16_t icp_count;
-} AVB_ATTR_PACKED AftlIcpHeader;
+} AVB_ATTR_PACKED AftlImageHeader;
 
 /* Data structure containing a Trillian LogRootDescriptor, from
    https://github.com/google/trillian/blob/master/trillian.proto#L255
@@ -155,11 +155,11 @@ typedef struct AftlIcpEntry {
   uint8_t proofs[/*proof_hash_count*/][AVB_AFTL_HASH_SIZE];
 } AVB_ATTR_PACKED AftlIcpEntry;
 
-/* Main data structure for an AFTL descriptor. */
-typedef struct AftlDescriptor {
-  AftlIcpHeader header;
+/* Main data structure for an AFTL image. */
+typedef struct AftlImage {
+  AftlImageHeader header;
   AftlIcpEntry** entries;
-} AVB_ATTR_PACKED AftlDescriptor;
+} AVB_ATTR_PACKED AftlImage;
 
 #ifdef __cplusplus
 }

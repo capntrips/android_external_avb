@@ -99,21 +99,20 @@ bool avb_aftl_root_from_icp(
     uint64_t leaf_hash_size, /* Size of the leaf hash. */
     uint8_t* root_hash);     /* The resulting tree root hash. */
 
-/* Allocates and populates an AftlDescriptor from a binary blob. */
-AftlDescriptor* parse_aftl_descriptor(uint8_t* aftl_blob,
-                                      size_t aftl_blob_size);
+/* Allocates and populates an AftlImage from a binary blob. */
+AftlImage* parse_aftl_image(uint8_t* aftl_blob, size_t aftl_blob_size);
 
 /* Allocates and populates an AftlIcpEntry and all sub-fields from
    a binary blob. It is assumed that the blob points to an AftlIcpEntry. */
 AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size);
 
 /* Frees an AftlIcpEntry and all sub-fields that were previously
-   allocated by a call to allocate_icp_entry. */
+   allocated by a call to parse_icp_entry. */
 void free_aftl_icp_entry(AftlIcpEntry* aftl_icp_entry);
 
-/* Frees an AftlDescriptor and all sub-fields that were previously
-   allocated by a call to allocate_aftl_descriptor. */
-void free_aftl_descriptor(AftlDescriptor* aftl_descriptor);
+/* Frees an AftlImage and all sub-fields that were previously
+   allocated by a call to parse_aftl_image. */
+void free_aftl_image(AftlImage* image);
 
 #ifdef __cplusplus
 }
