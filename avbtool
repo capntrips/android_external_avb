@@ -49,6 +49,9 @@ AVB_FOOTER_VERSION_MINOR = 0
 
 AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED = 1
 
+# Configuration for enabling logging of calls to avbtool.
+AVB_INVOCATION_LOGFILE = os.environ.get('AVB_INVOCATION_LOGFILE')
+
 
 class AvbError(Exception):
   """Application-specific errors.
@@ -2114,6 +2117,24 @@ class Avb(object):
   MAX_VBMETA_SIZE = 64 * 1024
   MAX_FOOTER_SIZE = 4096
 
+  def generate_test_image(self, output, image_size, start_byte):
+    """Generates a test image for testing avbtool with known content.
+
+    The content has following pattern: 0x00 0x01 0x02 .. 0xff 0x00 0x01 ..).
+
+    Arguments:
+      output: Write test image to this file.
+      image_size: The size of the requested file in bytes.
+      start_byte: The integer value of the start byte to use for pattern
+          generation.
+    """
+    pattern = bytearray([x & 0xFF for x in range(start_byte, start_byte + 256)])
+    buf = bytearray()
+    c = int(math.ceil(image_size / 256.0))
+    for _ in range(0, c):
+      buf.extend(pattern)
+    output.write(buf[0:image_size])
+
   def extract_vbmeta_image(self, output, image_filename, padding_size):
     """Implements the 'extract_vbmeta_image' command.
 
@@ -4079,6 +4100,24 @@ class AvbTool(object):
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(title='subcommands')
 
+    sub_parser = subparsers.add_parser(
+        'generate_test_image',
+        help=('Generates a test image with a known pattern for testing: '
+              '0x00 0x01 0x02 ... 0xff 0x00 0x01 ...'))
+    sub_parser.add_argument('--image_size',
+                            help='Size of image to generate.',
+                            type=parse_number,
+                            required=True)
+    sub_parser.add_argument('--start_byte',
+                            help='Integer for the start byte of the pattern.',
+                            type=parse_number,
+                            default=0)
+    sub_parser.add_argument('--output',
+                            help='Output file name.',
+                            type=argparse.FileType('wt'),
+                            default=sys.stdout)
+    sub_parser.set_defaults(func=self.generate_test_image)
+
     sub_parser = subparsers.add_parser('version',
                                        help='Prints version of avbtool.')
     sub_parser.set_defaults(func=self.version)
@@ -4481,6 +4520,10 @@ class AvbTool(object):
     """Implements the 'version' sub-command."""
     print(get_release_string())
 
+  def generate_test_image(self, args):
+    """Implements the 'generate_test_image' sub-command."""
+    self.avb.generate_test_image(args.output, args.image_size, args.start_byte)
+
   def extract_public_key(self, args):
     """Implements the 'extract_public_key' sub-command."""
     self.avb.extract_public_key(args.key, args.output)
@@ -4644,5 +4687,11 @@ class AvbTool(object):
 
 
 if __name__ == '__main__':
+  if AVB_INVOCATION_LOGFILE:
+    f = open(AVB_INVOCATION_LOGFILE, 'a')
+    f.write(' '.join(sys.argv))
+    f.write('\n')
+    f.close()
+
   tool = AvbTool()
   tool.run(sys.argv)
