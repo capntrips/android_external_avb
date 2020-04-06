@@ -33,71 +33,68 @@
 #include "libavb_aftl/avb_aftl_validate.h"
 
 /* Read the vbmeta partition, after the AvbVBMetaImageHeader structure, to find
- * the AftlDescriptor.
+ * the AftlImage.
  */
-static AvbSlotVerifyResult avb_aftl_find_aftl_descriptor(
-    AvbOps* ops,
-    const char* part_name,
-    size_t vbmeta_size,
-    uint8_t* out_image_buf,
-    size_t* out_image_size) {
+static AvbSlotVerifyResult avb_aftl_find_aftl_image(AvbOps* ops,
+                                                    const char* part_name,
+                                                    size_t vbmeta_size,
+                                                    uint8_t* out_image_buf,
+                                                    size_t* out_image_size) {
   AvbIOResult io_ret;
 
-  avb_assert(vbmeta_size <= AVB_AFTL_MAX_AFTL_DESCRIPTOR_SIZE);
-  io_ret =
-      ops->read_from_partition(ops,
-                               part_name,
-                               vbmeta_size /* offset */,
-                               AVB_AFTL_MAX_AFTL_DESCRIPTOR_SIZE - vbmeta_size,
-                               out_image_buf,
-                               out_image_size);
+  avb_assert(vbmeta_size <= AVB_AFTL_MAX_AFTL_IMAGE_SIZE);
+  io_ret = ops->read_from_partition(ops,
+                                    part_name,
+                                    vbmeta_size /* offset */,
+                                    AVB_AFTL_MAX_AFTL_IMAGE_SIZE - vbmeta_size,
+                                    out_image_buf,
+                                    out_image_size);
 
   if (io_ret == AVB_IO_RESULT_ERROR_OOM) {
     return AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
   } else if (io_ret != AVB_IO_RESULT_OK) {
-    avb_errorv(
-        part_name, ": Error loading AftlDescriptor from partition.\n", NULL);
+    avb_errorv(part_name, ": Error loading AftlImage from partition.\n", NULL);
     return AVB_SLOT_VERIFY_RESULT_ERROR_IO;
   }
 
   if (*out_image_size < 4 || (out_image_buf[0] != 'A') ||
       (out_image_buf[1] != 'F') || (out_image_buf[2] != 'T') ||
       (out_image_buf[3] != 'L')) {
-    avb_errorv(part_name, ": Unexpected AftlDescriptor magic.\n", NULL);
+    avb_errorv(part_name, ": Unexpected AftlImage magic.\n", NULL);
     return AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
   }
 
   return AVB_SLOT_VERIFY_RESULT_OK;
 }
 
-/* Performs the three validation steps for an AFTL descriptor:
-   1. Ensure the vbmeta image hash matches that in the descriptor.
-   2. Ensure the root hash of the Merkle tree matches that in the descriptor.
+/* Performs the three validation steps for an AFTL image:
+   1. Ensure the vbmeta image hash matches that in the image.
+   2. Ensure the root hash of the Merkle tree matches that in the image.
    3. Verify the signature using the transparency log public key.
 */
-static AvbSlotVerifyResult avb_aftl_verify_descriptor(uint8_t* cur_vbmeta_data,
-                                                      size_t cur_vbmeta_size,
-                                                      uint8_t* aftl_blob,
-                                                      size_t aftl_size,
-                                                      uint8_t* key_bytes,
-                                                      size_t key_num_bytes) {
+static AvbSlotVerifyResult avb_aftl_verify_image(uint8_t* cur_vbmeta_data,
+                                                 size_t cur_vbmeta_size,
+                                                 uint8_t* aftl_blob,
+                                                 size_t aftl_size,
+                                                 uint8_t* key_bytes,
+                                                 size_t key_num_bytes) {
   size_t i;
-  AftlDescriptor* aftl_descriptor;
+  AftlImage* image;
   AvbSlotVerifyResult result = AVB_SLOT_VERIFY_RESULT_OK;
 
-  /* Attempt to parse the AftlDescriptor pointed to by aftl_blob. */
-  aftl_descriptor = parse_aftl_descriptor(aftl_blob, aftl_size);
-  if (!aftl_descriptor) {
+  /* Attempt to parse the AftlImage pointed to by aftl_blob. */
+  image = parse_aftl_image(aftl_blob, aftl_size);
+  if (!image) {
     return AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
   }
 
-  /* Now that a valid AftlDescriptor has been parsed, attempt to verify
+  /* Now that a valid AftlImage has been parsed, attempt to verify
      the inclusion proof(s) in three steps. */
-  for (i = 0; i < aftl_descriptor->header.icp_count; i++) {
+  for (i = 0; i < image->header.icp_count; i++) {
     /* 1. Ensure that the vbmeta hash stored in the AftlIcpEntry matches
        the one that represents the partition. */
     if (!avb_aftl_verify_vbmeta_hash(
-            cur_vbmeta_data, cur_vbmeta_size, aftl_descriptor->entries[i])) {
+            cur_vbmeta_data, cur_vbmeta_size, image->entries[i])) {
       avb_error("AFTL vbmeta hash verification failed.\n");
       result = AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
       break;
@@ -105,7 +102,7 @@ static AvbSlotVerifyResult avb_aftl_verify_descriptor(uint8_t* cur_vbmeta_data,
     /* 2. Ensure that the root hash of the Merkle tree representing
        the transparency log entry matches the one stored in the
        AftlIcpEntry. */
-    if (!avb_aftl_verify_icp_root_hash(aftl_descriptor->entries[i])) {
+    if (!avb_aftl_verify_icp_root_hash(image->entries[i])) {
       avb_error("AFTL root hash verification failed.\n");
       result = AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
       break;
@@ -113,13 +110,13 @@ static AvbSlotVerifyResult avb_aftl_verify_descriptor(uint8_t* cur_vbmeta_data,
     /* 3. Verify the signature using the transparency log public
        key stored on device. */
     if (!avb_aftl_verify_entry_signature(
-            key_bytes, key_num_bytes, aftl_descriptor->entries[i])) {
+            key_bytes, key_num_bytes, image->entries[i])) {
       avb_error("AFTL signature verification failed on entry.\n");
       result = AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
       break;
     }
   }
-  free_aftl_descriptor(aftl_descriptor);
+  free_aftl_image(image);
   return result;
 }
 
@@ -128,7 +125,7 @@ AvbSlotVerifyResult aftl_slot_verify(AvbOps* ops,
                                      uint8_t* key_bytes,
                                      size_t key_size) {
   size_t i;
-  size_t aftl_descriptor_size;
+  size_t aftl_image_size;
   size_t vbmeta_size;
   uint8_t* current_aftl_blob;
   char part_name[AVB_PART_NAME_MAX_SIZE];
@@ -142,7 +139,7 @@ AvbSlotVerifyResult aftl_slot_verify(AvbOps* ops,
     return AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION;
   }
 
-  current_aftl_blob = avb_malloc(AVB_AFTL_MAX_AFTL_DESCRIPTOR_SIZE);
+  current_aftl_blob = avb_malloc(AVB_AFTL_MAX_AFTL_IMAGE_SIZE);
   if (current_aftl_blob == NULL) {
     return AVB_SLOT_VERIFY_RESULT_ERROR_OOM;
   }
@@ -162,23 +159,23 @@ AvbSlotVerifyResult aftl_slot_verify(AvbOps* ops,
       break;
     }
 
-    /* Use the partition info to find the AftlDescriptor */
+    /* Use the partition info to find the AftlImage */
     vbmeta_size = asv_data->vbmeta_images[i].vbmeta_size;
-    ret = avb_aftl_find_aftl_descriptor(
-        ops, part_name, vbmeta_size, current_aftl_blob, &aftl_descriptor_size);
+    ret = avb_aftl_find_aftl_image(
+        ops, part_name, vbmeta_size, current_aftl_blob, &aftl_image_size);
     if (ret != AVB_SLOT_VERIFY_RESULT_OK) {
-      avb_error("Unable to find the AftlDescriptor.\n");
+      avb_error("Unable to find the AftlImage.\n");
       ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
       break;
     }
 
-    /* Validate the AFTL descriptor in the vbmeta image. */
-    ret = avb_aftl_verify_descriptor(asv_data->vbmeta_images[i].vbmeta_data,
-                                     vbmeta_size,
-                                     current_aftl_blob,
-                                     aftl_descriptor_size,
-                                     key_bytes,
-                                     key_size);
+    /* Validate the AFTL image in the vbmeta image. */
+    ret = avb_aftl_verify_image(asv_data->vbmeta_images[i].vbmeta_data,
+                                vbmeta_size,
+                                current_aftl_blob,
+                                aftl_image_size,
+                                key_bytes,
+                                key_size);
     if (ret != AVB_SLOT_VERIFY_RESULT_OK) break;
   }
 

@@ -29,8 +29,8 @@
 
 namespace {
 
-const char kAftlDescriptorPath[] = "test/data/aftl_descriptor.bin";
-const char kAftlDescriptorMultiPath[] = "test/data/aftl_descriptor_multi.bin";
+const char kAftlImagePath[] = "test/data/aftl_image.bin";
+const char kAftlImageMultiPath[] = "test/data/aftl_image_multi.bin";
 
 }  // namespace
 
@@ -42,45 +42,39 @@ class AvbAftlUtilTest : public BaseAvbToolTest {
   ~AvbAftlUtilTest() {}
   void SetUp() override {
     uint8_t* aftl_blob;
-    int64_t aftl_descriptor_size;
+    int64_t aftl_image_size;
 
     BaseAvbToolTest::SetUp();
-    /* Read in test data from the aftl_descriptor binaries. */
-    base::GetFileSize(base::FilePath(kAftlDescriptorPath),
-                      &aftl_descriptor_size);
-    ASSERT_GT(aftl_descriptor_size, 0);
-    aftl_blob = (uint8_t*)avb_malloc(aftl_descriptor_size);
+    /* Read in test data from the aftl_image binaries. */
+    base::GetFileSize(base::FilePath(kAftlImagePath), &aftl_image_size);
+    ASSERT_GT(aftl_image_size, 0);
+    aftl_blob = (uint8_t*)avb_malloc(aftl_image_size);
     ASSERT_TRUE(aftl_blob != NULL);
-    base::ReadFile(base::FilePath(kAftlDescriptorPath),
-                   (char*)aftl_blob,
-                   aftl_descriptor_size);
-    /* Allocate and populate an AftlDescriptor for testing. */
-    aftl_descriptor_ = parse_aftl_descriptor(aftl_blob, aftl_descriptor_size);
+    base::ReadFile(
+        base::FilePath(kAftlImagePath), (char*)aftl_blob, aftl_image_size);
+    /* Allocate and populate an AftlImage for testing. */
+    aftl_image_ = parse_aftl_image(aftl_blob, aftl_image_size);
     avb_free(aftl_blob);
 
-    /* Read in test data from the aftl_descriptor file with multiple ICPs. */
-    base::GetFileSize(base::FilePath(kAftlDescriptorMultiPath),
-                      &aftl_descriptor_size);
-    ASSERT_GT(aftl_descriptor_size, 0);
-    aftl_blob = (uint8_t*)avb_malloc(aftl_descriptor_size);
+    /* Read in test data from the aftl_image file with multiple ICPs. */
+    base::GetFileSize(base::FilePath(kAftlImageMultiPath), &aftl_image_size);
+    ASSERT_GT(aftl_image_size, 0);
+    aftl_blob = (uint8_t*)avb_malloc(aftl_image_size);
     ASSERT_TRUE(aftl_blob != NULL);
-    base::ReadFile(base::FilePath(kAftlDescriptorMultiPath),
-                   (char*)aftl_blob,
-                   aftl_descriptor_size);
-    /* Allocate and populate an AftlDescriptor for testing. */
-    aftl_descriptor_multi_ =
-        parse_aftl_descriptor(aftl_blob, aftl_descriptor_size);
+    base::ReadFile(
+        base::FilePath(kAftlImageMultiPath), (char*)aftl_blob, aftl_image_size);
+    /* Allocate and populate an AftlImage for testing. */
+    aftl_image_multi_ = parse_aftl_image(aftl_blob, aftl_image_size);
     avb_free(aftl_blob);
   }
 
   void TearDown() override {
-    free_aftl_descriptor(aftl_descriptor_);
-    free_aftl_descriptor(aftl_descriptor_multi_);
+    free_aftl_image(aftl_image_);
+    free_aftl_image(aftl_image_multi_);
     BaseAvbToolTest::TearDown();
   }
 
-  void TestAftlIcpHeader(AftlIcpHeader* aftl_header,
-                         uint16_t icp_count) {
+  void TestAftlImageHeader(AftlImageHeader* aftl_header, uint16_t icp_count) {
     EXPECT_EQ(aftl_header->magic, 0x4c544641ul);
     EXPECT_EQ(aftl_header->required_icp_version_major, 1ul);
     EXPECT_EQ(aftl_header->required_icp_version_minor, 1ul);
@@ -112,38 +106,38 @@ class AvbAftlUtilTest : public BaseAvbToolTest {
   }
 
  protected:
-  AftlDescriptor* aftl_descriptor_;
-  AftlDescriptor* aftl_descriptor_multi_;
+  AftlImage* aftl_image_;
+  AftlImage* aftl_image_multi_;
 };
 
-TEST_F(AvbAftlUtilTest, AftlIcpHeaderStructure) {
-  AftlIcpHeader* header;
-  ASSERT_NE(aftl_descriptor_, nullptr);
-  header = &(aftl_descriptor_->header);
+TEST_F(AvbAftlUtilTest, AftlImageHeaderStructure) {
+  AftlImageHeader* header;
+  ASSERT_NE(aftl_image_, nullptr);
+  header = &(aftl_image_->header);
   ASSERT_NE(header, nullptr);
-  TestAftlIcpHeader(header, 1);
+  TestAftlImageHeader(header, 1);
 }
 
-TEST_F(AvbAftlUtilTest, AftlDescriptorMultipleIcps) {
-  AftlIcpHeader* header;
+TEST_F(AvbAftlUtilTest, AftlImageMultipleIcps) {
+  AftlImageHeader* header;
   size_t i;
 
-  ASSERT_NE(aftl_descriptor_multi_, nullptr);
-  header = &(aftl_descriptor_multi_->header);
+  ASSERT_NE(aftl_image_multi_, nullptr);
+  header = &(aftl_image_multi_->header);
   ASSERT_NE(header, nullptr);
-  TestAftlIcpHeader(header, 2);
+  TestAftlImageHeader(header, 2);
 
   for (i = 0; i < header->icp_count; i++) {
-    ASSERT_NE(aftl_descriptor_multi_->entries[i], nullptr)
+    ASSERT_NE(aftl_image_multi_->entries[i], nullptr)
         << " Failed at entry " << i;
-    TestAftlIcpEntry(aftl_descriptor_multi_->entries[i]);
+    TestAftlIcpEntry(aftl_image_multi_->entries[i]);
   }
 }
 
 TEST_F(AvbAftlUtilTest, AftlIcpEntryStructure) {
   AftlIcpEntry* icp_entry;
 
-  icp_entry = aftl_descriptor_->entries[0];
+  icp_entry = aftl_image_->entries[0];
   ASSERT_NE(icp_entry, nullptr);
   TestAftlIcpEntry(icp_entry);
 }
