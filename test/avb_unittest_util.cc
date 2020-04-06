@@ -126,17 +126,18 @@ void BaseAvbToolTest::GenerateVBMetaImage(
 base::FilePath BaseAvbToolTest::GenerateImage(const std::string file_name,
                                               size_t image_size,
                                               uint8_t start_byte) {
-  std::vector<uint8_t> image;
-  image.resize(image_size);
-  for (size_t n = 0; n < image_size; n++) {
-    image[n] = uint8_t(n + start_byte);
-  }
   base::FilePath image_path = testdir_.Append(file_name);
-  EXPECT_EQ(image_size,
-            static_cast<const size_t>(
-                base::WriteFile(image_path,
-                                reinterpret_cast<const char*>(image.data()),
-                                image.size())));
+  EXPECT_COMMAND(0,
+                 "./avbtool generate_test_image "
+                 "--image_size %d "
+                 "--start_byte %d "
+                 "--output %s",
+                 image_size,
+                 start_byte,
+                 image_path.value().c_str());
+  base::File::Info stats;
+  EXPECT_TRUE(base::GetFileInfo(image_path, &stats));
+  EXPECT_EQ((size_t)stats.size, image_size);
   return image_path;
 }
 
