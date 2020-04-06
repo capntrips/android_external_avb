@@ -178,16 +178,16 @@ class AftltoolTestCase(unittest.TestCase):
         + 'g' * 32                          # Hashes...
         + 'h' * 32)
 
-    # Valid test AftlDescriptor made out of AftlEntry #1 and #2.
-    self.test_aftl_desc = aftltool.AftlDescriptor()
+    # Valid test AftlImage made out of AftlEntry #1 and #2.
+    self.test_aftl_desc = aftltool.AftlImage()
     self.test_aftl_desc.add_icp_entry(self.test_entry_1)
     self.test_aftl_desc.add_icp_entry(self.test_entry_2)
 
-    self.test_expected_aftl_descriptor_bytes = bytearray(
+    self.test_expected_aftl_image_bytes = bytearray(
         'AFTL'                              # Magic.
         '\x00\x00\x00\x01'                  # Major version.
         '\x00\x00\x00\x01'                  # Minor version.
-        '\x00\x00\x05\xb9'                  # Descriptor size.
+        '\x00\x00\x05\xb9'                  # Image size.
         '\x00\x02'                          # Number of ICP entries.
         + self.test_entry_1_bytes
         + self.test_entry_2_bytes)
@@ -213,23 +213,25 @@ class AftltoolTestCase(unittest.TestCase):
         '000100000000000018782053b182b55dc1377197c938637f50093131daea4'
         'd0696b1eae5b8a014bfde884a15edb28f1fc7954400000000000013a50000'
     )
-    self.test_afi_resp.fw_info_proof.sth.log_root_signature = binascii.unhexlify(
-        'c264bc7986a1cf56364ca4dd04989f45515cb8764d05b4fb2b880172585ea404'
-        '2105f95a0e0471fb6e0f8c762b14b2e526fb78eaddcc61484917795a12f6ab3b'
-        '557b5571d492d07d7950595f9ad8647a606c7c633f4697c5eb59c272aeca0419'
-        '397c70a3b9b51537537c4ea6b49d356110e70a9286902f814cc6afbeafe612e4'
-        '9e180146140e902bdd9e9dae66b37b4943150a9571949027a648db88a4eea3ad'
-        'f930b4fa6a183e97b762ab0e55a3a26aa6b0fd44d30531e2541ecb94bf645e62'
-        '59e8e3151e7c3b51a09fe24557ce2fd2c0ecdada7ce99c390d2ef10e5d075801'
-        '7c10d49c55cdee930959cc35f0104e04f296591eeb5defbc9ebb237da7b204ca'
-        'a4608cb98d6bc3a01f18585a04441caf8ec7a35aa2d35f7483b92b14fd0f4a41'
-        '3a91133545579309adc593222ca5032a103b00d8fcaea911936dbec11349e4dd'
-        '419b091ea7d1130570d70e2589dd9445fd77fd7492507e1c87736847b9741cc6'
-        '236868af42558ff6e833e12010c8ede786e43ada40ff488f5f1870d1619887d7'
-        '66a24ad0a06a47cc14e2f7db07361be191172adf3155f49713807c7c265f5a84'
-        '040fc84246ccf7913e44721f0043cea05ee774e457e13206775eee992620c3f9'
-        'd2b2584f58aac19e4afe35f0a17df699c45729f94101083f9fc4302659a7e6e0'
-        'e7eb36f8d1ca0be2c9010160d329bd2d17bb707b010fdd63c30b667a0b886cf9'
+    self.test_afi_resp.fw_info_proof.sth.log_root_signature = (
+        binascii.unhexlify(
+            'c264bc7986a1cf56364ca4dd04989f45515cb8764d05b4fb2b880172585ea404'
+            '2105f95a0e0471fb6e0f8c762b14b2e526fb78eaddcc61484917795a12f6ab3b'
+            '557b5571d492d07d7950595f9ad8647a606c7c633f4697c5eb59c272aeca0419'
+            '397c70a3b9b51537537c4ea6b49d356110e70a9286902f814cc6afbeafe612e4'
+            '9e180146140e902bdd9e9dae66b37b4943150a9571949027a648db88a4eea3ad'
+            'f930b4fa6a183e97b762ab0e55a3a26aa6b0fd44d30531e2541ecb94bf645e62'
+            '59e8e3151e7c3b51a09fe24557ce2fd2c0ecdada7ce99c390d2ef10e5d075801'
+            '7c10d49c55cdee930959cc35f0104e04f296591eeb5defbc9ebb237da7b204ca'
+            'a4608cb98d6bc3a01f18585a04441caf8ec7a35aa2d35f7483b92b14fd0f4a41'
+            '3a91133545579309adc593222ca5032a103b00d8fcaea911936dbec11349e4dd'
+            '419b091ea7d1130570d70e2589dd9445fd77fd7492507e1c87736847b9741cc6'
+            '236868af42558ff6e833e12010c8ede786e43ada40ff488f5f1870d1619887d7'
+            '66a24ad0a06a47cc14e2f7db07361be191172adf3155f49713807c7c265f5a84'
+            '040fc84246ccf7913e44721f0043cea05ee774e457e13206775eee992620c3f9'
+            'd2b2584f58aac19e4afe35f0a17df699c45729f94101083f9fc4302659a7e6e0'
+            'e7eb36f8d1ca0be2c9010160d329bd2d17bb707b010fdd63c30b667a0b886cf9'
+        )
     )
     self.test_afi_resp.fw_info_leaf = (
         '{\"timestamp\":{\"seconds\":1580115370,\"nanos\":621454825},\"Va'
@@ -349,19 +351,19 @@ class AftltoolTest(AftltoolTestCase):
       self.assertEqual(root_hash, roots[icp[1] -1])
 
 
-class AftlDescriptorTest(AftltoolTestCase):
+class AftlImageTest(AftltoolTestCase):
 
   def test__init__(self):
     """Tests the constructor."""
     # Calls constructor without data.
-    d = aftltool.AftlDescriptor()
+    d = aftltool.AftlImage()
     self.assertIsInstance(d.icp_header, aftltool.AftlIcpHeader)
     self.assertEqual(d.icp_header.icp_count, 0)
     self.assertEqual(d.icp_entries, [])
     self.assertTrue(d.is_valid())
 
     # Calls constructor with data.
-    d = aftltool.AftlDescriptor(self.test_expected_aftl_descriptor_bytes)
+    d = aftltool.AftlImage(self.test_expected_aftl_image_bytes)
     self.assertIsInstance(d.icp_header, aftltool.AftlIcpHeader)
     self.assertEqual(d.icp_header.icp_count, 2)
     self.assertEqual(len(d.icp_entries), 2)
@@ -371,7 +373,7 @@ class AftlDescriptorTest(AftltoolTestCase):
 
   def test_add_icp_entry(self):
     """Tests the add_icp_entry method."""
-    d = aftltool.AftlDescriptor()
+    d = aftltool.AftlImage()
 
     # Adds 1st ICP.
     d.add_icp_entry(self.test_entry_1)
@@ -392,7 +394,7 @@ class AftlDescriptorTest(AftltoolTestCase):
     image_path = self.get_testdata_path(
         'aftltool/aftl_output_vbmeta_with_1_icp.img')
     vbmeta_image, _ = tool.get_vbmeta_image(image_path)
-    desc = tool.get_aftl_descriptor(image_path)
+    desc = tool.get_aftl_image(image_path)
 
     # Valid image checked against correct log key.
     self.assertTrue(desc.verify_vbmeta_image(
@@ -423,7 +425,7 @@ class AftlDescriptorTest(AftltoolTestCase):
     image_path = self.get_testdata_path(
         'aftltool/aftl_output_vbmeta_with_2_icp_same_log.img')
     vbmeta_image, _ = tool.get_vbmeta_image(image_path)
-    desc = tool.get_aftl_descriptor(image_path)
+    desc = tool.get_aftl_image(image_path)
 
     # Valid image checked against correct log key.
     self.assertTrue(desc.verify_vbmeta_image(
@@ -451,7 +453,7 @@ class AftlDescriptorTest(AftltoolTestCase):
     image_path = self.get_testdata_path(
         'aftltool/aftl_output_vbmeta_with_2_icp_different_logs.img')
     vbmeta_image, _ = tool.get_vbmeta_image(image_path)
-    desc = tool.get_aftl_descriptor(image_path)
+    desc = tool.get_aftl_image(image_path)
 
     # Valid image checked against log keys from both logs.
     self.assertTrue(desc.verify_vbmeta_image(
@@ -498,16 +500,16 @@ class AftlDescriptorTest(AftltoolTestCase):
     """Tests save method."""
     buf = io.BytesIO()
     self.test_aftl_desc.save(buf)
-    self.assertEqual(buf.getvalue(), self.test_expected_aftl_descriptor_bytes)
+    self.assertEqual(buf.getvalue(), self.test_expected_aftl_image_bytes)
 
   def test_encode(self):
     """Tests encode method."""
     desc_bytes = self.test_aftl_desc.encode()
-    self.assertEqual(desc_bytes, self.test_expected_aftl_descriptor_bytes)
+    self.assertEqual(desc_bytes, self.test_expected_aftl_image_bytes)
 
   def test_is_valid(self):
     """Tests is_valid method."""
-    d = aftltool.AftlDescriptor()
+    d = aftltool.AftlImage()
     d.add_icp_entry(self.test_entry_1)
     d.add_icp_entry(self.test_entry_2)
 
@@ -570,7 +572,7 @@ class AftlIcpHeaderTest(AftltoolTestCase):
                      avbtool.AVB_VERSION_MAJOR)
     self.assertEqual(header.required_icp_version_minor,
                      avbtool.AVB_VERSION_MINOR)
-    self.assertEqual(header.aftl_descriptor_size, aftltool.AftlIcpHeader.SIZE)
+    self.assertEqual(header.aftl_image_size, aftltool.AftlIcpHeader.SIZE)
     self.assertEqual(header.icp_count, 0)
     self.assertTrue(header.is_valid())
 
@@ -579,7 +581,7 @@ class AftlIcpHeaderTest(AftltoolTestCase):
     self.assertEqual(header.magic, 'AFTL')
     self.assertEqual(header.required_icp_version_major, 1)
     self.assertEqual(header.required_icp_version_minor, 1)
-    self.assertEqual(header.aftl_descriptor_size, aftltool.AftlIcpHeader.SIZE)
+    self.assertEqual(header.aftl_image_size, aftltool.AftlIcpHeader.SIZE)
     self.assertTrue(header.icp_count, 1)
     self.assertTrue(header.is_valid())
 
@@ -764,7 +766,7 @@ class AftlIcpEntryTest(AftltoolTestCase):
     image_path = self.get_testdata_path(
         'aftltool/aftl_output_vbmeta_with_1_icp.img')
     vbmeta_image, _ = tool.get_vbmeta_image(image_path)
-    desc = tool.get_aftl_descriptor(image_path)
+    desc = tool.get_aftl_image(image_path)
 
     # Checks that there is 1 ICP.
     self.assertEqual(desc.icp_header.icp_count, 1)
@@ -792,7 +794,7 @@ class AftlIcpEntryTest(AftltoolTestCase):
     image_path = self.get_testdata_path(
         'aftltool/aftl_output_vbmeta_with_1_icp.img')
     vbmeta_image, _ = tool.get_vbmeta_image(image_path)
-    desc = tool.get_aftl_descriptor(image_path)
+    desc = tool.get_aftl_image(image_path)
 
     self.assertEqual(desc.icp_header.icp_count, 1)
     entry = desc.icp_entries[0]
@@ -1221,11 +1223,18 @@ class AftlTestCase(AftltoolTestCase):
     raise NotImplementedError('set_up_environment() needs to be implemented '
                               'by subclass.')
 
-  def get_aftl_implementation(self):
+  def get_aftl_implementation(self, canned_response):
     """Gets the aftltool.Aftl implementation used for testing.
 
     This allows to have different Aftl implementations for unit tests and
     integration tests.
+
+    Arguments:
+      canned_response: Since we are using the actual implementation and not a
+      mock this gets ignored.
+
+    Raises:
+      NotImplementedError if subclass is not implementing the method.
     """
     raise NotImplementedError('get_aftl_implementation() needs to be'
                               'implemented by subclass.')
@@ -1253,14 +1262,14 @@ class AftlTest(AftlTestCase):
     """Tests the get_vbmeta_image method."""
     tool = aftltool.Aftl()
 
-    # Valid vbmeta image without footer and AftlDescriptor.
+    # Valid vbmeta image without footer and AftlImage.
     image, footer = tool.get_vbmeta_image(
         self.get_testdata_path('aftltool/aftl_input_vbmeta.img'))
     self.assertIsNotNone(image)
     self.assertEqual(len(image), 4352)
     self.assertIsNone(footer)
 
-    # Valid vbmeta image without footer but with AftlDescriptor.
+    # Valid vbmeta image without footer but with AftlImage.
     image, footer = tool.get_vbmeta_image(
         self.get_testdata_path('aftltool/aftl_output_vbmeta_with_1_icp.img'))
     self.assertIsNotNone(image)
@@ -1279,22 +1288,22 @@ class AftlTest(AftlTestCase):
     self.assertIsNone(image)
     self.assertIsNone(footer)
 
-  def test_get_aftl_descriptor(self):
-    """Tests the get_aftl_descriptor method."""
+  def test_get_aftl_image(self):
+    """Tests the get_aftl_image method."""
     tool = aftltool.Aftl()
 
-    # Valid vbmeta image without footer with AftlDescriptor.
-    desc = tool.get_aftl_descriptor(
+    # Valid vbmeta image without footer with AftlImage.
+    desc = tool.get_aftl_image(
         self.get_testdata_path('aftltool/aftl_output_vbmeta_with_1_icp.img'))
-    self.assertIsInstance(desc, aftltool.AftlDescriptor)
+    self.assertIsInstance(desc, aftltool.AftlImage)
 
-    # Valid vbmeta image without footer and AftlDescriptor.
-    desc = tool.get_aftl_descriptor(
+    # Valid vbmeta image without footer and AftlImage.
+    desc = tool.get_aftl_image(
         self.get_testdata_path('aftltool/aftl_input_vbmeta.img'))
     self.assertIsNone(desc)
 
     # Invalid vbmeta image.
-    desc = tool.get_aftl_descriptor(self.get_testdata_path('large_blob.bin'))
+    desc = tool.get_aftl_image(self.get_testdata_path('large_blob.bin'))
     self.assertIsNone(desc)
 
   # pylint: disable=no-member
@@ -1358,8 +1367,8 @@ class AftlTest(AftlTestCase):
     self.assertTrue(result)
 
     # Checks that there is 1 ICP.
-    aftl_descriptor = aftl.get_aftl_descriptor(self.output_filename)
-    self.assertEqual(aftl_descriptor.icp_header.icp_count, 1)
+    aftl_image = aftl.get_aftl_image(self.output_filename)
+    self.assertEqual(aftl_image.icp_header.icp_count, 1)
 
     # Verifies the generated image.
     result = aftl.verify_image_icp(**self.verify_icp_default_params)
@@ -1387,8 +1396,8 @@ class AftlTest(AftlTestCase):
       self.assertTrue(result)
 
     # Checks that there are 2 ICPs.
-    aftl_descriptor = aftl.get_aftl_descriptor(self.output_filename)
-    self.assertEqual(aftl_descriptor.icp_header.icp_count, 2)
+    aftl_image = aftl.get_aftl_image(self.output_filename)
+    self.assertEqual(aftl_image.icp_header.icp_count, 2)
 
     # Verifies the generated image.
     result = aftl.verify_image_icp(**self.verify_icp_default_params)
@@ -1455,7 +1464,7 @@ class AftlTest(AftlTestCase):
     self.assertFalse(result)
 
   def test_make_icp_with_invalid_grpc_service(self):
-    """Tests make_icp_from_vbmeta command with a host that does not support GRPC."""
+    """Tests make_icp_from_vbmeta command with a host not supporting GRPC."""
     aftl = self.get_aftl_implementation(aftltool.AftlError('Comms error'))
     self.make_icp_default_params[
         'transparency_log_servers'] = ['www.google.com:80']
