@@ -90,6 +90,29 @@ python_binary_host {
     },
 }
 
+python_test_host {
+    name: "avbtool_test",
+    main: "avbtool_test.py",
+    srcs: [
+        ":avbtool_py",
+        "avbtool_test.py",
+    ],
+    data: [
+        "test/data/**/*.*",
+    ],
+    test_suites: ["general-tests"],
+    version: {
+        py2: {
+            enabled: true,
+            // This is needs to be false due to b/146057182#comment5.
+            embedded_launcher: false,
+        },
+        py3: {
+            enabled: false,
+        },
+    },
+}
+
 genrule {
   name: "aftltool_py",
   srcs: ["aftltool",],

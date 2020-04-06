@@ -591,6 +591,18 @@ the same directory and file extension as the given image). Once all vbmeta
 structs have been loaded, the digest is calculated (using the hash algorithm
 given by the `--hash_algorithm` option) and printed out.
 
+In case you would like to log all command lines for all avbtool invocations for
+debugging integrations with other tooling, you can configure the envirionment
+variable AVB_INVOCATION_LOGFILE with the name of the log file:
+
+    $ export AVB_INVOCATION_LOGFILE='/tmp/avb_invocation.log'
+    $ ./avbtool version
+    $ ./avbtool version
+    $ cat /tmp/avb_invocation.log
+    ./avbtool version
+    ./avbtool version
+
+
 ## Build System Integration
 
 In Android, AVB is enabled by the `BOARD_AVB_ENABLE` variable
