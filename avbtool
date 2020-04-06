@@ -2062,22 +2062,6 @@ class AvbVBMetaHeader(object):
     self.required_libavb_version_minor = (
         max(self.required_libavb_version_minor, minor))
 
-  def save(self, output):
-    """Serializes the header (256 bytes) to disk.
-
-    Arguments:
-      output: The object to write the output to.
-    """
-    output.write(struct.pack(
-        self.FORMAT_STRING, self.magic, self.required_libavb_version_major,
-        self.required_libavb_version_minor, self.authentication_data_block_size,
-        self.auxiliary_data_block_size, self.algorithm_type, self.hash_offset,
-        self.hash_size, self.signature_offset, self.signature_size,
-        self.public_key_offset, self.public_key_size,
-        self.public_key_metadata_offset, self.public_key_metadata_size,
-        self.descriptors_offset, self.descriptors_size, self.rollback_index,
-        self.flags, self.release_string))
-
   def encode(self):
     """Serializes the header (256) to a bytearray().
 
