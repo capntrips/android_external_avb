@@ -234,15 +234,15 @@ class AftlIcpHeader(object):
     magic: Magic for identifying the ICP header.
     required_icp_version_major: The major version of AVB that wrote the entry.
     required_icp_version_minor: The minor version of AVB that wrote the entry.
-    aftl_descriptor_size: Total size of the header's AftlDescriptor.
+    aftl_image_size: Total size of the header's AftlImage.
     icp_count: Number of inclusion proofs represented in this structure.
   """
 
   SIZE = 18  # The size of the structure, in bytes
   MAGIC = 'AFTL'
-  FORMAT_STRING = ('!4s2L'  # magic, major & minor version
-                   'L'      # descriptor size
-                   'H')     # number of inclusion proof entries
+  FORMAT_STRING = ('!4s2L'  # magic, major & minor version.
+                   'L'      # AFTL image size.
+                   'H')     # number of inclusion proof entries.
 
   def __init__(self, data=None):
     """Initializes a new transparency header object.
@@ -257,13 +257,13 @@ class AftlIcpHeader(object):
 
     if data:
       (self.magic, self.required_icp_version_major,
-       self.required_icp_version_minor, self.aftl_descriptor_size,
+       self.required_icp_version_minor, self.aftl_image_size,
        self.icp_count) = struct.unpack(self.FORMAT_STRING, data)
     else:
       self.magic = self.MAGIC
       self.required_icp_version_major = avbtool.AVB_VERSION_MAJOR
       self.required_icp_version_minor = avbtool.AVB_VERSION_MINOR
-      self.aftl_descriptor_size = self.SIZE
+      self.aftl_image_size = self.SIZE
       self.icp_count = 0
     if not self.is_valid():
       raise AftlError('Invalid structure for AftlIcpHeader')
@@ -293,7 +293,7 @@ class AftlIcpHeader(object):
     return struct.pack(self.FORMAT_STRING, self.magic,
                        self.required_icp_version_major,
                        self.required_icp_version_minor,
-                       self.aftl_descriptor_size,
+                       self.aftl_image_size,
                        self.icp_count)
 
   def is_valid(self):
@@ -317,9 +317,9 @@ class AftlIcpHeader(object):
           self.required_icp_version_minor))
       return False
 
-    if self.aftl_descriptor_size < self.SIZE:
-      sys.stderr.write('ICP Header: Invalid descriptor size: {}\n'.format(
-          self.aftl_descriptor_size))
+    if self.aftl_image_size < self.SIZE:
+      sys.stderr.write('ICP Header: Invalid AFTL image size: {}\n'.format(
+          self.aftl_image_size))
       return False
 
     if self.icp_count < 0 or self.icp_count > 65535:
@@ -330,7 +330,7 @@ class AftlIcpHeader(object):
     return True
 
   def print_desc(self, o):
-    """Print the descriptor.
+    """Print the ICP header.
 
     Arguments:
       o: The object to write the output to.
@@ -339,7 +339,7 @@ class AftlIcpHeader(object):
     fmt = '{}{:25}{}\n'
     o.write(fmt.format(i, 'Major version:', self.required_icp_version_major))
     o.write(fmt.format(i, 'Minor version:', self.required_icp_version_minor))
-    o.write(fmt.format(i, 'Descriptor size:', self.aftl_descriptor_size))
+    o.write(fmt.format(i, 'Image size:', self.aftl_image_size))
     o.write(fmt.format(i, 'ICP entries count:', self.icp_count))
 
 
@@ -391,7 +391,7 @@ class AftlIcpEntry(object):
     assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
 
     if data:
-      # Deserialize the header from the data descriptor.
+      # Deserialize the header from the data.
       (self._log_url_size_expected,
        self.leaf_index,
        self._log_root_descriptor_size_expected,
@@ -505,23 +505,23 @@ class AftlIcpEntry(object):
       return True
     return False
 
-  def verify_vbmeta_image(self, vbmeta_descriptor, transparency_log_pub_key):
-    """Verify the inclusion proof for the given vbmeta_descriptor.
+  def verify_vbmeta_image(self, vbmeta_image, transparency_log_pub_key):
+    """Verify the inclusion proof for the given VBMeta image.
 
     Arguments:
-      vbmeta_descriptor: A bytearray with the vbmeta descriptor.
+      vbmeta_image: A bytearray with the VBMeta image.
       transparency_log_pub_key: File path to the PEM file containing the trusted
         transparency log public key.
 
     Returns:
       True if the inclusion proof validates and the vbmeta hash of the given
-      descriptor matches the one in the fw_info_leaf; otherwise False.
+      VBMeta image matches the one in the fw_info_leaf; otherwise False.
     """
-    if not vbmeta_descriptor:
+    if not vbmeta_image:
       return False
 
     # Calculate the hash of the vbmeta image.
-    vbmeta_hash = hashlib.sha256(vbmeta_descriptor).digest()
+    vbmeta_hash = hashlib.sha256(vbmeta_image).digest()
 
     # Validates the inclusion proof and then compare the calculated vbmeta_hash
     # against the one in the inclusion proof.
@@ -624,7 +624,7 @@ class AftlIcpEntry(object):
     return True
 
   def print_desc(self, o):
-    """Print the descriptor.
+    """Print the ICP entry.
 
     Arguments:
       o: The object to write the output to.
@@ -786,7 +786,7 @@ class TrillianLogRootDescriptor(object):
     return True
 
   def print_desc(self, o):
-    """Print the descriptor.
+    """Print the TrillianLogRootDescriptor.
 
     Arguments:
       o: The object to write the output to.
@@ -923,7 +923,7 @@ class FirmwareInfoLeaf(object):
     return False
 
   def print_desc(self, o):
-    """Print the descriptor.
+    """Print the FirmwareInfoLeaf.
 
     Arguments:
       o: The object to write the output to.
@@ -946,8 +946,8 @@ class FirmwareInfoLeaf(object):
       o.write(fmt.format(i, 'Description:', self.description))
 
 
-class AftlDescriptor(object):
-  """A class for the transparency log inclusion proof descriptor.
+class AftlImage(object):
+  """A class for the AFTL image, which contains the transparency log ICPs.
 
   This encapsulates an AFTL ICP section with all information required to
   validate an inclusion proof.
@@ -959,13 +959,13 @@ class AftlDescriptor(object):
   """
 
   def __init__(self, data=None):
-    """Initializes a new AftlDescriptor section.
+    """Initializes a new AftlImage section.
 
     Arguments:
-      data: If not None, must be a bytearray representing an AftlDescriptor.
+      data: If not None, must be a bytearray representing an AftlImage.
 
     Raises:
-      AftlError: If the data does not represent a well-formed AftlDescriptor.
+      AftlError: If the data does not represent a well-formed AftlImage.
     """
     if data:
       icp_header_bytes = data[0:AftlIcpHeader.SIZE]
@@ -982,7 +982,7 @@ class AftlDescriptor(object):
       # compensate.
       self.icp_header.icp_count = 0
       for i in range(icp_count):
-        # Get the entry header from the AftlDescriptor.
+        # Get the entry header from the AftlImage.
         cur_icp_entry = AftlIcpEntry(data[icp_index:])
         cur_icp_entry_size = cur_icp_entry.get_expected_size()
         # Now validate the entry structure.
@@ -997,14 +997,14 @@ class AftlDescriptor(object):
       raise AftlError('Malformed AFTLDescriptor')
 
   def add_icp_entry(self, icp_entry):
-    """Adds a new AftlIcpEntry to the AftlDescriptor, updating fields as needed.
+    """Adds a new AftlIcpEntry to the AftlImage, updating fields as needed.
 
     Arguments:
       icp_entry: An AftlIcpEntry structure.
     """
     self.icp_entries.append(icp_entry)
     self.icp_header.icp_count += 1
-    self.icp_header.aftl_descriptor_size += icp_entry.get_expected_size()
+    self.icp_header.aftl_image_size += icp_entry.get_expected_size()
 
   def verify_vbmeta_image(self, vbmeta_image, transparency_log_pub_keys):
     """Verifies the contained inclusion proof given the public log key.
@@ -1034,41 +1034,41 @@ class AftlDescriptor(object):
     return icp_verified == len(self.icp_entries)
 
   def save(self, output):
-    """Serializes the AftlDescriptor to disk.
+    """Serializes the AftlImage to disk.
 
     Arguments:
-      output: The object to write the descriptor to.
+      output: The object to write the image to.
 
     Raises:
-      AftlError: If invalid descriptor structure.
+      AftlError: If invalid image structure.
     """
     output.write(self.encode())
 
   def encode(self):
-    """Serialize the AftlDescriptor to a bytearray().
+    """Serialize the AftlImage to a bytearray().
 
     Returns:
-      A bytearray() with the encoded header.
+      A bytearray() with the encoded AFTL image.
 
     Raises:
-      AftlError: If invalid descriptor structure.
+      AftlError: If invalid AFTL image structure.
     """
     # The header and entries are guaranteed to be valid when encode is called.
     # Check the entire structure as a whole.
     if not self.is_valid():
-      raise AftlError('Invalid AftlDescriptor structure.')
+      raise AftlError('Invalid AftlImage structure.')
 
-    icp_descriptor = bytearray()
-    icp_descriptor.extend(self.icp_header.encode())
+    aftl_image = bytearray()
+    aftl_image.extend(self.icp_header.encode())
     for icp_entry in self.icp_entries:
-      icp_descriptor.extend(icp_entry.encode())
-    return icp_descriptor
+      aftl_image.extend(icp_entry.encode())
+    return aftl_image
 
   def is_valid(self):
-    """Ensures that values in the AftlDescriptor are sane.
+    """Ensures that values in the AftlImage are sane.
 
     Returns:
-      True if the values in the AftlDescriptor are sane, False otherwise.
+      True if the values in the AftlImage are sane, False otherwise.
     """
     if not self.icp_header.is_valid():
       return False
@@ -1082,12 +1082,12 @@ class AftlDescriptor(object):
     return True
 
   def print_desc(self, o):
-    """Print the descriptor.
+    """Print the AFTL image.
 
     Arguments:
       o: The object to write the output to.
     """
-    o.write('Android Firmware Transparency Descriptor:\n')
+    o.write('Android Firmware Transparency Image:\n')
     o.write('  Header:\n')
     self.icp_header.print_desc(o)
     for i, icp_entry in enumerate(self.icp_entries):
@@ -1216,14 +1216,14 @@ class Aftl(avbtool.Avb):
       return None, None
     return image.read(vbmeta_image_size), footer
 
-  def get_aftl_descriptor(self, image_filename):
-    """Gets the AftlDescriptor from image.
+  def get_aftl_image(self, image_filename):
+    """Gets the AftlImage from image.
 
     Arguments:
       image_filename: Image file to get information from.
 
     Returns:
-      An AftlDescriptor or None if the file does not contain a AftlDescriptor.
+      An AftlImage or None if the file does not contain a AftlImage.
     """
     # Reads the vbmeta image bytes.
     vbmeta_image, _ = self.get_vbmeta_image(image_filename)
@@ -1237,44 +1237,44 @@ class Aftl(avbtool.Avb):
                        '{}.\n'.format(e))
       return None
 
-    # Seeks for the start of the AftlDescriptor.
+    # Seeks for the start of the AftlImage.
     try:
       image.seek(len(vbmeta_image))
     except RuntimeError as e:
-      sys.stderr.write('Given AftlDescriptor image offset is invalid: {}.\n'
+      sys.stderr.write('Given AftlImage image offset is invalid: {}.\n'
                        .format(e))
       return None
 
-    # Parses the header for the AftlDescriptor size.
+    # Parses the header for the AftlImage size.
     tmp_header_bytes = image.read(AftlIcpHeader.SIZE)
     if not tmp_header_bytes or len(tmp_header_bytes) != AftlIcpHeader.SIZE:
-      sys.stderr.write('This image does not contain a AftlDescriptor.\n')
+      sys.stderr.write('This image does not contain an AftlImage.\n')
       return None
 
     try:
       tmp_header = AftlIcpHeader(tmp_header_bytes)
     except AftlError as e:
-      sys.stderr.write('This image does not contain a valid AftlDescriptor: '
+      sys.stderr.write('This image does not contain a valid AftlImage: '
                        '{}.\n'.format(e))
       return None
 
-    # Resets to the beginning of the AftlDescriptor.
+    # Resets to the beginning of the AftlImage.
     try:
       image.seek(len(vbmeta_image))
     except RuntimeError as e:
-      sys.stderr.write('Given AftlDescriptor image offset is invalid: {}.\n'
+      sys.stderr.write('Given AftlImage image offset is invalid: {}.\n'
                        .format(e))
       return None
 
-    # Parses the full AftlDescriptor.
-    icp_bytes = image.read(tmp_header.aftl_descriptor_size)
-    aftl_descriptor = None
+    # Parses the full AftlImage.
+    aftl_image_bytes = image.read(tmp_header.aftl_image_size)
+    aftl_image = None
     try:
-      aftl_descriptor = AftlDescriptor(icp_bytes)
+      aftl_image = AftlImage(aftl_image_bytes)
     except AftlError as e:
-      sys.stderr.write('The image does not contain a valid AftlDescriptor: '
+      sys.stderr.write('The image does not contain a valid AftlImage: '
                        '{}.\n'.format(e))
-    return aftl_descriptor
+    return aftl_image
 
   def info_image_icp(self, vbmeta_image_path, output):
     """Implements the 'info_image_icp' command.
@@ -1284,13 +1284,13 @@ class Aftl(avbtool.Avb):
       output: Output file to write human-readable information to (file object).
 
     Returns:
-      True if the given image has an AftlDescriptor and could successfully
+      True if the given image has an AftlImage and could successfully
       be processed; otherwise False.
     """
-    aftl_descriptor = self.get_aftl_descriptor(vbmeta_image_path)
-    if not aftl_descriptor:
+    aftl_image = self.get_aftl_image(vbmeta_image_path)
+    if not aftl_image:
       return False
-    aftl_descriptor.print_desc(output)
+    aftl_image.print_desc(output)
     return True
 
   def verify_image_icp(self, vbmeta_image_path, transparency_log_pub_keys,
@@ -1308,11 +1308,11 @@ class Aftl(avbtool.Avb):
       False.
     """
     vbmeta_image, _ = self.get_vbmeta_image(vbmeta_image_path)
-    aftl_descriptor = self.get_aftl_descriptor(vbmeta_image_path)
-    if not aftl_descriptor or not vbmeta_image:
+    aftl_image = self.get_aftl_image(vbmeta_image_path)
+    if not aftl_image or not vbmeta_image:
       return False
-    verified = aftl_descriptor.verify_vbmeta_image(vbmeta_image,
-                                                   transparency_log_pub_keys)
+    verified = aftl_image.verify_vbmeta_image(vbmeta_image,
+                                              transparency_log_pub_keys)
     if not verified:
       sys.stderr.write('The inclusion proofs for the image do not validate.\n')
       return False
@@ -1320,7 +1320,7 @@ class Aftl(avbtool.Avb):
                      'validate.\n')
     return True
 
-  def request_inclusion_proof(self, transparency_log, vbmeta_descriptor,
+  def request_inclusion_proof(self, transparency_log, vbmeta_image,
                               version_inc, manufacturer_key_path,
                               signing_helper, signing_helper_with_files,
                               timeout, aftl_comms=None):
@@ -1328,7 +1328,7 @@ class Aftl(avbtool.Avb):
 
     Arguments:
       transparency_log: String containing the URL of a transparency log server.
-      vbmeta_descriptor: A bytearray with the vbmeta descriptor.
+      vbmeta_image: A bytearray with the VBMeta image.
       version_inc: Subcomponent of the build fingerprint.
       manufacturer_key_path: Path to key used to sign messages sent to the
         transparency log servers.
@@ -1348,7 +1348,7 @@ class Aftl(avbtool.Avb):
          cannot be decoded, or if the log submission cannot be signed.
     """
     # Calculate the hash of the vbmeta image.
-    vbmeta_hash = hashlib.sha256(vbmeta_descriptor).digest()
+    vbmeta_hash = hashlib.sha256(vbmeta_image).digest()
 
     # Extract the key data from the PEM file if of size 4096.
     manufacturer_key = avbtool.RSAPublicKey(manufacturer_key_path)
@@ -1396,7 +1396,7 @@ class Aftl(avbtool.Avb):
     sfw_info = aftl_pb2.SignedFirmwareInfo(info=fw_info,
                                            info_signature=fw_info_sig)
     request = api_pb2.AddFirmwareInfoRequest(vbmeta=bytes(
-        str(vbmeta_descriptor)), fw_info=sfw_info)
+        str(vbmeta_image)), fw_info=sfw_info)
 
     # Submit signed FirmwareInfo to the server.
     if not aftl_comms:
@@ -1415,18 +1415,18 @@ class Aftl(avbtool.Avb):
                            padding_size, timeout):
     """Generates a vbmeta image with inclusion proof given a vbmeta image.
 
-    The descriptor (struct AftlDescriptor) contains the information required to
-    validate an inclusion proof for a specific vbmeta image. It consists
-    of a header (struct AftlIcpHeader) and zero or more entry structures
-    (struct AftlIcpEntry) that contain the vbmeta leaf hash, tree size,
-    root hash, inclusion proof hashes, and the signature for the root hash.
+    The AftlImage contains the information required to validate an inclusion
+    proof for a specific vbmeta image. It consists of a header (struct
+    AftlIcpHeader) and zero or more entry structures (struct AftlIcpEntry) that
+    contain the vbmeta leaf hash, tree size, root hash, inclusion proof hashes,
+    and the signature for the root hash.
 
     The vbmeta image, its hash, the version_incremental part of the build
     fingerprint, and the hash of the manufacturer key are sent to the
     transparency log, with the message signed by the manufacturer key.
     An inclusion proof is calculated and returned. This inclusion proof is
-    then packaged in a AftlDescriptor structure. The existing vbmeta data is
-    copied to a new file, appended with the AftlDescriptor data, and written to
+    then packaged in an AftlImage structure. The existing vbmeta data is
+    copied to a new file, appended with the AftlImage data, and written to
     output. Validation of the inclusion proof does not require
     communication with the transparency log.
 
@@ -1467,7 +1467,7 @@ class Aftl(avbtool.Avb):
     vbmeta_image, footer = self.get_vbmeta_image(vbmeta_image_path)
 
     # Fetches inclusion proofs for vbmeta structure from all transparency logs.
-    aftl_descriptor = AftlDescriptor()
+    aftl_image = AftlImage()
     for host, pub_key in transparency_logs:
       try:
         icp_entry = self.request_inclusion_proof(host, vbmeta_image,
@@ -1479,29 +1479,29 @@ class Aftl(avbtool.Avb):
         if not icp_entry.verify_vbmeta_image(vbmeta_image, pub_key):
           sys.stderr.write('The inclusion proof from {} could not be verified.'
                            '\n'.format(host))
-        aftl_descriptor.add_icp_entry(icp_entry)
+        aftl_image.add_icp_entry(icp_entry)
       except AftlError as e:
         # The inclusion proof request failed. Continue and see if others will.
         sys.stderr.write('Requesting inclusion proof failed: {}.\n'.format(e))
         continue
 
-    # Checks that the resulting AftlDescriptor is sane.
-    if aftl_descriptor.icp_header.icp_count != len(transparency_log_pub_keys):
+    # Checks that the resulting AftlImage is sane.
+    if aftl_image.icp_header.icp_count != len(transparency_log_pub_keys):
       sys.stderr.write('Valid inclusion proofs could only be retrieved from {} '
                        'out of {} transparency logs.\n'
-                       .format(aftl_descriptor.icp_header.icp_count,
+                       .format(aftl_image.icp_header.icp_count,
                                len(transparency_log_pub_keys)))
       return False
-    if not aftl_descriptor.is_valid():
-      sys.stderr.write('Resulting AftlDescriptor structure is malformed.\n')
+    if not aftl_image.is_valid():
+      sys.stderr.write('Resulting AftlImage structure is malformed.\n')
       return False
-    if not aftl_descriptor.verify_vbmeta_image(vbmeta_image,
-                                               transparency_log_pub_keys):
-      sys.stderr.write('Resulting AftlDescriptor inclusion proofs do not '
+    if not aftl_image.verify_vbmeta_image(vbmeta_image,
+                                          transparency_log_pub_keys):
+      sys.stderr.write('Resulting AftlImage inclusion proofs do not '
                        'validate.\n')
       return False
 
-    # Write the original vbmeta descriptor, followed by the AftlDescriptor.
+    # Writes original VBMeta image, followed by the AftlImage into the output.
     if footer:  # Checks if it is a chained partition.
       # TODO(b/147217370): Determine the best way to handle chained partitions
       # like the system.img. Currently, we only put the main vbmeta.img in the
@@ -1510,20 +1510,18 @@ class Aftl(avbtool.Avb):
                        'implemented.\n')
       return False
 
-    # Writes vbmeta image with inclusion proof into a new vbmeta image.
     output.seek(0)
     output.write(vbmeta_image)
-    encoded_aftl_descriptor = aftl_descriptor.encode()
-    output.write(encoded_aftl_descriptor)
+    encoded_aftl_image = aftl_image.encode()
+    output.write(encoded_aftl_image)
 
     if padding_size > 0:
-      descriptor_size = len(vbmeta_image) + len(encoded_aftl_descriptor)
-      padded_size = avbtool.round_to_multiple(descriptor_size, padding_size)
-      padding_needed = padded_size - descriptor_size
+      total_image_size = len(vbmeta_image) + len(encoded_aftl_image)
+      padded_size = avbtool.round_to_multiple(total_image_size, padding_size)
+      padding_needed = padded_size - total_image_size
       output.write('\0' * padding_needed)
 
-    sys.stdout.write('VBMeta image with AFTL inclusion proofs successfully '
-                     'created.\n')
+    sys.stdout.write('VBMeta image with AFTL image successfully created.\n')
     return True
 
   def _load_test_process_function(self, vbmeta_image_path,
