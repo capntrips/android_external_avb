@@ -656,10 +656,10 @@ class ImageChunk(object):
       output_offset: Offset in de-sparsified file.
       output_size: Number of bytes in output.
       input_offset: Offset in sparse file if TYPE_RAW otherwise None.
-      fill_data: Blob with data to fill if TYPE_FILL otherwise None.
+      fill_data: Blob as bytes with data to fill if TYPE_FILL otherwise None.
 
     Raises:
-      ValueError: If data is not well-formed.
+      ValueError: If given chunk parameters are invalid.
     """
     self.chunk_type = chunk_type
     self.chunk_offset = chunk_offset
@@ -901,7 +901,7 @@ class ImageHandler(object):
     The length of the given data must be a multiple of the block size.
 
     Arguments:
-      data: Data to append.
+      data: Data to append as bytes.
     """
     assert len(data) % self.block_size == 0
 
@@ -967,7 +967,7 @@ class ImageHandler(object):
       RuntimeError: If the given offset is negative.
     """
     if offset < 0:
-      raise RuntimeError('Seeking with negative offset: %d' % offset)
+      raise RuntimeError('Seeking with negative offset: {}'.format(offset))
     self._file_pos = offset
 
   def read(self, size):
@@ -983,8 +983,7 @@ class ImageHandler(object):
       size: Number of bytes to read.
 
     Returns:
-      The data.
-
+      The data as bytes.
     """
     if not self.is_sparse:
       self._image.seek(self._file_pos)
@@ -1011,7 +1010,7 @@ class ImageHandler(object):
         data.extend(all_data[offset_mod:(offset_mod + chunk_pos_to_go)])
       else:
         assert chunk.chunk_type == ImageChunk.TYPE_DONT_CARE
-        data.extend('\0' * chunk_pos_to_go)
+        data.extend(b'\0' * chunk_pos_to_go)
 
       to_go -= chunk_pos_to_go
       self._file_pos += chunk_pos_to_go
@@ -1020,7 +1019,7 @@ class ImageHandler(object):
       if chunk_idx >= len(self._chunks):
         break
 
-    return data
+    return bytes(data)
 
   def tell(self):
     """Returns the file cursor position for reading from unsparsified file.
