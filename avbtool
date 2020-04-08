@@ -1350,7 +1350,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
       self.salt = data[(self.SIZE + o):(self.SIZE + o + salt_len)]
       o += salt_len
       self.root_digest = data[(self.SIZE + o):(self.SIZE + o + root_digest_len)]
-      if root_digest_len != len(hashlib.new(name=self.hash_algorithm).digest()):
+      if root_digest_len != len(hashlib.new(self.hash_algorithm).digest()):
         if root_digest_len != 0:
           raise LookupError('root_digest_len doesn\'t match hash algorithm')
 
@@ -1441,7 +1441,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
       image_filename = os.path.join(image_dir, self.partition_name + image_ext)
       image = ImageHandler(image_filename)
     # Generate the hashtree and checks that it matches what's in the file.
-    digest_size = len(hashlib.new(name=self.hash_algorithm).digest())
+    digest_size = len(hashlib.new(self.hash_algorithm).digest())
     digest_padding = round_to_pow2(digest_size) - digest_size
     (hash_level_offsets, tree_size) = calc_hash_level_offsets(
         self.image_size, self.data_block_size, digest_size + digest_padding)
@@ -1537,7 +1537,7 @@ class AvbHashDescriptor(AvbDescriptor):
       self.salt = data[(self.SIZE + o):(self.SIZE + o + salt_len)]
       o += salt_len
       self.digest = data[(self.SIZE + o):(self.SIZE + o + digest_len)]
-      if digest_len != len(hashlib.new(name=self.hash_algorithm).digest()):
+      if digest_len != len(hashlib.new(self.hash_algorithm).digest()):
         if digest_len != 0:
           raise LookupError('digest_len doesn\'t match hash algorithm')
 
@@ -2513,7 +2513,7 @@ class Avb(object):
     image.seek(offset)
     vbmeta_blob = image.read(size)
 
-    hasher = hashlib.new(name=hash_algorithm)
+    hasher = hashlib.new(hash_algorithm)
     hasher.update(vbmeta_blob)
 
     for desc in descriptors:
@@ -3264,7 +3264,7 @@ class Avb(object):
                        'size of {}.'.format(image.image_size, max_image_size,
                                             partition_size))
 
-      digest_size = len(hashlib.new(name=hash_algorithm).digest())
+      digest_size = len(hashlib.new(hash_algorithm).digest())
       if salt:
         salt = binascii.unhexlify(salt)
       elif salt is None and not use_persistent_digest:
@@ -3276,7 +3276,7 @@ class Avb(object):
       else:
         salt = ''
 
-      hasher = hashlib.new(name=hash_algorithm, string=salt)
+      hasher = hashlib.new(hash_algorithm, salt)
       # TODO(zeuthen): might want to read this in chunks to avoid
       # memory pressure, then again, this is only supposed to be used
       # on kernel/initramfs partitions. Possible optimization.
@@ -3426,7 +3426,7 @@ class Avb(object):
       print('1.{}'.format(required_libavb_version_minor))
       return
 
-    digest_size = len(hashlib.new(name=hash_algorithm).digest())
+    digest_size = len(hashlib.new(hash_algorithm).digest())
     digest_padding = round_to_pow2(digest_size) - digest_size
 
     # If |partition_size| is given (e.g. not 0), calculate the maximum image
@@ -3918,7 +3918,7 @@ def generate_hash_tree(image, image_size, block_size, hash_alg_name, salt,
     level_output_list = []
     remaining = hash_src_size
     while remaining > 0:
-      hasher = hashlib.new(name=hash_alg_name, string=salt)
+      hasher = hashlib.new(hash_alg_name, salt)
       # Only read from the file for the first level - for subsequent
       # levels, access the array we're building.
       if level_num == 0:
@@ -3950,7 +3950,7 @@ def generate_hash_tree(image, image_size, block_size, hash_alg_name, salt,
     hash_src_size = len(level_output)
     level_num += 1
 
-  hasher = hashlib.new(name=hash_alg_name, string=salt)
+  hasher = hashlib.new(hash_alg_name, salt)
   hasher.update(level_output)
   return hasher.digest(), hash_ret
 
