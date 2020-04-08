@@ -125,23 +125,32 @@ class AvbAftlVerifyTest : public BaseAvbToolTest,
 };
 
 TEST_F(AvbAftlVerifyTest, Basic) {
-  AvbSlotVerifyResult result =
+  AftlSlotVerifyResult result =
       aftl_slot_verify(ops_.avb_ops(), asv_test_data_, key_bytes_, key_size_);
-  EXPECT_EQ(result, AVB_SLOT_VERIFY_RESULT_OK);
+  EXPECT_EQ(result, AFTL_SLOT_VERIFY_RESULT_OK);
 }
 
-TEST_F(AvbAftlVerifyTest, MissingAFTLDescriptor) {
+TEST_F(AvbAftlVerifyTest, PartitionError) {
   asv_test_data_->vbmeta_images[0].partition_name = (char*)"do-no-exist";
-  AvbSlotVerifyResult result =
+  AftlSlotVerifyResult result =
       aftl_slot_verify(ops_.avb_ops(), asv_test_data_, key_bytes_, key_size_);
-  EXPECT_EQ(result, AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA);
+  EXPECT_EQ(result, AFTL_SLOT_VERIFY_RESULT_ERROR_IMAGE_NOT_FOUND);
 }
 
-TEST_F(AvbAftlVerifyTest, NonMatchingVBMeta) {
+TEST_F(AvbAftlVerifyTest, MismatchingVBMeta) {
   asv_test_data_->vbmeta_images[0].vbmeta_data[0] = 'X';
-  AvbSlotVerifyResult result =
+  AftlSlotVerifyResult result =
       aftl_slot_verify(ops_.avb_ops(), asv_test_data_, key_bytes_, key_size_);
-  EXPECT_EQ(result, AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION);
+  EXPECT_EQ(result, AFTL_SLOT_VERIFY_RESULT_ERROR_VBMETA_HASH_MISMATCH);
+}
+
+TEST_F(AvbAftlVerifyTest, InvalidKey) {
+  // Corrupt the key in order to fail the verification: complement the last
+  // byte, we keep the key header valid.
+  key_bytes_[key_size_ - 1] = ~key_bytes_[key_size_ - 1];
+  AftlSlotVerifyResult result =
+      aftl_slot_verify(ops_.avb_ops(), asv_test_data_, key_bytes_, key_size_);
+  EXPECT_EQ(result, AFTL_SLOT_VERIFY_RESULT_ERROR_INVALID_PROOF_SIGNATURE);
 }
 
 } /* namespace avb */
