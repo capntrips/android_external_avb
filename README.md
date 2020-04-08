@@ -1023,11 +1023,12 @@ to indicate the boot state. It shall use the following values:
 This section contains information about how AVB is integrated into specific
 devices. This is not an exhaustive list.
 
-### Pixel 2
+### Pixel 2 and later
 
-On the Pixel 2 and Pixel 2 XL the boot loader supports a virtual partition with
-the name `avb_custom_key`. Flashing and erasing this partition only works in the
-UNLOCKED state. Setting the custom key is done like this:
+On the Pixel 2, Pixel 2 XL and later Pixel models, the boot loader supports a
+virtual partition with the name `avb_custom_key`. Flashing and erasing this
+partition only works in the UNLOCKED state. Setting the custom key is done like
+this:
 
     avbtool extract_public_key --key key.pem --output pkmd.bin
     fastboot flash avb_custom_key pkmd.bin
