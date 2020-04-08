@@ -4098,7 +4098,7 @@ class AvbTool(object):
                             default=0)
     sub_parser.add_argument('--output',
                             help='Output file name.',
-                            type=argparse.FileType('wt'),
+                            type=argparse.FileType('wb'),
                             default=sys.stdout)
     sub_parser.set_defaults(func=self.generate_test_image)
 
@@ -4136,7 +4136,7 @@ class AvbTool(object):
                                        help='Add hashes and footer to image.')
     sub_parser.add_argument('--image',
                             help='Image to add hashes to',
-                            type=argparse.FileType('rab+'))
+                            type=argparse.FileType('rb+'))
     sub_parser.add_argument('--partition_size',
                             help='Partition size',
                             type=parse_number)
@@ -4169,7 +4169,7 @@ class AvbTool(object):
                                        help='Append vbmeta image to image.')
     sub_parser.add_argument('--image',
                             help='Image to append vbmeta blob to',
-                            type=argparse.FileType('rab+'))
+                            type=argparse.FileType('rb+'))
     sub_parser.add_argument('--partition_size',
                             help='Partition size',
                             type=parse_number,
@@ -4184,7 +4184,7 @@ class AvbTool(object):
         help='Add hashtree and footer to image.')
     sub_parser.add_argument('--image',
                             help='Image to add hashtree to',
-                            type=argparse.FileType('rab+'))
+                            type=argparse.FileType('rb+'))
     sub_parser.add_argument('--partition_size',
                             help='Partition size',
                             default=0,
@@ -4248,7 +4248,7 @@ class AvbTool(object):
                                        help='Erase footer from an image.')
     sub_parser.add_argument('--image',
                             help='Image with a footer',
-                            type=argparse.FileType('rwb+'),
+                            type=argparse.FileType('rb+'),
                             required=True)
     sub_parser.add_argument('--keep_hashtree',
                             help='Keep the hashtree and FEC in the image',
@@ -4259,7 +4259,7 @@ class AvbTool(object):
                                        help='Zero out hashtree and FEC data.')
     sub_parser.add_argument('--image',
                             help='Image with a footer',
-                            type=argparse.FileType('rwb+'),
+                            type=argparse.FileType('rb+'),
                             required=True)
     sub_parser.set_defaults(func=self.zero_hashtree)
 
@@ -4286,7 +4286,7 @@ class AvbTool(object):
                                        help='Resize image with a footer.')
     sub_parser.add_argument('--image',
                             help='Image with a footer',
-                            type=argparse.FileType('rwb+'),
+                            type=argparse.FileType('rb+'),
                             required=True)
     sub_parser.add_argument('--partition_size',
                             help='New partition size',
