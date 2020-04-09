@@ -1191,26 +1191,26 @@ class AvbPropertyDescriptor(AvbDescriptor):
   See the |AvbPropertyDescriptor| C struct for more information.
 
   Attributes:
-    key: The key.
-    value: The key.
+    key: The key as string.
+    value: The value as bytes.
   """
 
   TAG = 0
   SIZE = 32
   FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
-                   'Q'  # key size (bytes)
-                   'Q')  # value size (bytes)
+                   'Q'    # key size (bytes)
+                   'Q')   # value size (bytes)
 
   def __init__(self, data=None):
     """Initializes a new property descriptor.
 
     Arguments:
-      data: If not None, must be a bytearray of size |SIZE|.
+      data: If not None, must be as bytes of size |SIZE|.
 
     Raises:
       LookupError: If the given descriptor is malformed.
     """
-    AvbDescriptor.__init__(self, None)
+    super(AvbPropertyDescriptor, self).__init__(None)
     assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
 
     if data:
@@ -1221,12 +1221,15 @@ class AvbPropertyDescriptor(AvbDescriptor):
       if tag != self.TAG or num_bytes_following != expected_size:
         raise LookupError('Given data does not look like a property '
                           'descriptor.')
-      self.key = data[self.SIZE:(self.SIZE + key_size)]
+      try:
+        self.key = data[self.SIZE:(self.SIZE + key_size)].decode('utf-8')
+      except UnicodeDecodeError as e:
+        raise LookupError('Key cannot be decoded as UTF-8: {}.'.format(e))
       self.value = data[(self.SIZE + key_size + 1):(self.SIZE + key_size + 1 +
                                                     value_size)]
     else:
       self.key = ''
-      self.value = ''
+      self.value = b''
 
   def print_desc(self, o):
     """Print the descriptor.
@@ -1234,8 +1237,15 @@ class AvbPropertyDescriptor(AvbDescriptor):
     Arguments:
       o: The object to write the output to.
     """
+    # Go forward with python 3, bytes are represented with the 'b' prefix,
+    # e.g. b'foobar'. Thus, we trim off the 'b' to keep the print output
+    # the same between python 2 and python 3.
+    printable_value = repr(self.value)
+    if printable_value.startswith('b\''):
+      printable_value = printable_value[1:]
+
     if len(self.value) < 256:
-      o.write('    Prop: {} -> {}\n'.format(self.key, repr(str(self.value))))
+      o.write('    Prop: {} -> {}\n'.format(self.key, printable_value))
     else:
       o.write('    Prop: {} -> ({} bytes)\n'.format(self.key, len(self.value)))
 
@@ -1243,16 +1253,18 @@ class AvbPropertyDescriptor(AvbDescriptor):
     """Serializes the descriptor.
 
     Returns:
-      A bytearray() with the descriptor data.
+      The descriptor data as bytes.
     """
-    num_bytes_following = self.SIZE + len(self.key) + len(self.value) + 2 - 16
+    key_encoded = self.key.encode('utf-8')
+    num_bytes_following = (
+        self.SIZE + len(key_encoded) + len(self.value) + 2 - 16)
     nbf_with_padding = round_to_multiple(num_bytes_following, 8)
     padding_size = nbf_with_padding - num_bytes_following
     desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
-                       len(self.key), len(self.value))
-    padding = struct.pack(str(padding_size) + 'x')
-    ret = desc + self.key + '\0' + self.value + '\0' + padding
-    return bytearray(ret)
+                       len(key_encoded), len(self.value))
+    ret = (desc + key_encoded + b'\0' + self.value + b'\0' +
+           padding_size * b'\0')
+    return ret
 
   def verify(self, image_dir, image_ext, expected_chain_partitions_map,
              image_containing_descriptor, accept_zeroed_hashtree):
@@ -1284,15 +1296,15 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     image_size: Size of the image, after rounding up to |block_size|.
     tree_offset: Offset of the hash tree in the file.
     tree_size: Size of the tree.
-    data_block_size: Data block size
-    hash_block_size: Hash block size
+    data_block_size: Data block size.
+    hash_block_size: Hash block size.
     fec_num_roots: Number of roots used for FEC (0 if FEC is not used).
     fec_offset: Offset of FEC data (0 if FEC is not used).
     fec_size: Size of FEC data (0 if FEC is not used).
-    hash_algorithm: Hash algorithm used.
-    partition_name: Partition name.
-    salt: Salt used.
-    root_digest: Root digest.
+    hash_algorithm: Hash algorithm used as string.
+    partition_name: Partition name as string.
+    salt: Salt used as bytes.
+    root_digest: Root digest as bytes.
     flags: Descriptor flags (see avb_hashtree_descriptor.h).
   """
 
@@ -1300,19 +1312,19 @@ class AvbHashtreeDescriptor(AvbDescriptor):
   RESERVED = 60
   SIZE = 120 + RESERVED
   FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
-                   'L'  # dm-verity version used
-                   'Q'  # image size (bytes)
-                   'Q'  # tree offset (bytes)
-                   'Q'  # tree size (bytes)
-                   'L'  # data block size (bytes)
-                   'L'  # hash block size (bytes)
-                   'L'  # FEC number of roots
-                   'Q'  # FEC offset (bytes)
-                   'Q'  # FEC size (bytes)
+                   'L'    # dm-verity version used
+                   'Q'    # image size (bytes)
+                   'Q'    # tree offset (bytes)
+                   'Q'    # tree size (bytes)
+                   'L'    # data block size (bytes)
+                   'L'    # hash block size (bytes)
+                   'L'    # FEC number of roots
+                   'Q'    # FEC offset (bytes)
+                   'Q'    # FEC size (bytes)
                    '32s'  # hash algorithm used
-                   'L'  # partition name (bytes)
-                   'L'  # salt length (bytes)
-                   'L'  # root digest length (bytes)
+                   'L'    # partition name (bytes)
+                   'L'    # salt length (bytes)
+                   'L'    # root digest length (bytes)
                    'L' +  # flags
                    str(RESERVED) + 's')  # reserved
 
@@ -1320,12 +1332,12 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     """Initializes a new hashtree descriptor.
 
     Arguments:
-      data: If not None, must be a bytearray of size |SIZE|.
+      data: If not None, must be bytes of size |SIZE|.
 
     Raises:
       LookupError: If the given descriptor is malformed.
     """
-    AvbDescriptor.__init__(self, None)
+    super(AvbHashtreeDescriptor, self).__init__(None)
     assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
 
     if data:
@@ -1341,12 +1353,15 @@ class AvbHashtreeDescriptor(AvbDescriptor):
         raise LookupError('Given data does not look like a hashtree '
                           'descriptor.')
       # Nuke NUL-bytes at the end.
-      self.hash_algorithm = self.hash_algorithm.split('\0', 1)[0]
+      self.hash_algorithm = self.hash_algorithm.rstrip(b'\0').decode('ascii')
       o = 0
-      self.partition_name = str(data[(self.SIZE + o):(self.SIZE + o +
-                                                      partition_name_len)])
-      # Validate UTF-8 - decode() raises UnicodeDecodeError if not valid UTF-8.
-      self.partition_name.decode('utf-8')
+      try:
+        self.partition_name = data[
+            (self.SIZE + o):(self.SIZE + o + partition_name_len)
+        ].decode('utf-8')
+      except UnicodeDecodeError as e:
+        raise LookupError('Partition name cannot be decoded as UTF-8: {}.'
+                          .format(e))
       o += partition_name_len
       self.salt = data[(self.SIZE + o):(self.SIZE + o + salt_len)]
       o += salt_len
@@ -1367,8 +1382,8 @@ class AvbHashtreeDescriptor(AvbDescriptor):
       self.fec_size = 0
       self.hash_algorithm = ''
       self.partition_name = ''
-      self.salt = bytearray()
-      self.root_digest = bytearray()
+      self.salt = b''
+      self.root_digest = b''
       self.flags = 0
 
   def print_desc(self, o):
@@ -1391,33 +1406,34 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     o.write('      FEC size:              {} bytes\n'.format(self.fec_size))
     o.write('      Hash Algorithm:        {}\n'.format(self.hash_algorithm))
     o.write('      Partition Name:        {}\n'.format(self.partition_name))
-    o.write('      Salt:                  {}\n'.format(str(self.salt).encode(
-        'hex')))
-    o.write('      Root Digest:           {}\n'.format(str(
-        self.root_digest).encode('hex')))
+    o.write('      Salt:                  {}\n'.format(
+        binascii.hexlify(self.salt).decode('ascii')))
+    o.write('      Root Digest:           {}\n'.format(
+        binascii.hexlify(self.root_digest).decode('ascii')))
     o.write('      Flags:                 {}\n'.format(self.flags))
 
   def encode(self):
     """Serializes the descriptor.
 
     Returns:
-      A bytearray() with the descriptor data.
+      The descriptor data as bytes.
     """
-    encoded_name = self.partition_name.encode('utf-8')
-    num_bytes_following = (self.SIZE + len(encoded_name) + len(self.salt) +
-                           len(self.root_digest) - 16)
+    hash_algorithm_encoded = self.hash_algorithm.encode('ascii')
+    partition_name_encoded = self.partition_name.encode('utf-8')
+    num_bytes_following = (self.SIZE + len(partition_name_encoded)
+                           + len(self.salt) + len(self.root_digest) - 16)
     nbf_with_padding = round_to_multiple(num_bytes_following, 8)
     padding_size = nbf_with_padding - num_bytes_following
     desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
                        self.dm_verity_version, self.image_size,
                        self.tree_offset, self.tree_size, self.data_block_size,
                        self.hash_block_size, self.fec_num_roots,
-                       self.fec_offset, self.fec_size, self.hash_algorithm,
-                       len(encoded_name), len(self.salt), len(self.root_digest),
-                       self.flags, self.RESERVED*'\0')
-    padding = struct.pack(str(padding_size) + 'x')
-    ret = desc + encoded_name + self.salt + self.root_digest + padding
-    return bytearray(ret)
+                       self.fec_offset, self.fec_size, hash_algorithm_encoded,
+                       len(partition_name_encoded), len(self.salt),
+                       len(self.root_digest), self.flags, self.RESERVED * b'\0')
+    ret = (desc + partition_name_encoded + self.salt + self.root_digest +
+           padding_size * b'\0')
+    return ret
 
   def verify(self, image_dir, image_ext, expected_chain_partitions_map,
              image_containing_descriptor, accept_zeroed_hashtree):
@@ -1460,7 +1476,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     # ... also check that the on-disk hashtree matches
     image.seek(self.tree_offset)
     hash_tree_ondisk = image.read(self.tree_size)
-    is_zeroed = (self.tree_size == 0) or (hash_tree_ondisk[0:8] == 'ZeRoHaSH')
+    is_zeroed = (self.tree_size == 0) or (hash_tree_ondisk[0:8] == b'ZeRoHaSH')
     if is_zeroed and accept_zeroed_hashtree:
       print('{}: skipping verification since hashtree is zeroed and '
             '--accept_zeroed_hashtree was given'
@@ -1487,10 +1503,10 @@ class AvbHashDescriptor(AvbDescriptor):
 
   Attributes:
     image_size: Image size, in bytes.
-    hash_algorithm: Hash algorithm used.
-    partition_name: Partition name.
-    salt: Salt used.
-    digest: The hash value of salt and data combined.
+    hash_algorithm: Hash algorithm used as string.
+    partition_name: Partition name as string.
+    salt: Salt used as bytes.
+    digest: The hash value of salt and data combined as bytes.
     flags: The descriptor flags (see avb_hash_descriptor.h).
   """
 
@@ -1498,11 +1514,11 @@ class AvbHashDescriptor(AvbDescriptor):
   RESERVED = 60
   SIZE = 72 + RESERVED
   FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
-                   'Q'  # image size (bytes)
+                   'Q'    # image size (bytes)
                    '32s'  # hash algorithm used
-                   'L'  # partition name (bytes)
-                   'L'  # salt length (bytes)
-                   'L'  # digest length (bytes)
+                   'L'    # partition name (bytes)
+                   'L'    # salt length (bytes)
+                   'L'    # digest length (bytes)
                    'L' +  # flags
                    str(RESERVED) + 's')  # reserved
 
@@ -1510,12 +1526,12 @@ class AvbHashDescriptor(AvbDescriptor):
     """Initializes a new hash descriptor.
 
     Arguments:
-      data: If not None, must be a bytearray of size |SIZE|.
+      data: If not None, must be bytes of size |SIZE|.
 
     Raises:
       LookupError: If the given descriptor is malformed.
     """
-    AvbDescriptor.__init__(self, None)
+    super(AvbHashDescriptor, self).__init__(None)
     assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
 
     if data:
@@ -1526,14 +1542,17 @@ class AvbHashDescriptor(AvbDescriptor):
       expected_size = round_to_multiple(
           self.SIZE - 16 + partition_name_len + salt_len + digest_len, 8)
       if tag != self.TAG or num_bytes_following != expected_size:
-        raise LookupError('Given data does not look like a hash ' 'descriptor.')
+        raise LookupError('Given data does not look like a hash descriptor.')
       # Nuke NUL-bytes at the end.
       self.hash_algorithm = self.hash_algorithm.split('\0', 1)[0]
       o = 0
-      self.partition_name = str(data[(self.SIZE + o):(self.SIZE + o +
-                                                      partition_name_len)])
-      # Validate UTF-8 - decode() raises UnicodeDecodeError if not valid UTF-8.
-      self.partition_name.decode('utf-8')
+      try:
+        self.partition_name = data[
+            (self.SIZE + o):(self.SIZE + o + partition_name_len)
+        ].decode('utf-8')
+      except UnicodeDecodeError as e:
+        raise LookupError('Partition name cannot be decoded as UTF-8: {}.'
+                          .format(e))
       o += partition_name_len
       self.salt = data[(self.SIZE + o):(self.SIZE + o + salt_len)]
       o += salt_len
@@ -1546,8 +1565,8 @@ class AvbHashDescriptor(AvbDescriptor):
       self.image_size = 0
       self.hash_algorithm = ''
       self.partition_name = ''
-      self.salt = bytearray()
-      self.digest = bytearray()
+      self.salt = b''
+      self.digest = b''
       self.flags = 0
 
   def print_desc(self, o):
@@ -1560,30 +1579,31 @@ class AvbHashDescriptor(AvbDescriptor):
     o.write('      Image Size:            {} bytes\n'.format(self.image_size))
     o.write('      Hash Algorithm:        {}\n'.format(self.hash_algorithm))
     o.write('      Partition Name:        {}\n'.format(self.partition_name))
-    o.write('      Salt:                  {}\n'.format(str(self.salt).encode(
-        'hex')))
-    o.write('      Digest:                {}\n'.format(str(self.digest).encode(
-        'hex')))
+    o.write('      Salt:                  {}\n'.format(
+        binascii.hexlify(self.salt).decode('ascii')))
+    o.write('      Digest:                {}\n'.format(
+        binascii.hexlify(self.digest).decode('ascii')))
     o.write('      Flags:                 {}\n'.format(self.flags))
 
   def encode(self):
     """Serializes the descriptor.
 
     Returns:
-      A bytearray() with the descriptor data.
+      The descriptor data as bytes.
     """
-    encoded_name = self.partition_name.encode('utf-8')
-    num_bytes_following = (
-        self.SIZE + len(encoded_name) + len(self.salt) + len(self.digest) - 16)
+    hash_algorithm_encoded = self.hash_algorithm.encode('ascii')
+    partition_name_encoded = self.partition_name.encode('utf-8')
+    num_bytes_following = (self.SIZE + len(partition_name_encoded) +
+                           len(self.salt) + len(self.digest) - 16)
     nbf_with_padding = round_to_multiple(num_bytes_following, 8)
     padding_size = nbf_with_padding - num_bytes_following
     desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
-                       self.image_size, self.hash_algorithm, len(encoded_name),
-                       len(self.salt), len(self.digest), self.flags,
-                       self.RESERVED*'\0')
-    padding = struct.pack(str(padding_size) + 'x')
-    ret = desc + encoded_name + self.salt + self.digest + padding
-    return bytearray(ret)
+                       self.image_size, hash_algorithm_encoded,
+                       len(partition_name_encoded), len(self.salt),
+                       len(self.digest), self.flags, self.RESERVED * b'\0')
+    ret = (desc + partition_name_encoded + self.salt + self.digest +
+           padding_size * b'\0')
+    return ret
 
   def verify(self, image_dir, image_ext, expected_chain_partitions_map,
              image_containing_descriptor, accept_zeroed_hashtree):
@@ -1630,14 +1650,14 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
 
   Attributes:
     flags: Flags.
-    kernel_cmdline: The kernel command-line.
+    kernel_cmdline: The kernel command-line as string.
   """
 
   TAG = 3
   SIZE = 24
   FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
-                   'L'  # flags
-                   'L')  # cmdline length (bytes)
+                   'L'    # flags
+                   'L')   # cmdline length (bytes)
 
   FLAGS_USE_ONLY_IF_HASHTREE_NOT_DISABLED = (1 << 0)
   FLAGS_USE_ONLY_IF_HASHTREE_DISABLED = (1 << 1)
@@ -1646,12 +1666,12 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
     """Initializes a new kernel cmdline descriptor.
 
     Arguments:
-      data: If not None, must be a bytearray of size |SIZE|.
+      data: If not None, must be bytes of size |SIZE|.
 
     Raises:
       LookupError: If the given descriptor is malformed.
     """
-    AvbDescriptor.__init__(self, None)
+    super(AvbKernelCmdlineDescriptor, self).__init__(None)
     assert struct.calcsize(self.FORMAT_STRING) == self.SIZE
 
     if data:
@@ -1663,10 +1683,12 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
         raise LookupError('Given data does not look like a kernel cmdline '
                           'descriptor.')
       # Nuke NUL-bytes at the end.
-      self.kernel_cmdline = str(data[self.SIZE:(self.SIZE +
-                                                kernel_cmdline_length)])
-      # Validate UTF-8 - decode() raises UnicodeDecodeError if not valid UTF-8.
-      self.kernel_cmdline.decode('utf-8')
+      try:
+        self.kernel_cmdline = data[
+            self.SIZE:(self.SIZE + kernel_cmdline_length)].decode('utf-8')
+      except UnicodeDecodeError as e:
+        raise LookupError('Kernel command-line cannot be decoded as UTF-8: {}.'
+                          .format(e))
     else:
       self.flags = 0
       self.kernel_cmdline = ''
@@ -1679,24 +1701,22 @@ class AvbKernelCmdlineDescriptor(AvbDescriptor):
     """
     o.write('    Kernel Cmdline descriptor:\n')
     o.write('      Flags:                 {}\n'.format(self.flags))
-    o.write('      Kernel Cmdline:        {}\n'.format(repr(
-        self.kernel_cmdline)))
+    o.write('      Kernel Cmdline:        \'{}\'\n'.format(self.kernel_cmdline))
 
   def encode(self):
     """Serializes the descriptor.
 
     Returns:
-      A bytearray() with the descriptor data.
+      The descriptor data as bytes.
     """
-    encoded_str = self.kernel_cmdline.encode('utf-8')
-    num_bytes_following = (self.SIZE + len(encoded_str) - 16)
+    kernel_cmd_encoded = self.kernel_cmdline.encode('utf-8')
+    num_bytes_following = (self.SIZE + len(kernel_cmd_encoded) - 16)
     nbf_with_padding = round_to_multiple(num_bytes_following, 8)
     padding_size = nbf_with_padding - num_bytes_following
     desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
-                       self.flags, len(encoded_str))
-    padding = struct.pack(str(padding_size) + 'x')
-    ret = desc + encoded_str + padding
-    return bytearray(ret)
+                       self.flags, len(kernel_cmd_encoded))
+    ret = desc + kernel_cmd_encoded + padding_size * b'\0'
+    return ret
 
   def verify(self, image_dir, image_ext, expected_chain_partitions_map,
              image_containing_descriptor, accept_zeroed_hashtree):
@@ -1725,16 +1745,16 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
 
   Attributes:
     rollback_index_location: The rollback index location to use.
-    partition_name: Partition name.
-    public_key: Bytes for the public key.
+    partition_name: Partition name as string.
+    public_key: The public key as bytes.
   """
 
   TAG = 4
   RESERVED = 64
   SIZE = 28 + RESERVED
   FORMAT_STRING = ('!QQ'  # tag, num_bytes_following (descriptor header)
-                   'L'  # rollback_index_location
-                   'L'  # partition_name_size (bytes)
+                   'L'    # rollback_index_location
+                   'L'    # partition_name_size (bytes)
                    'L' +  # public_key_size (bytes)
                    str(RESERVED) + 's')  # reserved
 
@@ -1760,17 +1780,20 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
         raise LookupError('Given data does not look like a chain partition '
                           'descriptor.')
       o = 0
-      self.partition_name = str(data[(self.SIZE + o):(self.SIZE + o +
-                                                      partition_name_len)])
-      # Validate UTF-8 - decode() raises UnicodeDecodeError if not valid UTF-8.
-      self.partition_name.decode('utf-8')
+      try:
+        self.partition_name = data[
+            (self.SIZE + o):(self.SIZE + o + partition_name_len)
+        ].decode('utf-8')
+      except UnicodeDecodeError as e:
+        raise LookupError('Partition name cannot be decoded as UTF-8: {}.'
+                          .format(e))
       o += partition_name_len
       self.public_key = data[(self.SIZE + o):(self.SIZE + o + public_key_len)]
 
     else:
       self.rollback_index_location = 0
       self.partition_name = ''
-      self.public_key = bytearray()
+      self.public_key = b''
 
   def print_desc(self, o):
     """Print the descriptor.
@@ -1783,26 +1806,26 @@ class AvbChainPartitionDescriptor(AvbDescriptor):
     o.write('      Rollback Index Location: {}\n'.format(
         self.rollback_index_location))
     # Just show the SHA1 of the key, for size reasons.
-    hexdig = hashlib.sha1(self.public_key).hexdigest()
-    o.write('      Public key (sha1):       {}\n'.format(hexdig))
+    pubkey_digest = hashlib.sha1(self.public_key).hexdigest()
+    o.write('      Public key (sha1):       {}\n'.format(pubkey_digest))
 
   def encode(self):
     """Serializes the descriptor.
 
     Returns:
-      A bytearray() with the descriptor data.
+      The descriptor data as bytes.
     """
-    encoded_name = self.partition_name.encode('utf-8')
+    partition_name_encoded = self.partition_name.encode('utf-8')
     num_bytes_following = (
-        self.SIZE + len(encoded_name) + len(self.public_key) - 16)
+        self.SIZE + len(partition_name_encoded) + len(self.public_key) - 16)
     nbf_with_padding = round_to_multiple(num_bytes_following, 8)
     padding_size = nbf_with_padding - num_bytes_following
     desc = struct.pack(self.FORMAT_STRING, self.TAG, nbf_with_padding,
-                       self.rollback_index_location, len(encoded_name),
-                       len(self.public_key), self.RESERVED*'\0')
-    padding = struct.pack(str(padding_size) + 'x')
-    ret = desc + encoded_name + self.public_key + padding
-    return bytearray(ret)
+                       self.rollback_index_location,
+                       len(partition_name_encoded), len(self.public_key),
+                       self.RESERVED * b'\0')
+    ret = desc + partition_name_encoded + self.public_key + padding_size * b'\0'
+    return ret
 
   def verify(self, image_dir, image_ext, expected_chain_partitions_map,
              image_containing_descriptor, accept_zeroed_hashtree):
@@ -1858,7 +1881,7 @@ def parse_descriptors(data):
   """Parses a blob of data into descriptors.
 
   Arguments:
-    data: A bytearray() with encoded descriptors.
+    data: Encoded descriptors as bytes.
 
   Returns:
     A list of instances of objects derived from AvbDescriptor. For
@@ -1869,10 +1892,10 @@ def parse_descriptors(data):
   while o < len(data):
     tag, nb_following = struct.unpack('!2Q', data[o:o + 16])
     if tag < len(DESCRIPTOR_CLASSES):
-      c = DESCRIPTOR_CLASSES[tag]
+      clazz = DESCRIPTOR_CLASSES[tag]
     else:
-      c = AvbDescriptor
-    ret.append(c(bytearray(data[o:o + 16 + nb_following])))
+      clazz = AvbDescriptor
+    ret.append(clazz(data[o:o + 16 + nb_following]))
     o += 16 + nb_following
   return ret
 
@@ -1893,22 +1916,22 @@ class AvbFooter(object):
     vbmeta_size: Size of the AvbVBMeta blob.
   """
 
-  MAGIC = 'AVBf'
+  MAGIC = b'AVBf'
   SIZE = 64
   RESERVED = 28
   FOOTER_VERSION_MAJOR = AVB_FOOTER_VERSION_MAJOR
   FOOTER_VERSION_MINOR = AVB_FOOTER_VERSION_MINOR
   FORMAT_STRING = ('!4s2L'  # magic, 2 x version.
-                   'Q'  # Original image size.
-                   'Q'  # Offset of VBMeta blob.
-                   'Q' +  # Size of VBMeta blob.
+                   'Q'      # Original image size.
+                   'Q'      # Offset of VBMeta blob.
+                   'Q' +    # Size of VBMeta blob.
                    str(RESERVED) + 'x')  # padding for reserved bytes
 
   def __init__(self, data=None):
     """Initializes a new footer object.
 
     Arguments:
-      data: If not None, must be a bytearray of size 4096.
+      data: If not None, must be bytes of size 4096.
 
     Raises:
       LookupError: If the given footer is malformed.
@@ -1931,10 +1954,10 @@ class AvbFooter(object):
       self.vbmeta_size = 0
 
   def encode(self):
-    """Gets a string representing the binary encoding of the footer.
+    """Serializes the footer.
 
     Returns:
-      A bytearray() with a binary representation of the footer.
+      The footer as bytes.
     """
     return struct.pack(self.FORMAT_STRING, self.magic, self.version_major,
                        self.version_minor, self.original_image_size,
@@ -1981,7 +2004,7 @@ class AvbVBMetaHeader(object):
         terminated. Applications must not make assumptions about how this
         string is formatted.
   """
-
+  MAGIC = b'AVB0'
   SIZE = 256
 
   # Keep in sync with |reserved0| and |reserved| field of
@@ -1990,16 +2013,16 @@ class AvbVBMetaHeader(object):
   RESERVED = 80
 
   # Keep in sync with |AvbVBMetaImageHeader|.
-  FORMAT_STRING = ('!4s2L'  # magic, 2 x version
-                   '2Q'  # 2 x block size
-                   'L'  # algorithm type
-                   '2Q'  # offset, size (hash)
-                   '2Q'  # offset, size (signature)
-                   '2Q'  # offset, size (public key)
-                   '2Q'  # offset, size (public key metadata)
-                   '2Q'  # offset, size (descriptors)
-                   'Q'  # rollback_index
-                   'L' +  # flags
+  FORMAT_STRING = ('!4s2L'   # magic, 2 x version
+                   '2Q'      # 2 x block size
+                   'L'       # algorithm type
+                   '2Q'      # offset, size (hash)
+                   '2Q'      # offset, size (signature)
+                   '2Q'      # offset, size (public key)
+                   '2Q'      # offset, size (public key metadata)
+                   '2Q'      # offset, size (descriptors)
+                   'Q'       # rollback_index
+                   'L' +     # flags
                    str(RESERVED0) + 'x' +  # padding for reserved bytes
                    '47sx' +  # NUL-terminated release string
                    str(RESERVED) + 'x')  # padding for reserved bytes
@@ -2026,12 +2049,13 @@ class AvbVBMetaHeader(object):
        self.descriptors_size,
        self.rollback_index,
        self.flags,
-       self.release_string) = struct.unpack(self.FORMAT_STRING, data)
+       release_string) = struct.unpack(self.FORMAT_STRING, data)
       # Nuke NUL-bytes at the end of the string.
-      if self.magic != 'AVB0':
+      if self.magic != self.MAGIC:
         raise AvbError('Given image does not look like a vbmeta image.')
+      self.release_string = release_string.rstrip(b'\0').decode('utf-8')
     else:
-      self.magic = 'AVB0'
+      self.magic = self.MAGIC
       # Start by just requiring version 1.0. Code that adds features
       # in a future version can use bump_required_libavb_version_minor() to
       # bump the minor.
@@ -2067,11 +2091,12 @@ class AvbVBMetaHeader(object):
         max(self.required_libavb_version_minor, minor))
 
   def encode(self):
-    """Serializes the header (256) to a bytearray().
+    """Serializes the header.
 
     Returns:
-      A bytearray() with the encoded header.
+      The header as bytes.
     """
+    release_string_encoded = self.release_string.encode('utf-8')
     return struct.pack(self.FORMAT_STRING, self.magic,
                        self.required_libavb_version_major,
                        self.required_libavb_version_minor,
@@ -2082,7 +2107,7 @@ class AvbVBMetaHeader(object):
                        self.public_key_size, self.public_key_metadata_offset,
                        self.public_key_metadata_size, self.descriptors_offset,
                        self.descriptors_size, self.rollback_index, self.flags,
-                       self.release_string)
+                       release_string_encoded)
 
 
 class Avb(object):
