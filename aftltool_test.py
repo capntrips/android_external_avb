@@ -496,12 +496,6 @@ class AftlImageTest(AftltoolTestCase):
     # Valid image but checked with empty list of keys.
     self.assertFalse(desc.verify_vbmeta_image(vbmeta_image, []))
 
-  def test_save(self):
-    """Tests save method."""
-    buf = io.BytesIO()
-    self.test_aftl_desc.save(buf)
-    self.assertEqual(buf.getvalue(), self.test_expected_aftl_image_bytes)
-
   def test_encode(self):
     """Tests encode method."""
     desc_bytes = self.test_aftl_desc.encode()
@@ -584,12 +578,6 @@ class AftlImageHeaderTest(AftltoolTestCase):
     self.assertEqual(header.aftl_image_size, aftltool.AftlImageHeader.SIZE)
     self.assertTrue(header.icp_count, 1)
     self.assertTrue(header.is_valid())
-
-  def test_save(self):
-    """Tests save method."""
-    buf = io.BytesIO()
-    self.test_header_valid.save(buf)
-    self.assertEqual(buf.getvalue(), self.test_header_bytes)
 
   def test_encode(self):
     """Tests encode method."""
@@ -680,12 +668,6 @@ class AftlIcpEntryTest(AftltoolTestCase):
     """Tests encode method."""
     entry_bytes = self.test_entry_1.encode()
     self.assertEqual(entry_bytes, self.test_entry_1_bytes)
-
-  def test_save(self):
-    """Tests save method."""
-    buf = io.BytesIO()
-    self.test_entry_1.save(buf)
-    self.assertEqual(buf.getvalue(), self.test_entry_1_bytes)
 
   def test_get_expected_size(self):
     """Tests get_expected_size method."""
