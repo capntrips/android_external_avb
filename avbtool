@@ -416,10 +416,10 @@ def encode_rsa_key(key_path):
     raise AvbError('Only RSA keys with exponent 65537 are supported.')
   ret = bytearray()
   # Calculate n0inv = -1/n[0] (mod 2^32)
-  b = 2L**32  # pylint: disable=long-suffix
+  b = 2 ** 32
   n0inv = b - modinv(key.modulus, b)
   # Calculate rr = r^2 (mod N), where r = 2^(# of key bits)
-  r = 2L**key.modulus.bit_length()  # pylint: disable=long-suffix
+  r = 2 ** key.modulus.bit_length()
   rrmodn = r * r % key.modulus
   ret.extend(struct.pack('!II', key.num_bits, n0inv))
   ret.extend(encode_long(key.num_bits, key.modulus))
