@@ -1544,7 +1544,7 @@ class AvbHashDescriptor(AvbDescriptor):
       if tag != self.TAG or num_bytes_following != expected_size:
         raise LookupError('Given data does not look like a hash descriptor.')
       # Nuke NUL-bytes at the end.
-      self.hash_algorithm = self.hash_algorithm.split('\0', 1)[0]
+      self.hash_algorithm = self.hash_algorithm.rstrip(b'\0').decode('ascii')
       o = 0
       try:
         self.partition_name = data[
@@ -2926,7 +2926,7 @@ class Avb(object):
         # pylint: disable=redefined-variable-type
         desc = AvbPropertyDescriptor()
         desc.key = prop[0:idx]
-        desc.value = prop[(idx + 1):]
+        desc.value = prop[(idx + 1):].encode('utf-8')
         encoded_descriptors.extend(desc.encode())
     if props_from_file:
       for prop in props_from_file:
@@ -2935,7 +2935,6 @@ class Avb(object):
           raise AvbError('Malformed property "{}".'.format(prop))
         desc = AvbPropertyDescriptor()
         desc.key = prop[0:idx]
-        desc.value = prop[(idx + 1):]
         file_path = prop[(idx + 1):]
         with open(file_path, 'rb') as f:
           desc.value = f.read()
