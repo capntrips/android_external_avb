@@ -268,17 +268,6 @@ class AftlImageHeader(object):
     if not self.is_valid():
       raise AftlError('Invalid structure for AftlImageHeader')
 
-  def save(self, output):
-    """Serializes the AftlImageHeader |SIZE| to disk.
-
-    Arguments:
-      output: The object to write the AftlImageHeader to.
-
-    Raises:
-      AftlError: If invalid structure for AftlImageHeader.
-    """
-    output.write(self.encode())
-
   def encode(self):
     """Serializes the AftlImageHeader |SIZE| to a bytearray().
 
@@ -377,7 +366,7 @@ class AftlIcpEntry(object):
                    'L')   # size of the inclusion proof in bytes
   # These are used to capture the log_url, log_root_descriptor,
   # fw_info leaf, log root signature, and the proofs elements for the
-  # encode & save functions.
+  # encode function.
 
   def __init__(self, data=None):
     """Initializes a new ICP entry object.
@@ -528,17 +517,6 @@ class AftlIcpEntry(object):
     # against the one in the inclusion proof.
     return (self.verify_icp(transparency_log_pub_key)
             and self.fw_info_leaf.vbmeta_hash == vbmeta_hash)
-
-  def save(self, output):
-    """Serializes the transparency header |SIZE| and data to disk.
-
-    Arguments:
-      output: The object to write the header to.
-
-    Raises:
-      AftlError: If invalid entry structure.
-    """
-    output.write(self.encode())
 
   def encode(self):
     """Serializes the header |SIZE| and data to a bytearray().
@@ -1033,17 +1011,6 @@ class AftlImage(object):
       if verified:
         icp_verified += 1
     return icp_verified == len(self.icp_entries)
-
-  def save(self, output):
-    """Serializes the AftlImage to disk.
-
-    Arguments:
-      output: The object to write the image to.
-
-    Raises:
-      AftlError: If invalid image structure.
-    """
-    output.write(self.encode())
 
   def encode(self):
     """Serialize the AftlImage to a bytearray().
