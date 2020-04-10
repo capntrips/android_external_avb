@@ -561,7 +561,7 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
     AvbSlotVerifyFlags flags,
     bool allow_verification_error,
     AvbVBMetaImageFlags toplevel_vbmeta_flags,
-    int rollback_index_location,
+    uint32_t rollback_index_location,
     const char* partition_name,
     size_t partition_name_len,
     const uint8_t* expected_public_key,
@@ -791,6 +791,9 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
   }
 
   uint32_t rollback_index_location_to_use = rollback_index_location;
+  if (is_main_vbmeta) {
+    rollback_index_location_to_use = vbmeta_header.rollback_index_location;
+  }
 
   /* Check if key used to make signature matches what is expected. */
   if (pk_data != NULL) {
@@ -1205,15 +1208,15 @@ static AvbSlotVerifyResult load_and_verify_vbmeta(
     }
   }
 
-  if (rollback_index_location < 0 ||
-      rollback_index_location >= AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS) {
+  if (rollback_index_location_to_use >=
+      AVB_MAX_NUMBER_OF_ROLLBACK_INDEX_LOCATIONS) {
     avb_errorv(
         full_partition_name, ": Invalid rollback_index_location.\n", NULL);
     ret = AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA;
     goto out;
   }
 
-  slot_data->rollback_indexes[rollback_index_location] =
+  slot_data->rollback_indexes[rollback_index_location_to_use] =
       vbmeta_header.rollback_index;
 
   if (out_algorithm_type != NULL) {
