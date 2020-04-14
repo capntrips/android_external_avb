@@ -81,7 +81,7 @@ class Algorithm(object):
     hash_num_bytes: Number of bytes used to store the hash.
     signature_num_bytes: Number of bytes used to store the signature.
     public_key_num_bytes: Number of bytes used to store the public key.
-    padding: Padding used for signature, if any.
+    padding: Padding used for signature as bytes, if any.
   """
 
   def __init__(self, algorithm_type, hash_name, hash_num_bytes,
@@ -105,91 +105,91 @@ ALGORITHMS = {
         hash_num_bytes=0,
         signature_num_bytes=0,
         public_key_num_bytes=0,
-        padding=[]),
+        padding=b''),
     'SHA256_RSA2048': Algorithm(
         algorithm_type=1,        # AVB_ALGORITHM_TYPE_SHA256_RSA2048
         hash_name='sha256',
         hash_num_bytes=32,
         signature_num_bytes=256,
         public_key_num_bytes=8 + 2*2048//8,
-        padding=[
+        padding=bytes(bytearray([
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*202 + [0x00] + [
                 # ASN.1 header
                 0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
                 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
                 0x00, 0x04, 0x20,
-            ]),
+            ]))),
     'SHA256_RSA4096': Algorithm(
         algorithm_type=2,        # AVB_ALGORITHM_TYPE_SHA256_RSA4096
         hash_name='sha256',
         hash_num_bytes=32,
         signature_num_bytes=512,
         public_key_num_bytes=8 + 2*4096//8,
-        padding=[
+        padding=bytes(bytearray([
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*458 + [0x00] + [
                 # ASN.1 header
                 0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
                 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
                 0x00, 0x04, 0x20,
-            ]),
+            ]))),
     'SHA256_RSA8192': Algorithm(
         algorithm_type=3,        # AVB_ALGORITHM_TYPE_SHA256_RSA8192
         hash_name='sha256',
         hash_num_bytes=32,
         signature_num_bytes=1024,
         public_key_num_bytes=8 + 2*8192//8,
-        padding=[
+        padding=bytes(bytearray([
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*970 + [0x00] + [
                 # ASN.1 header
                 0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
                 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
                 0x00, 0x04, 0x20,
-            ]),
+            ]))),
     'SHA512_RSA2048': Algorithm(
         algorithm_type=4,        # AVB_ALGORITHM_TYPE_SHA512_RSA2048
         hash_name='sha512',
         hash_num_bytes=64,
         signature_num_bytes=256,
         public_key_num_bytes=8 + 2*2048//8,
-        padding=[
+        padding=bytes(bytearray([
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*170 + [0x00] + [
                 # ASN.1 header
                 0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
                 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
                 0x00, 0x04, 0x40
-            ]),
+            ]))),
     'SHA512_RSA4096': Algorithm(
         algorithm_type=5,        # AVB_ALGORITHM_TYPE_SHA512_RSA4096
         hash_name='sha512',
         hash_num_bytes=64,
         signature_num_bytes=512,
         public_key_num_bytes=8 + 2*4096//8,
-        padding=[
+        padding=bytes(bytearray([
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*426 + [0x00] + [
                 # ASN.1 header
                 0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
                 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
                 0x00, 0x04, 0x40
-            ]),
+            ]))),
     'SHA512_RSA8192': Algorithm(
         algorithm_type=6,        # AVB_ALGORITHM_TYPE_SHA512_RSA8192
         hash_name='sha512',
         hash_num_bytes=64,
         signature_num_bytes=1024,
         public_key_num_bytes=8 + 2*8192//8,
-        padding=[
+        padding=bytes(bytearray([
             # PKCS1-v1_5 padding
             0x00, 0x01] + [0xff]*938 + [0x00] + [
                 # ASN.1 header
                 0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
                 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
                 0x00, 0x04, 0x40
-            ]),
+            ]))),
 }
 
 
@@ -391,40 +391,108 @@ class RSAPublicKey(object):
     # The exponent is assumed to always be 65537 and the number of
     # bits can be derived from the modulus by rounding up to the
     # nearest power of 2.
+    self.key_path = key_path
     self.modulus = int(modulus_hexstr, 16)
     self.num_bits = round_to_pow2(int(math.ceil(math.log(self.modulus, 2))))
     self.exponent = 65537
 
+  def encode(self):
+    """Encodes the public RSA key in |AvbRSAPublicKeyHeader| format.
 
-def encode_rsa_key(key_path):
-  """Encodes a public RSA key in |AvbRSAPublicKeyHeader| format.
+    This creates a |AvbRSAPublicKeyHeader| as well as the two large
+    numbers (|key_num_bits| bits long) following it.
 
-  This creates a |AvbRSAPublicKeyHeader| as well as the two large
-  numbers (|key_num_bits| bits long) following it.
+    Returns:
+      The |AvbRSAPublicKeyHeader| followed by two large numbers as bytes.
 
-  Arguments:
-    key_path: The path to a key file.
+    Raises:
+      AvbError: If given RSA key exponent is not 65537.
+    """
+    if self.exponent != 65537:
+      raise AvbError('Only RSA keys with exponent 65537 are supported.')
+    ret = bytearray()
+    # Calculate n0inv = -1/n[0] (mod 2^32)
+    b = 2 ** 32
+    n0inv = b - modinv(self.modulus, b)
+    # Calculate rr = r^2 (mod N), where r = 2^(# of key bits)
+    r = 2 ** self.modulus.bit_length()
+    rrmodn = r * r % self.modulus
+    ret.extend(struct.pack('!II', self.num_bits, n0inv))
+    ret.extend(encode_long(self.num_bits, self.modulus))
+    ret.extend(encode_long(self.num_bits, rrmodn))
+    return bytes(ret)
 
-  Returns:
-    The |AvbRSAPublicKeyHeader| as bytes.
+  def sign(self, algorithm_name, data_to_sign, signing_helper=None,
+           signing_helper_with_files=None):
+    """Sign given data using |signing_helper| or openssl.
 
-  Raises:
-    AvbError: If given RSA key exponent is not 65537.
-  """
-  key = RSAPublicKey(key_path)
-  if key.exponent != 65537:
-    raise AvbError('Only RSA keys with exponent 65537 are supported.')
-  ret = bytearray()
-  # Calculate n0inv = -1/n[0] (mod 2^32)
-  b = 2 ** 32
-  n0inv = b - modinv(key.modulus, b)
-  # Calculate rr = r^2 (mod N), where r = 2^(# of key bits)
-  r = 2 ** key.modulus.bit_length()
-  rrmodn = r * r % key.modulus
-  ret.extend(struct.pack('!II', key.num_bits, n0inv))
-  ret.extend(encode_long(key.num_bits, key.modulus))
-  ret.extend(encode_long(key.num_bits, rrmodn))
-  return bytes(ret)
+    openssl is used if neither the parameters signing_helper nor
+    signing_helper_with_files are given.
+
+    Arguments:
+      algorithm_name: The algorithm name as per the ALGORITHMS dict.
+      data_to_sign: Data to sign as bytes or bytearray.
+      signing_helper: Program which signs a hash and returns the signature.
+      signing_helper_with_files: Same as signing_helper but uses files instead.
+
+    Returns:
+      The signature as bytes.
+
+    Raises:
+      AvbError: If an error occurred during signing.
+    """
+    # Checks requested algorithm for validity.
+    algorithm = ALGORITHMS.get(algorithm_name)
+    if not algorithm:
+      raise AvbError('Algorithm with name {} is not supported.'
+                     .format(algorithm_name))
+
+    if self.num_bits != (algorithm.signature_num_bytes * 8):
+      raise AvbError('Key size of key ({} bits) does not match key size '
+                     '({} bits) of given algorithm {}.'
+                     .format(self.num_bits, algorithm.signature_num_bytes * 8,
+                             algorithm_name))
+
+    # Hashes the data.
+    hasher = hashlib.new(algorithm.hash_name)
+    hasher.update(data_to_sign)
+    digest = hasher.digest()
+
+    # Calculates the signature.
+    padding_and_hash = algorithm.padding + digest
+    p = None
+    if signing_helper_with_files is not None:
+      with tempfile.NamedTemporaryFile() as signing_file:
+        signing_file.write(padding_and_hash)
+        signing_file.flush()
+        p = subprocess.Popen([signing_helper_with_files, algorithm_name,
+                              self.key_path, signing_file.name])
+        retcode = p.wait()
+        if retcode != 0:
+          raise AvbError('Error signing')
+        signing_file.seek(0)
+        signature = signing_file.read()
+    else:
+      if signing_helper is not None:
+        p = subprocess.Popen(
+            [signing_helper, algorithm_name, self.key_path],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+      else:
+        p = subprocess.Popen(
+            ['openssl', 'rsautl', '-sign', '-inkey', self.key_path, '-raw'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+      (pout, perr) = p.communicate(padding_and_hash)
+      retcode = p.wait()
+      if retcode != 0:
+        raise AvbError('Error signing: {}'.format(perr))
+      signature = pout
+    if len(signature) != algorithm.signature_num_bytes:
+      raise AvbError('Error signing: Invalid length of signature')
+    return signature
 
 
 def lookup_algorithm_by_type(alg_type):
@@ -463,60 +531,6 @@ def lookup_hash_size_by_type(alg_type):
     if alg_data.algorithm_type == alg_type:
       return alg_data.hash_num_bytes
   raise AvbError('Unsupported algorithm type {}'.format(alg_type))
-
-
-def raw_sign(signing_helper, signing_helper_with_files,
-             algorithm_name, signature_num_bytes, key_path,
-             raw_data_to_sign):
-  """Computes a raw RSA signature using |signing_helper| or openssl.
-
-  Arguments:
-    signing_helper: Program which signs a hash and returns the signature.
-    signing_helper_with_files: Same as signing_helper but uses files instead.
-    algorithm_name: The algorithm name as per the ALGORITHMS dict.
-    signature_num_bytes: Number of bytes used to store the signature.
-    key_path: Path to the private key file. Must be PEM format.
-    raw_data_to_sign: Data to sign as bytes or bytearray.
-
-  Returns:
-    The signature as bytes.
-
-  Raises:
-    AvbError: If an error occurred during signing.
-  """
-  p = None
-  if signing_helper_with_files is not None:
-    with tempfile.NamedTemporaryFile() as signing_file:
-      signing_file.write(raw_data_to_sign)
-      signing_file.flush()
-      p = subprocess.Popen([
-          signing_helper_with_files, algorithm_name, key_path, signing_file.name])
-      retcode = p.wait()
-      if retcode != 0:
-        raise AvbError('Error signing')
-      signing_file.seek(0)
-      signature = signing_file.read()
-  else:
-    if signing_helper is not None:
-      p = subprocess.Popen(
-          [signing_helper, algorithm_name, key_path],
-          stdin=subprocess.PIPE,
-          stdout=subprocess.PIPE,
-          stderr=subprocess.PIPE)
-    else:
-      p = subprocess.Popen(
-          ['openssl', 'rsautl', '-sign', '-inkey', key_path, '-raw'],
-          stdin=subprocess.PIPE,
-          stdout=subprocess.PIPE,
-          stderr=subprocess.PIPE)
-    (pout, perr) = p.communicate(raw_data_to_sign)
-    retcode = p.wait()
-    if retcode != 0:
-      raise AvbError('Error signing: {}'.format(perr))
-    signature = pout
-  if len(signature) != signature_num_bytes:
-    raise AvbError('Error signing: Invalid length of signature')
-  return signature
 
 
 def verify_vbmeta_signature(vbmeta_header, vbmeta_blob):
@@ -568,8 +582,7 @@ def verify_vbmeta_signature(vbmeta_header, vbmeta_blob):
   if computed_digest != digest_blob:
     return False
 
-  padding_and_digest = bytearray(alg.padding)
-  padding_and_digest.extend(computed_digest)
+  padding_and_digest = alg.padding + computed_digest
 
   (num_bits,) = struct.unpack('!I', pubkey_blob[0:4])
   modulus_blob = pubkey_blob[8:8 + num_bits//8]
@@ -1052,7 +1065,8 @@ class ImageHandler(object):
     if size == self.image_size:
       # Trivial where there's nothing to do.
       return
-    elif size < self.image_size:
+
+    if size < self.image_size:
       chunk_idx = bisect.bisect_right(self._chunk_output_offsets, size) - 1
       chunk = self._chunks[chunk_idx]
       if chunk.output_offset != size:
@@ -2329,10 +2343,10 @@ class Avb(object):
       raise AvbError('Malformed slot data "{}".'.format(slot_data))
     a_priority = int(tokens[0])
     a_tries_remaining = int(tokens[1])
-    a_success = True if int(tokens[2]) != 0 else False
+    a_success = int(tokens[2]) != 0
     b_priority = int(tokens[3])
     b_tries_remaining = int(tokens[4])
-    b_success = True if int(tokens[5]) != 0 else False
+    b_success = int(tokens[5]) != 0
 
     ab_data_no_crc = struct.pack(self.AB_FORMAT_NO_CRC,
                                  self.AB_MAGIC,
@@ -2440,7 +2454,7 @@ class Avb(object):
     if key_path:
       print('Verifying image {} using key at {}'.format(image_filename,
                                                         key_path))
-      key_blob = encode_rsa_key(key_path)
+      key_blob = RSAPublicKey(key_path).encode()
     else:
       print('Verifying image {} using embedded public key'.format(
           image_filename))
@@ -2937,6 +2951,7 @@ class Avb(object):
         desc.key = prop[0:idx]
         file_path = prop[(idx + 1):]
         with open(file_path, 'rb') as f:
+          # pylint: disable=attribute-defined-outside-init
           desc.value = f.read()
         encoded_descriptors.extend(desc.encode())
 
@@ -2998,7 +3013,7 @@ class Avb(object):
       if not key_path:
         raise AvbError('Key is required for algorithm {}'.format(
             algorithm_name))
-      encoded_key = encode_rsa_key(key_path)
+      encoded_key = RSAPublicKey(key_path).encode()
       if len(encoded_key) != alg.public_key_num_bytes:
         raise AvbError('Key is wrong size for algorithm {}'.format(
             algorithm_name))
@@ -3058,10 +3073,10 @@ class Avb(object):
       binary_hash = ha.digest()
 
       # Calculate the signature.
-      padding_and_hash = bytearray(alg.padding) + binary_hash
-      binary_signature = raw_sign(signing_helper, signing_helper_with_files,
-                                  algorithm_name, alg.signature_num_bytes,
-                                  key_path, padding_and_hash)
+      rsa_key = RSAPublicKey(key_path)
+      data_to_sign = header_data_blob + aux_data_blob
+      binary_signature = rsa_key.sign(algorithm_name, data_to_sign,
+                                      signing_helper, signing_helper_with_files)
 
     # Generate Authentication data block.
     auth_data_blob = bytearray()
@@ -3078,8 +3093,11 @@ class Avb(object):
     Arguments:
       key_path: The path to a RSA private key file.
       output: The file to write to.
+
+    Raises:
+      AvbError: If the public key could not be extracted.
     """
-    output.write(encode_rsa_key(key_path))
+    output.write(RSAPublicKey(key_path).encode())
 
   def append_vbmeta_image(self, image_filename, vbmeta_image_filename,
                           partition_size):
@@ -3654,10 +3672,13 @@ class Avb(object):
       usage: If not empty, overrides the cert usage with a hash of this value.
       signing_helper: Program which signs a hash and returns the signature.
       signing_helper_with_files: Same as signing_helper but uses files instead.
+
+    Raises:
+      AvbError: If there an error during signing.
     """
     signed_data = bytearray()
     signed_data.extend(struct.pack('<I', 1))  # Format Version
-    signed_data.extend(encode_rsa_key(subject_key_path))
+    signed_data.extend(RSAPublicKey(subject_key_path).encode())
     hasher = hashlib.sha256()
     hasher.update(subject)
     signed_data.extend(hasher.digest())
@@ -3673,18 +3694,10 @@ class Avb(object):
     signed_data.extend(struct.pack('<Q', subject_key_version))
     signature = b''
     if authority_key_path:
+      rsa_key = RSAPublicKey(authority_key_path)
       algorithm_name = 'SHA512_RSA4096'
-      alg = ALGORITHMS[algorithm_name]
-      hasher = hashlib.sha512()  # pylint: disable=redefined-variable-type
-      hasher.update(signed_data)
-
-      padding_and_hash = bytearray()
-      padding_and_hash.extend(alg.padding)
-      padding_and_hash.extend(hasher.digest())
-
-      signature = raw_sign(signing_helper, signing_helper_with_files,
-                           algorithm_name, alg.signature_num_bytes,
-                           authority_key_path, padding_and_hash)
+      signature = rsa_key.sign(algorithm_name, signed_data, signing_helper,
+                               signing_helper_with_files)
     output.write(signed_data)
     output.write(signature)
 
@@ -3709,7 +3722,7 @@ class Avb(object):
     if len(product_id) != EXPECTED_PRODUCT_ID_SIZE:
       raise AvbError('Invalid Product ID length.')
     output.write(struct.pack('<I', 1))  # Format Version
-    output.write(encode_rsa_key(root_authority_key_path))
+    output.write(RSAPublicKey(root_authority_key_path).encode())
     output.write(product_id)
 
   def make_atx_metadata(self, output, intermediate_key_certificate,
@@ -3770,7 +3783,7 @@ class Avb(object):
       signing_helper_with_files: Same as signing_helper but uses files instead.
 
     Raises:
-      AvbError: If an argument is incorrect.
+      AvbError: If an argument is incorrect or an error occurs during signing.
     """
     EXPECTED_CERTIFICATE_SIZE = 1620  # pylint: disable=invalid-name
     EXPECTED_CHALLENGE_SIZE = 16  # pylint: disable=invalid-name
@@ -3788,18 +3801,10 @@ class Avb(object):
     output.write(intermediate_key_certificate)
     output.write(unlock_key_certificate)
     if challenge_path and unlock_key_path:
+      rsa_key = RSAPublicKey(unlock_key_path)
       algorithm_name = 'SHA512_RSA4096'
-      alg = ALGORITHMS[algorithm_name]
-      hasher = hashlib.sha512()
-      hasher.update(challenge)
-
-      padding_and_hash = bytearray()
-      padding_and_hash.extend(alg.padding)
-      padding_and_hash.extend(hasher.digest())
-
-      signature = raw_sign(signing_helper, signing_helper_with_files,
-                           algorithm_name, alg.signature_num_bytes,
-                           unlock_key_path, padding_and_hash)
+      signature = rsa_key.sign(algorithm_name, challenge, signing_helper,
+                               signing_helper_with_files)
       output.write(signature)
 
 
