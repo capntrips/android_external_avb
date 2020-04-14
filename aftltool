@@ -1334,24 +1334,10 @@ class Aftl(avbtool.Avb):
     signed_fw_info = bytearray()
     # AFTL supports SHA256_RSA4096 for now, more will be available.
     algorithm_name = 'SHA256_RSA4096'
-    sig_num_bytes = 0
-    alg_padding = ''
     try:
-      alg = avbtool.ALGORITHMS[algorithm_name]
-      sig_num_bytes = alg.signature_num_bytes
-      alg_padding = alg.padding
-    except KeyError:
-      raise AftlError('Unknown algorithm with name {}'.format(algorithm_name))
-
-    fw_info_hash = hashlib.sha256(fw_info.SerializeToString()).digest()
-    padding_and_hash = str(bytearray(alg_padding)) + fw_info_hash
-    try:
-      signed_fw_info = avbtool.raw_sign(signing_helper,
-                                        signing_helper_with_files,
-                                        algorithm_name,
-                                        sig_num_bytes,
-                                        manufacturer_key_path,
-                                        padding_and_hash)
+      rsa_key = avbtool.RSAPublicKey(manufacturer_key_path)
+      signed_fw_info = rsa_key.sign(algorithm_name, fw_info.SerializeToString(),
+                                    signing_helper, signing_helper_with_files)
     except avbtool.AvbError as e:
       raise AftlError('Failed to sign FirmwareInfo with '
                       '--manufacturer_key: {}'.format(e))
