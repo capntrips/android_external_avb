@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright 2020, The Android Open Source Project
 #
@@ -24,8 +24,6 @@
 #
 """Command-line tool for AFTL support for Android Verified Boot images."""
 
-from __future__ import division
-
 import argparse
 import base64
 import binascii
@@ -33,18 +31,26 @@ import hashlib
 import json
 import multiprocessing
 import os
-import Queue  # pylint: disable=bad-python3-import
+import queue
 import struct
 import subprocess
 import sys
 import tempfile
 import time
 
+# This is to work around temporarily with the issue that python3 does not permit
+# relative imports anymore going forward. This adds the proto directory relative
+# to the location of aftltool to the sys.path.
+# TODO(b/154068467): Implement proper importing of generated *_pb2 modules.
+EXEC_PATH = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.join(EXEC_PATH, 'proto'))
 
+# pylint: disable=wrong-import-position,import-error
 import avbtool
-from proto import aftl_pb2
-from proto import api_pb2
-from proto.crypto import sigpb
+import aftl_pb2
+import api_pb2
+from crypto import sigpb
+# pylint: enable=wrong-import-position,import-error
 
 
 class AftlError(Exception):
@@ -83,7 +89,7 @@ def rsa_key_read_pem_bytes(key_path):
   retcode = p.wait()
   if retcode != 0:
     raise AftlError('Error decoding: {}'.format(perr))
-  return bytearray(pout)
+  return pout
 
 
 def check_signature(log_root, log_root_sig,
@@ -239,7 +245,7 @@ class AftlImageHeader(object):
   """
 
   SIZE = 18  # The size of the structure, in bytes
-  MAGIC = 'AFTL'
+  MAGIC = b'AFTL'
   FORMAT_STRING = ('!4s2L'  # magic, major & minor version.
                    'L'      # AFTL image size.
                    'H')     # number of inclusion proof entries.
@@ -266,13 +272,13 @@ class AftlImageHeader(object):
       self.aftl_image_size = self.SIZE
       self.icp_count = 0
     if not self.is_valid():
-      raise AftlError('Invalid structure for AftlImageHeader')
+      raise AftlError('Invalid structure for AftlImageHeader.')
 
   def encode(self):
-    """Serializes the AftlImageHeader |SIZE| to a bytearray().
+    """Serializes the AftlImageHeader |SIZE| to bytes.
 
     Returns:
-      A bytearray() with the encoded AftlImageHeader.
+      The encoded AftlImageHeader as bytes.
 
     Raises:
       AftlError: If invalid structure for AftlImageHeader.
@@ -293,7 +299,8 @@ class AftlImageHeader(object):
     """
     if self.magic != AftlImageHeader.MAGIC:
       sys.stderr.write(
-          'AftlImageHeader: magic value mismatch: {}\n'.format(self.magic))
+          'AftlImageHeader: magic value mismatch: {}\n'
+          .format(repr(self.magic)))
       return False
 
     if self.required_icp_version_major > avbtool.AVB_VERSION_MAJOR:
@@ -399,10 +406,11 @@ class AftlIcpEntry(object):
           self._log_root_sig_size_expected,
           self._inc_proof_size_expected)
 
-      (self.log_url, log_root_descriptor_bytes, fw_info_leaf_bytes,
+      (log_url, log_root_descriptor_bytes, fw_info_leaf_bytes,
        self.log_root_signature, proof_bytes) = struct.unpack(
            expected_format_string, data[self.SIZE:self.get_expected_size()])
 
+      self.log_url = log_url.decode('ascii')
       self.log_root_descriptor = TrillianLogRootDescriptor(
           log_root_descriptor_bytes)
       self.fw_info_leaf = FirmwareInfoLeaf(fw_info_leaf_bytes)
@@ -410,7 +418,8 @@ class AftlIcpEntry(object):
       self.proofs = []
       if self._proof_hash_count_expected > 0:
         proof_idx = 0
-        hash_size = self._inc_proof_size_expected // self._proof_hash_count_expected
+        hash_size = (self._inc_proof_size_expected
+                     // self._proof_hash_count_expected)
         for _ in range(self._proof_hash_count_expected):
           proof = proof_bytes[proof_idx:(proof_idx+hash_size)]
           self.proofs.append(proof)
@@ -420,7 +429,7 @@ class AftlIcpEntry(object):
       self.log_url = ''
       self.log_root_descriptor = TrillianLogRootDescriptor()
       self.fw_info_leaf = FirmwareInfoLeaf()
-      self.log_root_signature = ''
+      self.log_root_signature = b''
       self.proofs = []
     if not self.is_valid():
       raise AftlError('Invalid structure for AftlIcpEntry')
@@ -546,11 +555,11 @@ class AftlIcpEntry(object):
                        self.log_url_size, self.leaf_index,
                        self.log_root_descriptor_size, self.fw_info_leaf_size,
                        self.log_root_sig_size, self.proof_hash_count,
-                       self.inc_proof_size, self.log_url,
+                       self.inc_proof_size, self.log_url.encode('ascii'),
                        self.log_root_descriptor.encode(),
-                       str(self.fw_info_leaf.encode()),
-                       str(self.log_root_signature),
-                       str(proof_bytes))
+                       self.fw_info_leaf.encode(),
+                       self.log_root_signature,
+                       proof_bytes)
 
   def translate_response(self, transparency_log, afi_response):
     """Translates an AddFirmwareInfoResponse object to an AftlIcpEntry.
@@ -664,7 +673,7 @@ class TrillianLogRootDescriptor(object):
         self.root_hash = data[0:self.root_hash_size]
         data = data[self.root_hash_size:]
       else:
-        self.root_hash = bytearray()
+        self.root_hash = b''
 
       # Parses second part of the log_root descriptor.
       data_length = struct.calcsize(self.FORMAT_STRING_PART_2)
@@ -676,16 +685,16 @@ class TrillianLogRootDescriptor(object):
       if self.metadata_size > 0:
         self.metadata = data[0:self.metadata_size]
       else:
-        self.metadata = bytearray()
+        self.metadata = b''
     else:
       self.version = 1
       self.tree_size = 0
       self.root_hash_size = 0
-      self.root_hash = bytearray()
+      self.root_hash = b''
       self.timestamp = 0
       self.revision = 0
       self.metadata_size = 0
-      self.metadata = bytearray()
+      self.metadata = b''
 
     if not self.is_valid():
       raise AftlError('Invalid structure for TrillianLogRootDescriptor.')
@@ -719,8 +728,8 @@ class TrillianLogRootDescriptor(object):
 
     return struct.pack(expected_format_string,
                        self.version, self.tree_size, self.root_hash_size,
-                       str(self.root_hash), self.timestamp, self.revision,
-                       self.metadata_size, str(self.metadata))
+                       self.root_hash, self.timestamp, self.revision,
+                       self.metadata_size, self.metadata)
 
   def is_valid(self):
     """Ensures that values in the descritor are sane.
@@ -782,7 +791,8 @@ class TrillianLogRootDescriptor(object):
     o.write(fmt.format(i, 'Revision:', self.revision))
     o.write(fmt.format(i, 'Metadata size:', self.metadata_size))
     if self.metadata_size > 0:
-      o.write(fmt.format(i, 'Metadata:', binascii.hexlify(self.metadata)))
+      o.write(fmt.format(i, 'Metadata:',
+                         binascii.hexlify(self.metadata).decode('ascii')))
 
 
 class FirmwareInfoLeaf(object):
@@ -823,7 +833,7 @@ class FirmwareInfoLeaf(object):
       except (ValueError, KeyError) as e:
         raise AftlError('Invalid structure for FirmwareInfoLeaf: {}'.format(e))
     else:
-      self._fw_info_leaf_bytes = ''
+      self._fw_info_leaf_bytes = b''
       self._fw_info_leaf_dict = dict()
 
     if not self.is_valid():
@@ -1115,8 +1125,8 @@ class AftlGrpcCommunication(AftlCommunication):
     # Import grpc now to avoid global dependencies as it otherwise breakes
     # running unittest with atest.
     try:
-      import grpc
-      from proto import api_pb2_grpc
+      import grpc  # pylint: disable=import-outside-toplevel
+      from proto import api_pb2_grpc # pylint: disable=import-outside-toplevel
     except ImportError as e:
       err_str = 'grpc can be installed with python pip install grpcio.\n'
       raise AftlError('Failed to import module: ({}).\n{}'.format(e, err_str))
@@ -1281,10 +1291,9 @@ class Aftl(avbtool.Avb):
     verified = aftl_image.verify_vbmeta_image(vbmeta_image,
                                               transparency_log_pub_keys)
     if not verified:
-      sys.stderr.write('The inclusion proofs for the image do not validate.\n')
+      output.write('The inclusion proofs for the image do not validate.\n')
       return False
-    sys.stdout.write('The inclusion proofs for the image successfully '
-                     'validate.\n')
+    output.write('The inclusion proofs for the image successfully validate.\n')
     return True
 
   def request_inclusion_proof(self, transparency_log, vbmeta_image,
@@ -1331,7 +1340,7 @@ class Aftl(avbtool.Avb):
     fw_info = aftl_pb2.FirmwareInfo(vbmeta_hash=vbmeta_hash,
                                     version_incremental=version_inc,
                                     manufacturer_key_hash=m_key_hash)
-    signed_fw_info = bytearray()
+    signed_fw_info = b''
     # AFTL supports SHA256_RSA4096 for now, more will be available.
     algorithm_name = 'SHA256_RSA4096'
     try:
@@ -1344,12 +1353,12 @@ class Aftl(avbtool.Avb):
     fw_info_sig = sigpb.sigpb_pb2.DigitallySigned(
         hash_algorithm='SHA256',
         signature_algorithm='RSA',
-        signature=str(signed_fw_info))
+        signature=signed_fw_info)
 
     sfw_info = aftl_pb2.SignedFirmwareInfo(info=fw_info,
                                            info_signature=fw_info_sig)
-    request = api_pb2.AddFirmwareInfoRequest(vbmeta=bytes(
-        str(vbmeta_image)), fw_info=sfw_info)
+    request = api_pb2.AddFirmwareInfoRequest(
+        vbmeta=vbmeta_image, fw_info=sfw_info)
 
     # Submit signed FirmwareInfo to the server.
     if not aftl_comms:
@@ -1414,14 +1423,14 @@ class Aftl(avbtool.Avb):
                            len(transparency_log_servers),
                            len(transparency_log_pub_keys)))
       return False
-    transparency_logs = zip(transparency_log_servers, transparency_log_pub_keys)
 
     # Retrieves vbmeta structure from given partition image.
     vbmeta_image, footer = self.get_vbmeta_image(vbmeta_image_path)
 
     # Fetches inclusion proofs for vbmeta structure from all transparency logs.
     aftl_image = AftlImage()
-    for host, pub_key in transparency_logs:
+    for host, pub_key in zip(transparency_log_servers,
+                             transparency_log_pub_keys):
       try:
         icp_entry = self.request_inclusion_proof(host, vbmeta_image,
                                                  version_incremental,
@@ -1599,7 +1608,7 @@ class Aftl(avbtool.Avb):
                                                    version_incremental, result))
         execution_times.append(execution_time)
         results.append(result)
-      except Queue.Empty:
+      except queue.Empty:
         pass
 
       # Checks if processes are still alive; if not clean them up. join() would
@@ -1612,6 +1621,8 @@ class Aftl(avbtool.Avb):
     executions = sorted(execution_times)
     execution_count = len(execution_times)
     median = 0
+
+    # pylint: disable=old-division
     if execution_count % 2 == 0:
       median = (executions[execution_count // 2 - 1]
                 + executions[execution_count // 2]) / 2
