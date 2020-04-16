@@ -1848,13 +1848,20 @@ class AftlTool(avbtool.AvbTool):
     args = parser.parse_args(argv[1:])
     try:
       success = args.func(args)
-      if not success:
-        # Signals to calling tools that the command has failed.
-        sys.exit(1)
+    except AttributeError:
+      # This error gets raised when the command line tool is called without any
+      # arguments. It mimics the original Python 2 behavior.
+      parser.print_usage()
+      print('aftltool: error: too few arguments')
+      sys.exit(2)
     except AftlError as e:
       # Signals to calling tools that an unhandled exeception occured.
       sys.stderr.write('Unhandled AftlError occured: {}\n'.format(e))
       sys.exit(2)
+
+    if not success:
+      # Signals to calling tools that the command has failed.
+      sys.exit(1)
 
 if __name__ == '__main__':
   tool = AftlTool()
