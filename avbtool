@@ -2528,54 +2528,55 @@ class Avb(object):
     Raises:
       AvbError: If getting the partition digests from the image fails.
     """
-
     image_dir = os.path.dirname(image_filename)
     image_ext = os.path.splitext(image_filename)[1]
     json_partitions = None
     if as_json:
       json_partitions = []
-    self.print_partition_digests_internal(image_filename, output, json_partitions, image_dir,
-                                          image_ext)
+    self._print_partition_digests(
+        image_filename, output, json_partitions, image_dir, image_ext)
     if as_json:
       output.write(json.dumps({'partitions': json_partitions}, indent=2))
 
-  def print_partition_digests_internal(self, image_filename, output, json_partitions, image_dir,
-                                       image_ext):
+  def _print_partition_digests(self, image_filename, output, json_partitions,
+                               image_dir, image_ext):
     """Helper for printing partitions.
 
     Arguments:
       image_filename: Image file to get information from (file object).
       output: Output file to write human-readable information to (file object).
-      json_partitions: If not None, don't print to output, instead add partition information
-                       to this list.
+      json_partitions: If not None, don't print to output, instead add partition
+          information to this list.
       image_dir: The directory to use when looking for chained partition files.
       image_ext: The extension to use for chained partition files.
 
     Raises:
       AvbError: If getting the partition digests from the image fails.
     """
-
     image = ImageHandler(image_filename)
     (_, _, descriptors, _) = self._parse_image(image)
 
     for desc in descriptors:
       if isinstance(desc, AvbHashDescriptor):
         digest = binascii.hexlify(desc.digest).decode('ascii')
-        if json_partitions != None:
-          json_partitions.append({'name': desc.partition_name, 'digest': digest})
+        if json_partitions is not None:
+          json_partitions.append({'name': desc.partition_name,
+                                  'digest': digest})
         else:
           output.write('{}: {}\n'.format(desc.partition_name, digest))
       elif isinstance(desc, AvbHashtreeDescriptor):
         digest = binascii.hexlify(desc.root_digest).decode('ascii')
-        if json_partitions != None:
-          json_partitions.append({'name': desc.partition_name, 'digest': digest})
+        if json_partitions is not None:
+          json_partitions.append({'name': desc.partition_name,
+                                  'digest': digest})
         else:
           output.write('{}: {}\n'.format(desc.partition_name, digest))
       elif isinstance(desc, AvbChainPartitionDescriptor):
         chained_image_filename = os.path.join(image_dir,
                                               desc.partition_name + image_ext)
-        num_printed = self.print_partition_digests_internal(chained_image_filename, output,
-                                                            json_partitions, image_dir, image_ext)
+        self._print_partition_digests(
+            chained_image_filename, output, json_partitions, image_dir,
+            image_ext)
 
   def calculate_vbmeta_digest(self, image_filename, hash_algorithm, output):
     """Implements the 'calculate_vbmeta_digest' command.
@@ -4588,6 +4589,12 @@ class AvbTool(object):
     args = parser.parse_args(argv[1:])
     try:
       args.func(args)
+    except AttributeError:
+      # This error gets raised when the command line tool is called without any
+      # arguments. It mimics the original Python 2 behavior.
+      parser.print_usage()
+      print('avbtool: error: too few arguments')
+      sys.exit(2)
     except AvbError as e:
       sys.stderr.write('{}: {}\n'.format(argv[0], str(e)))
       sys.exit(1)
