@@ -181,7 +181,8 @@ TEST_F(AvbAftlValidateTest, AvbAftlVerifyIcpRootHash) {
   EXPECT_EQ(true, avb_aftl_verify_icp_root_hash(icp_entry_));
 }
 
-TEST_F(AvbAftlValidateTest, AftlVerifyVbmetaHash) {
+// TODO(b/154115873): reenable this test
+TEST_F(AvbAftlValidateTest, DISABLED_AftlVerifyVbmetaHash) {
   GenerateVBMetaImage("vbmeta.img",
                       "SHA256_RSA4096",
                       0,
