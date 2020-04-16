@@ -17,6 +17,6 @@
     <option name="null-device" value="true" />
     <test class="com.android.tradefed.testtype.HostGTest" >
         <option name="module-name" value="libavb_host_unittest" />
-        <option name="native-test-timeout" value="3m"/>
+        <option name="native-test-timeout" value="7m"/>
     </test>
 </configuration>
