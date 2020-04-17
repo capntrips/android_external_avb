@@ -1138,12 +1138,17 @@ class AftlGrpcCommunication(AftlCommunication):
     channel = grpc.insecure_channel(self.transparency_log_config.target)
     stub = api_pb2_grpc.AFTLogStub(channel)
 
+    metadata = []
+    if self.transparency_log_config.api_key:
+      metadata.append(('x-api-key', self.transparency_log_config.api_key))
+
     # Attempt to transmit to the transparency log.
     sys.stdout.write('ICP is about to be requested from transparency log '
                      'with domain {}.\n'.format(
                          self.transparency_log_config.target))
     try:
-      response = stub.AddFirmwareInfo(request, timeout=self.timeout)
+      response = stub.AddFirmwareInfo(request, timeout=self.timeout,
+                                      metadata=metadata)
     except grpc.RpcError as e:
       raise AftlError('Error: grpc failure ({})'.format(e))
     return response

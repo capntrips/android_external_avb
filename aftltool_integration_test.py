@@ -30,6 +30,8 @@ need to be set:
 
   AFTL_HOST: host:port of the transparency log to test with.
   AFTL_PUBKEY: Transparency log public key in PEM format.
+  AFTL_APIKEY: If the transparency log requires an API key to submit data,
+      this should be the complete key.
   AFTL_VBMETA_IMAGE: VBMeta image that should be used for submission to AFTL.
   AFTL_MANUFACTURER_KEY: Manufacturer signing key used to sign submissions
       to the transparency log in PEM format.
@@ -54,6 +56,7 @@ class AftlIntegrationTest(aftltool_test.AftlTest):
     """Sets up the environment for integration testing with actual AFTL."""
     self.aftl_host = os.environ.get('AFTL_HOST')
     self.aftl_pubkey = os.environ.get('AFTL_PUBKEY')
+    self.aftl_apikey = os.environ.get('AFTL_APIKEY')
     self.vbmeta_image = os.environ.get('AFTL_VBMETA_IMAGE')
     self.manufacturer_key = os.environ.get('AFTL_MANUFACTURER_KEY')
 
