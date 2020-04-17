@@ -1144,13 +1144,14 @@ class AftlTestCase(AftltoolTestCase):
     # set_up_environment() in the subclasses.
     self.aftl_host = None
     self.aftl_pubkey = None
+    self.aftl_apikey = None
     self.vbmeta_image = None
     self.manufacturer_key = None
     self.set_up_environment()
 
     self.output_filename = 'vbmeta_icp.img'
     self.transparency_log_config = aftltool.TransparencyLogConfig(
-        self.aftl_host, self.aftl_pubkey)
+        self.aftl_host, self.aftl_pubkey, self.aftl_apikey)
 
     self.make_icp_default_params = {
         'vbmeta_image_path': self.vbmeta_image,
