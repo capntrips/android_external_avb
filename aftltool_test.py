@@ -28,6 +28,7 @@ import base64
 import binascii
 import io
 import os
+import struct
 import sys
 import unittest
 
@@ -162,7 +163,7 @@ class AftltoolTestCase(unittest.TestCase):
     self.test_entry_2.log_root_signature = b'd' * 512
     self.test_entry_2.proofs = self.test_proof_hashes_2
 
-    self.test_entry_2_bytes = bytearray(
+    self.test_entry_2_bytes = (
         b'\x00\x00\x00\x1a'                   # Transparency log url size.
         b'\x00\x00\x00\x00\x00\x00\x00\x02'   # Leaf index.
         b'\x00\x00\x00\x3f'                   # Log root descriptor size.
@@ -182,11 +183,11 @@ class AftltoolTestCase(unittest.TestCase):
     self.test_aftl_desc.add_icp_entry(self.test_entry_2)
 
     self.test_expected_aftl_image_bytes = (
-        b'AFTL'                               # Magic.
-        b'\x00\x00\x00\x01'                   # Major version.
-        b'\x00\x00\x00\x01'                   # Minor version.
-        b'\x00\x00\x05\xb9'                   # Image size.
-        b'\x00\x02'                           # Number of ICP entries.
+        b'AFTL'                                         # Magic.
+        + struct.pack('!L', avbtool.AVB_VERSION_MAJOR)  # Major version.
+        + struct.pack('!L', avbtool.AVB_VERSION_MINOR)  # Minor version.
+        + b'\x00\x00\x05\xb9'                           # Image size.
+        b'\x00\x02'                                     # Number of ICP entries.
         + self.test_entry_1_bytes
         + self.test_entry_2_bytes)
 
@@ -508,7 +509,7 @@ class AftlImageTest(AftltoolTestCase):
 
     # Force invalid ICP header.
     old_magic = d.image_header.magic
-    d.image_header.magic = 'YOLO'
+    d.image_header.magic = b'YOLO'
     self.assertFalse(d.is_valid())
     d.image_header.magic = old_magic
     self.assertTrue(d.is_valid())
@@ -551,9 +552,12 @@ class AftlImageHeaderTest(AftltoolTestCase):
     self.test_header_invalid = aftltool.AftlImageHeader()
     self.test_header_invalid.icp_count = -34
 
-    self.test_header_bytes = (b'\x41\x46\x54\x4c\x00\x00\x00\x01'
-                              b'\x00\x00\x00\x01\x00\x00\x00\x12'
-                              b'\x00\x01')
+    self.test_header_bytes = (
+        b'AFTL'                                         # Magic.
+        + struct.pack('!L', avbtool.AVB_VERSION_MAJOR)  # Major version.
+        + struct.pack('!L', avbtool.AVB_VERSION_MINOR)  # Minor version.
+        + b'\x00\x00\x00\x12'                           # Image size.
+        b'\x00\x01')                                    # Number of ICP entries.
 
   def test__init__(self):
     """Tests constructor."""
@@ -572,8 +576,10 @@ class AftlImageHeaderTest(AftltoolTestCase):
     # Calls constructor with data.
     header = aftltool.AftlImageHeader(self.test_header_bytes)
     self.assertEqual(header.magic, b'AFTL')
-    self.assertEqual(header.required_icp_version_major, 1)
-    self.assertEqual(header.required_icp_version_minor, 1)
+    self.assertEqual(header.required_icp_version_major,
+                     avbtool.AVB_VERSION_MAJOR)
+    self.assertEqual(header.required_icp_version_minor,
+                     avbtool.AVB_VERSION_MINOR)
     self.assertEqual(header.aftl_image_size, aftltool.AftlImageHeader.SIZE)
     self.assertTrue(header.icp_count, 1)
     self.assertTrue(header.is_valid())
@@ -842,11 +848,11 @@ class TrillianLogRootDescriptorTest(AftltoolTestCase):
     self.assertEqual(d.version, 1)
     self.assertEqual(d.tree_size, 0)
     self.assertEqual(d.root_hash_size, 0)
-    self.assertEqual(d.root_hash, bytearray())
+    self.assertEqual(d.root_hash, b'')
     self.assertEqual(d.timestamp, 0)
     self.assertEqual(d.revision, 0)
     self.assertEqual(d.metadata_size, 0)
-    self.assertEqual(d.metadata, bytearray())
+    self.assertEqual(d.metadata, b'')
 
     # Calls constructor with log_root w/o metadata
     d = aftltool.TrillianLogRootDescriptor(self.test_log_root_bytes_wo_metadata)
@@ -860,7 +866,7 @@ class TrillianLogRootDescriptorTest(AftltoolTestCase):
     self.assertEqual(d.timestamp, 1576762888554271289)
     self.assertEqual(d.revision, 740)
     self.assertEqual(d.metadata_size, 0)
-    self.assertEqual(d.metadata, bytearray())
+    self.assertEqual(d.metadata, b'')
 
     # Calls constructor with log_root with metadata
     d = aftltool.TrillianLogRootDescriptor(
@@ -933,9 +939,9 @@ class TrillianLogRootDescriptorTest(AftltoolTestCase):
     # Invalid/valid root_hash_size / root_hash combination.
     d = aftltool.TrillianLogRootDescriptor()
     d.root_hash_size = 4
-    d.root_hash = '123'
+    d.root_hash = b'123'
     self.assertFalse(d.is_valid())
-    d.root_hash = '1234'
+    d.root_hash = b'1234'
     self.assertTrue(d.is_valid())
 
     # Invalid timestamp.
@@ -958,9 +964,9 @@ class TrillianLogRootDescriptorTest(AftltoolTestCase):
     # Invalid/valid metadata_size / metadata combination.
     d = aftltool.TrillianLogRootDescriptor()
     d.metadata_size = 4
-    d.metadata = '123'
+    d.metadata = b'123'
     self.assertFalse(d.is_valid())
-    d.metadata = '1234'
+    d.metadata = b'1234'
     self.assertTrue(d.is_valid())
 
   def test_print_desc(self):
