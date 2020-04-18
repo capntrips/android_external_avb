@@ -1,10 +1,6 @@
 {
   "postsubmit": [
     {
-      "name": "avbtool_test",
-      "host": true
-    },
-    {
       "name": "libavb_host_unittest",
       "host": true
     },
