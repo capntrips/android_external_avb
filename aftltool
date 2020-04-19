@@ -561,14 +561,14 @@ class AftlIcpEntry(object):
                        self.log_root_signature,
                        proof_bytes)
 
-  def translate_response(self, transparency_log, afi_response):
+  def translate_response(self, log_url, afi_response):
     """Translates an AddFirmwareInfoResponse object to an AftlIcpEntry.
 
     Arguments:
-      transparency_log: String representing the transparency log URL.
+      log_url: String representing the transparency log URL.
       afi_response: The AddFirmwareResponse object to translate.
     """
-    self.log_url = transparency_log
+    self.log_url = log_url
 
     # Deserializes from AddFirmwareInfoResponse.
     self.leaf_index = afi_response.fw_info_proof.proof.leaf_index
@@ -1075,15 +1075,15 @@ class AftlImage(object):
 class AftlCommunication(object):
   """Class to abstract the communication layer with the transparency log."""
 
-  def __init__(self, transparency_log, timeout):
+  def __init__(self, transparency_log_config, timeout):
     """Initializes the object.
 
     Arguments:
-      transparency_log: String containing the URL of a transparency log server.
+      transparency_log_config: A TransparencyLogConfig instance.
       timeout: Duration in seconds before requests to the AFTL times out. A
         value of 0 or None means there will be no timeout.
     """
-    self.transparency_log = transparency_log
+    self.transparency_log_config = transparency_log_config
     if timeout:
       self.timeout = timeout
     else:
@@ -1134,15 +1134,21 @@ class AftlGrpcCommunication(AftlCommunication):
     # Set up the gRPC channel with the transparency log.
     sys.stdout.write('Preparing to request inclusion proof from {}. This could '
                      'take ~30 seconds for the process to complete.\n'.format(
-                         self.transparency_log))
-    channel = grpc.insecure_channel(self.transparency_log)
+                         self.transparency_log_config.target))
+    channel = grpc.insecure_channel(self.transparency_log_config.target)
     stub = api_pb2_grpc.AFTLogStub(channel)
+
+    metadata = []
+    if self.transparency_log_config.api_key:
+      metadata.append(('x-api-key', self.transparency_log_config.api_key))
 
     # Attempt to transmit to the transparency log.
     sys.stdout.write('ICP is about to be requested from transparency log '
-                     'with domain {}.\n'.format(self.transparency_log))
+                     'with domain {}.\n'.format(
+                         self.transparency_log_config.target))
     try:
-      response = stub.AddFirmwareInfo(request, timeout=self.timeout)
+      response = stub.AddFirmwareInfo(request, timeout=self.timeout,
+                                      metadata=metadata)
     except grpc.RpcError as e:
       raise AftlError('Error: grpc failure ({})'.format(e))
     return response
@@ -1296,14 +1302,14 @@ class Aftl(avbtool.Avb):
     output.write('The inclusion proofs for the image successfully validate.\n')
     return True
 
-  def request_inclusion_proof(self, transparency_log, vbmeta_image,
+  def request_inclusion_proof(self, transparency_log_config, vbmeta_image,
                               version_inc, manufacturer_key_path,
                               signing_helper, signing_helper_with_files,
                               timeout, aftl_comms=None):
     """Packages and sends a request to the specified transparency log.
 
     Arguments:
-      transparency_log: String containing the URL of a transparency log server.
+      transparency_log_config: A TransparencyLogConfig instance.
       vbmeta_image: A bytearray with the VBMeta image.
       version_inc: Subcomponent of the build fingerprint.
       manufacturer_key_path: Path to key used to sign messages sent to the
@@ -1362,19 +1368,18 @@ class Aftl(avbtool.Avb):
 
     # Submit signed FirmwareInfo to the server.
     if not aftl_comms:
-      aftl_comms = AftlGrpcCommunication(transparency_log, timeout)
+      aftl_comms = AftlGrpcCommunication(transparency_log_config, timeout)
     response = aftl_comms.add_firmware_info(request)
 
     # Return an AftlIcpEntry representing this response.
     icp_entry = AftlIcpEntry()
-    icp_entry.translate_response(transparency_log, response)
+    icp_entry.translate_response(transparency_log_config.target, response)
     return icp_entry
 
   def make_icp_from_vbmeta(self, vbmeta_image_path, output,
                            signing_helper, signing_helper_with_files,
-                           version_incremental, transparency_log_servers,
-                           transparency_log_pub_keys, manufacturer_key,
-                           padding_size, timeout):
+                           version_incremental, transparency_log_configs,
+                           manufacturer_key, padding_size, timeout):
     """Generates a vbmeta image with inclusion proof given a vbmeta image.
 
     The AftlImage contains the information required to validate an inclusion
@@ -1399,13 +1404,8 @@ class Aftl(avbtool.Avb):
       signing_helper_with_files: Same as signing_helper but uses files instead.
       version_incremental: A string representing the subcomponent of the
         build fingerprint used to identify the vbmeta in the transparency log.
-      transparency_log_servers: List of strings containing URLs of transparency
-        log servers where inclusion proofs are requested from.
-      transparency_log_pub_keys: List of paths to PEM files containing trusted
-        public keys that correspond with the transparency_logs. There must be
-        the same number of keys as log servers and they must be in the same
-        order, that is, transparency_log_pub_keys[n] corresponds to
-        transparency_log_servers[n].
+      transparency_log_configs: List of TransparencyLogConfig used to request
+        the inclusion proofs.
       manufacturer_key: Path to PEM file containting the key file used to sign
         messages sent to the transparency log servers.
       padding_size: If not 0, pads output so size is a multiple of the number.
@@ -1416,31 +1416,22 @@ class Aftl(avbtool.Avb):
       True if the inclusion proofs could be fetched from the transparency log
       servers and could be successfully validated; otherwise False.
     """
-    # Validates command line parameters.
-    if len(transparency_log_servers) != len(transparency_log_pub_keys):
-      sys.stderr.write('Transparency log count and public key count mismatch: '
-                       '{} servers and {} public keys.\n'.format(
-                           len(transparency_log_servers),
-                           len(transparency_log_pub_keys)))
-      return False
-
     # Retrieves vbmeta structure from given partition image.
     vbmeta_image, footer = self.get_vbmeta_image(vbmeta_image_path)
 
     # Fetches inclusion proofs for vbmeta structure from all transparency logs.
     aftl_image = AftlImage()
-    for host, pub_key in zip(transparency_log_servers,
-                             transparency_log_pub_keys):
+    for log_config in transparency_log_configs:
       try:
-        icp_entry = self.request_inclusion_proof(host, vbmeta_image,
+        icp_entry = self.request_inclusion_proof(log_config, vbmeta_image,
                                                  version_incremental,
                                                  manufacturer_key,
                                                  signing_helper,
                                                  signing_helper_with_files,
                                                  timeout)
-        if not icp_entry.verify_vbmeta_image(vbmeta_image, pub_key):
+        if not icp_entry.verify_vbmeta_image(vbmeta_image, log_config.pub_key):
           sys.stderr.write('The inclusion proof from {} could not be verified.'
-                           '\n'.format(host))
+                           '\n'.format(log_config.target))
         aftl_image.add_icp_entry(icp_entry)
       except AftlError as e:
         # The inclusion proof request failed. Continue and see if others will.
@@ -1448,17 +1439,17 @@ class Aftl(avbtool.Avb):
         continue
 
     # Checks that the resulting AftlImage is sane.
-    if aftl_image.image_header.icp_count != len(transparency_log_pub_keys):
+    if aftl_image.image_header.icp_count != len(transparency_log_configs):
       sys.stderr.write('Valid inclusion proofs could only be retrieved from {} '
                        'out of {} transparency logs.\n'
                        .format(aftl_image.image_header.icp_count,
-                               len(transparency_log_pub_keys)))
+                               len(transparency_log_configs)))
       return False
     if not aftl_image.is_valid():
       sys.stderr.write('Resulting AftlImage structure is malformed.\n')
       return False
-    if not aftl_image.verify_vbmeta_image(vbmeta_image,
-                                          transparency_log_pub_keys):
+    keys = [log.pub_key for log in transparency_log_configs]
+    if not aftl_image.verify_vbmeta_image(vbmeta_image, keys):
       sys.stderr.write('Resulting AftlImage inclusion proofs do not '
                        'validate.\n')
       return False
@@ -1487,18 +1478,16 @@ class Aftl(avbtool.Avb):
     return True
 
   def _load_test_process_function(self, vbmeta_image_path,
-                                  transparency_log_server,
-                                  transparency_log_pub_key, manufacturer_key,
+                                  transparency_log_config,
+                                  manufacturer_key,
                                   process_number, submission_count,
                                   preserve_icp_images, timeout, result_queue):
     """Function to be used by multiprocessing.Process.
 
     Arguments:
       vbmeta_image_path: Path to a vbmeta image file.
-      transparency_log_server: A string in host:port format of transparency log
-        servers where a inclusion proof is requested from.
-      transparency_log_pub_key: Path to PEM file containing trusted
-        public keys that corresponds with the transparency_log_server.
+      transparency_log_config: A TransparencyLogConfig instance used to request
+        an inclusion proof.
       manufacturer_key: Path to PEM file containting the key file used to sign
         messages sent to the transparency log servers.
       process_number: The number of the processes executing the function.
@@ -1524,8 +1513,7 @@ class Aftl(avbtool.Avb):
           signing_helper=None,
           signing_helper_with_files=None,
           version_incremental=version_incremental,
-          transparency_log_servers=[transparency_log_server],
-          transparency_log_pub_keys=[transparency_log_pub_key],
+          transparency_log_configs=[transparency_log_config],
           manufacturer_key=manufacturer_key,
           padding_size=0,
           timeout=timeout)
@@ -1540,8 +1528,8 @@ class Aftl(avbtool.Avb):
       result_queue.put((start_time, end_time, execution_time,
                         version_incremental, result))
 
-  def load_test_aftl(self, vbmeta_image_path, output, transparency_log_server,
-                     transparency_log_pub_key, manufacturer_key,
+  def load_test_aftl(self, vbmeta_image_path, output, transparency_log_config,
+                     manufacturer_key,
                      process_count, submission_count, stats_filename,
                      preserve_icp_images, timeout):
     """Performs multi-threaded load test on a given AFTL and prints stats.
@@ -1549,10 +1537,8 @@ class Aftl(avbtool.Avb):
     Arguments:
       vbmeta_image_path: Path to a vbmeta image file.
       output: File to write the report to.
-      transparency_log_server: A string in host:port format of transparency log
-        servers where a inclusion proof is requested from.
-      transparency_log_pub_key: Path to PEM file containing trusted
-        public keys that corresponds with the transparency_log_server.
+      transparency_log_config: A TransparencyLogConfig used to request an
+        inclusion proof.
       manufacturer_key: Path to PEM file containting the key file used to sign
         messages sent to the transparency log servers.
       process_count: Number of processes used for parallel testing.
@@ -1592,8 +1578,8 @@ class Aftl(avbtool.Avb):
     for i in range(0, process_count):
       p = multiprocessing.Process(
           target=self._load_test_process_function,
-          args=(vbmeta_image_path, transparency_log_server,
-                transparency_log_pub_key, manufacturer_key, i, submission_count,
+          args=(vbmeta_image_path, transparency_log_config,
+                manufacturer_key, i, submission_count,
                 preserve_icp_images, timeout, result_queue))
       p.start()
       processes.add(p)
@@ -1654,6 +1640,54 @@ class Aftl(avbtool.Avb):
     return True
 
 
+class TransparencyLogConfig(object):
+  """Class that gathers the fields representing a transparency log.
+
+  Attributes:
+    target: The hostname and port of the server in hostname:port format.
+    pub_key: A PEM file that contains the public key of the transparency
+      log server.
+    api_key: The API key to use to interact with the transparency log
+      server.
+  """
+
+  @staticmethod
+  def from_argument(arg):
+    """Build an object from a command line argument string.
+
+    Arguments:
+      arg: The transparency log as passed in the command line argument.
+        It must be in the format: host:port,key_file[,api_key].
+
+    Returns:
+      The TransparencyLogConfig instance.
+
+    Raises:
+      AftlError: If the format of arg is invalid.
+    """
+    api_key = None
+    try:
+      target, pub_key, *rest = arg.split(",", maxsplit=2)
+    except ValueError as e:
+      raise AftlError("Incorrect format for transparency log config: "
+                      "{}.".format(e))
+    if not target:
+      raise AftlError("Incorrect format for transparency log config: "
+                      "host:port cannot be empty.")
+    if not pub_key:
+      raise AftlError("Incorrect format for transparency log config: "
+                      "publickey_file cannot be empty.")
+    if rest:
+      api_key = rest[0]
+    return TransparencyLogConfig(target, pub_key, api_key)
+
+  def __init__(self, target, pub_key, api_key=None):
+    """Initializes a new TransparencyLogConfig object."""
+    self.target = target
+    self.pub_key = pub_key
+    self.api_key = api_key
+
+
 class AftlTool(avbtool.AvbTool):
   """Object for aftltool command-line tool."""
 
@@ -1671,7 +1705,6 @@ class AftlTool(avbtool.AvbTool):
                                           args.signing_helper_with_files,
                                           args.version_incremental,
                                           args.transparency_log_servers,
-                                          args.transparency_log_pub_keys,
                                           args.manufacturer_key,
                                           args.padding_size,
                                           args.timeout)
@@ -1691,7 +1724,6 @@ class AftlTool(avbtool.AvbTool):
     return self.aftl.load_test_aftl(args.vbmeta_image_path,
                                     args.output,
                                     args.transparency_log_server,
-                                    args.transparency_log_pub_key,
                                     args.manufacturer_key,
                                     args.processes,
                                     args.submissions,
@@ -1728,21 +1760,9 @@ class AftlTool(avbtool.AvbTool):
                             required=True)
     sub_parser.add_argument('--transparency_log_servers',
                             help='List of transparency log servers in '
-                            'host:port format. This must not be None and must '
-                            'be the same size as transparency_log_pub_keys. '
-                            'Also, transparency_log_servers[n] must correspond '
-                            'to transparency_log_pub_keys[n] for all values n.',
-                            nargs='*',
-                            required=True)
-    sub_parser.add_argument('--transparency_log_pub_keys',
-                            help='Paths to PEM files containing transparency '
-                            'log server key(s). This must not be None and must '
-                            'be the same size as transparency_log_servers. '
-                            'Also, transparency_log_pub_keys[n] must '
-                            'correspond to transparency_log_servers[n] for all '
-                            'values n.',
-                            nargs='*',
-                            required=True)
+                            'host:port,publickey_file[,api_key] format. The '
+                            'publickey_file must be in the PEM format.',
+                            nargs='+', type=TransparencyLogConfig.from_argument)
     sub_parser.add_argument('--padding_size',
                             metavar='NUMBER',
                             help='If non-zero, pads output with NUL bytes so '
@@ -1810,13 +1830,11 @@ class AftlTool(avbtool.AvbTool):
                             'manufacturer key for use with the log.',
                             required=True)
     sub_parser.add_argument('--transparency_log_server',
-                            help='Transparency log servers to test against in '
-                            'host:port format.',
-                            required=True)
-    sub_parser.add_argument('--transparency_log_pub_key',
-                            help='Paths to PEM file containing transparency '
-                            'log server key.',
-                            required=True)
+                            help='Transparency log server to test against in '
+                            'host:port,publickey_file[,api_key] format. The '
+                            'publickey_file must be in the PEM format.',
+                            required=True,
+                            type=TransparencyLogConfig.from_argument)
     sub_parser.add_argument('--processes',
                             help='Number of parallel processes to use for '
                             'testing (default: 1).',
