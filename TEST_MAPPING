@@ -1,11 +1,13 @@
 {
+  "presubmit": [
+    {
+      "name": "aftltool_test",
+      "host": true
+    }
+  ],
   "postsubmit": [
     {
       "name": "libavb_host_unittest",
-      "host": true
-    },
-    {
-      "name": "aftltool_test",
       "host": true
     }
   ]
