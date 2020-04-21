@@ -26,7 +26,6 @@
 
 import argparse
 import base64
-import binascii
 import hashlib
 import json
 import multiprocessing
@@ -625,7 +624,7 @@ class AftlIcpEntry(object):
     for i, proof_hash in enumerate(self.proofs):
       if i != 0:
         o.write(' ' * 29)
-      o.write('{}\n'.format(binascii.hexlify(proof_hash)))
+      o.write('{}\n'.format(proof_hash.hex()))
     self.log_root_descriptor.print_desc(o)
     self.fw_info_leaf.print_desc(o)
 
@@ -786,13 +785,12 @@ class TrillianLogRootDescriptor(object):
     o.write(fmt.format(i, 'Tree size:', self.tree_size))
     o.write(fmt.format(i, 'Root hash size:', self.root_hash_size))
     if self.root_hash_size > 0:
-      o.write(fmt.format(i, 'Root hash:', binascii.hexlify(self.root_hash)))
+      o.write(fmt.format(i, 'Root hash:', self.root_hash.hex()))
       o.write(fmt.format(i, 'Timestamp (ns):', self.timestamp))
     o.write(fmt.format(i, 'Revision:', self.revision))
     o.write(fmt.format(i, 'Metadata size:', self.metadata_size))
     if self.metadata_size > 0:
-      o.write(fmt.format(i, 'Metadata:',
-                         binascii.hexlify(self.metadata).decode('ascii')))
+      o.write(fmt.format(i, 'Metadata:', self.metadata.hex()))
 
 
 class FirmwareInfoLeaf(object):
@@ -923,14 +921,14 @@ class FirmwareInfoLeaf(object):
     i = ' ' * 6
     fmt = '{}{:23}{}\n'
     if self.vbmeta_hash:
-      o.write(fmt.format(i, 'VBMeta hash:', binascii.hexlify(self.vbmeta_hash)))
+      o.write(fmt.format(i, 'VBMeta hash:', self.vbmeta_hash.hex()))
     if self.version_incremental:
       o.write(fmt.format(i, 'Version incremental:', self.version_incremental))
     if self.platform_key:
       o.write(fmt.format(i, 'Platform key:', self.platform_key))
     if self.manufacturer_key_hash:
       o.write(fmt.format(i, 'Manufacturer key hash:',
-                         binascii.hexlify(self.manufacturer_key_hash)))
+                         self.manufacturer_key_hash.hex()))
     if self.description:
       o.write(fmt.format(i, 'Description:', self.description))
 
