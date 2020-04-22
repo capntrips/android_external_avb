@@ -90,18 +90,27 @@ python_binary_host {
     },
 }
 
-genrule {
-  name: "aftltool_py",
-  srcs: ["aftltool",],
-  out: ["aftltool.py"],
-  cmd: "cp $(in) $(out)",
-}
-
 python_library_host {
     name: "aftl_proto",
     srcs: [
-        "proto/**/*.py",
+        "proto/api.proto",
+        "proto/aftl.proto",
+        "proto/aftl_google/rpc/status.proto",
+        "proto/aftl_google/api/annotations.proto",
+        "proto/aftl_google/api/http.proto",
+        "proto/crypto/sigpb/sigpb.proto",
+        "proto/crypto/keyspb/keyspb.proto",
+        "proto/trillian.proto",
     ],
+    proto: {
+        include_dirs: [
+            "external/protobuf/src",
+        ],
+        local_include_dirs: [
+            "proto",
+        ],
+        canonical_path_from_root: false,
+    },
     version: {
         py2: {
             enabled: false,
@@ -115,14 +124,13 @@ python_library_host {
 python_binary_host {
     name: "aftltool",
     srcs: [
-        ":aftltool_py",
+        "aftltool.py",
         ":avbtool_py",
     ],
     libs: [
         "aftl_proto",
     ],
     main: "aftltool.py",
-    required: ["fec"],
     version: {
         py2: {
             enabled: false,
@@ -137,9 +145,9 @@ python_test_host {
     name: "aftltool_test",
     main: "aftltool_test.py",
     srcs: [
-        ":aftltool_py",
-        ":avbtool_py",
+        "aftltool.py",
         "aftltool_test.py",
+        ":avbtool_py",
     ],
     libs: [
         "aftl_proto",
