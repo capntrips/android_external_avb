@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright 2016, The Android Open Source Project
 #
@@ -23,8 +23,6 @@
 # SOFTWARE.
 #
 """Command-line tool for working with Android Verified Boot images."""
-
-from __future__ import print_function
 
 import argparse
 import binascii
@@ -1421,10 +1419,8 @@ class AvbHashtreeDescriptor(AvbDescriptor):
     o.write('      FEC size:              {} bytes\n'.format(self.fec_size))
     o.write('      Hash Algorithm:        {}\n'.format(self.hash_algorithm))
     o.write('      Partition Name:        {}\n'.format(self.partition_name))
-    o.write('      Salt:                  {}\n'.format(
-        binascii.hexlify(self.salt).decode('ascii')))
-    o.write('      Root Digest:           {}\n'.format(
-        binascii.hexlify(self.root_digest).decode('ascii')))
+    o.write('      Salt:                  {}\n'.format(self.salt.hex()))
+    o.write('      Root Digest:           {}\n'.format(self.root_digest.hex()))
     o.write('      Flags:                 {}\n'.format(self.flags))
 
   def encode(self):
@@ -1594,10 +1590,8 @@ class AvbHashDescriptor(AvbDescriptor):
     o.write('      Image Size:            {} bytes\n'.format(self.image_size))
     o.write('      Hash Algorithm:        {}\n'.format(self.hash_algorithm))
     o.write('      Partition Name:        {}\n'.format(self.partition_name))
-    o.write('      Salt:                  {}\n'.format(
-        binascii.hexlify(self.salt).decode('ascii')))
-    o.write('      Digest:                {}\n'.format(
-        binascii.hexlify(self.digest).decode('ascii')))
+    o.write('      Salt:                  {}\n'.format(self.salt.hex()))
+    o.write('      Digest:                {}\n'.format(self.digest.hex()))
     o.write('      Flags:                 {}\n'.format(self.flags))
 
   def encode(self):
@@ -2564,14 +2558,14 @@ class Avb(object):
 
     for desc in descriptors:
       if isinstance(desc, AvbHashDescriptor):
-        digest = binascii.hexlify(desc.digest).decode('ascii')
+        digest = desc.digest.hex()
         if json_partitions is not None:
           json_partitions.append({'name': desc.partition_name,
                                   'digest': digest})
         else:
           output.write('{}: {}\n'.format(desc.partition_name, digest))
       elif isinstance(desc, AvbHashtreeDescriptor):
-        digest = binascii.hexlify(desc.root_digest).decode('ascii')
+        digest = desc.root_digest.hex()
         if json_partitions is not None:
           json_partitions.append({'name': desc.partition_name,
                                   'digest': digest})
@@ -2625,7 +2619,7 @@ class Avb(object):
         hasher.update(ch_vbmeta_blob)
 
     digest = hasher.digest()
-    output.write('{}\n'.format(binascii.hexlify(digest).decode('ascii')))
+    output.write('{}\n'.format(digest.hex()))
 
   def calculate_kernel_cmdline(self, image_filename, hashtree_disabled, output):
     """Implements the 'calculate_kernel_cmdline' command.
@@ -2759,19 +2753,18 @@ class Avb(object):
 
     """
     c = 'dm="1 vroot none ro 1,'
-    c += '0'  # start
-    c += ' {}'.format((ht.image_size // 512))  # size (# sectors)
-    c += ' verity {}'.format(ht.dm_verity_version)  # type and version
-    c += ' PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'  # data_dev
-    c += ' PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'  # hash_dev
-    c += ' {}'.format(ht.data_block_size)  # data_block
-    c += ' {}'.format(ht.hash_block_size)  # hash_block
+    c += '0'                                                # start
+    c += ' {}'.format((ht.image_size // 512))               # size (# sectors)
+    c += ' verity {}'.format(ht.dm_verity_version)          # type and version
+    c += ' PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'             # data_dev
+    c += ' PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'             # hash_dev
+    c += ' {}'.format(ht.data_block_size)                   # data_block
+    c += ' {}'.format(ht.hash_block_size)                   # hash_block
     c += ' {}'.format(ht.image_size // ht.data_block_size)  # #blocks
     c += ' {}'.format(ht.image_size // ht.data_block_size)  # hash_offset
-    c += ' {}'.format(ht.hash_algorithm)  # hash_alg
-    c += ' {}'.format(
-        binascii.hexlify(ht.root_digest).decode('ascii'))  # root_digest
-    c += ' {}'.format(binascii.hexlify(ht.salt).decode('ascii'))  # salt
+    c += ' {}'.format(ht.hash_algorithm)                    # hash_alg
+    c += ' {}'.format(ht.root_digest.hex())                 # root_digest
+    c += ' {}'.format(ht.salt.hex())                        # salt
     if ht.fec_num_roots > 0:
       c += ' 10'  # number of optional args
       c += ' $(ANDROID_VERITY_MODE)'
