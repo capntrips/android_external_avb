@@ -3610,7 +3610,7 @@ class Avb(object):
         # size as the hash size. Don't populate a random salt if this
         # descriptor is being created to use a persistent digest on device.
         hash_size = digest_size
-        with open('/dev/urandom') as f:
+        with open('/dev/urandom', 'rb') as f:
           salt = f.read(hash_size)
       else:
         salt = b''
