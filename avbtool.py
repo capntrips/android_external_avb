@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright 2016, The Android Open Source Project
 #
@@ -23,8 +23,6 @@
 # SOFTWARE.
 #
 """Command-line tool for working with Android Verified Boot images."""
-
-from __future__ import print_function
 
 import argparse
 import binascii
@@ -3610,7 +3608,7 @@ class Avb(object):
         # size as the hash size. Don't populate a random salt if this
         # descriptor is being created to use a persistent digest on device.
         hash_size = digest_size
-        with open('/dev/urandom') as f:
+        with open('/dev/urandom', 'rb') as f:
           salt = f.read(hash_size)
       else:
         salt = b''
