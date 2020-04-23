@@ -27,12 +27,3 @@ follows:
    From https://github.com/google/trillian
    Dependency of aftl.proto
    For aftl.proto, contains message definitions for SignedLogRoot.
-* aftl_google/api/annotations.proto
-   From https://github.com/googleapis/googleapis
-   Used to get access to google.api.http options.
-* aftl_google/api/http.proto
-   From https://github.com/googleapis/googleapis
-   Dependency of aftl_google/api/annotations.proto
-   Contains the HttpRule message that extends MethodOptions.
-* aftl_google/rpc/status.proto
-   From https://github.com/googleapis/googleapis

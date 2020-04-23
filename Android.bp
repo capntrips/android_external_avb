@@ -94,9 +94,6 @@ python_library_host {
     srcs: [
         "proto/api.proto",
         "proto/aftl.proto",
-        "proto/aftl_google/rpc/status.proto",
-        "proto/aftl_google/api/annotations.proto",
-        "proto/aftl_google/api/http.proto",
         "proto/crypto/sigpb/sigpb.proto",
         "proto/crypto/keyspb/keyspb.proto",
         "proto/trillian.proto",
