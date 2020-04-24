@@ -3141,7 +3141,7 @@ class Avb(object):
 
       # Calculate the signature.
       rsa_key = RSAPublicKey(key_path)
-      data_to_sign = header_data_blob + aux_data_blob
+      data_to_sign = header_data_blob + bytes(aux_data_blob)
       binary_signature = rsa_key.sign(algorithm_name, data_to_sign,
                                       signing_helper, signing_helper_with_files)
 
