@@ -1491,8 +1491,9 @@ class Aftl(avbtool.Avb):
       process_number: The number of the processes executing the function.
       submission_count: Number of total submissions to perform per
         process_count.
-      preserve_icp_images: Boolean to indicate if the generated vbmeta
-        image files with inclusion proofs should preserved.
+      preserve_icp_images: Boolean to indicate if the generated vbmeta image
+        files with inclusion proofs should be preserved in the temporary
+        directory.
       timeout: Duration in seconds before requests to the AFTL times out. A
         value of 0 or None means there will be no timeout.
       result_queue: Multiprocessing.Queue object for posting execution results.
@@ -1500,7 +1501,8 @@ class Aftl(avbtool.Avb):
     for count in range(0, submission_count):
       version_incremental = 'aftl_load_testing_{}_{}'.format(process_number,
                                                              count)
-      output_file = '{}_icp.img'.format(version_incremental)
+      output_file = os.path.join(tempfile.gettempdir(),
+                                 '{}_icp.img'.format(version_incremental))
       output = open(output_file, 'wb')
 
       # Instrumented section.
@@ -1543,6 +1545,7 @@ class Aftl(avbtool.Avb):
       submission_count: Number of total submissions to perform per
         process_count.
       stats_filename: Path to the stats file to write the raw execution data to.
+        If None, it will be written to the temp directory.
       preserve_icp_images: Boolean to indicate if the generated vbmeta
         image files with inclusion proofs should preserved.
       timeout: Duration in seconds before requests to the AFTL times out. A
@@ -1557,11 +1560,13 @@ class Aftl(avbtool.Avb):
       return False
 
     if not stats_filename:
-      stats_filename = 'load_test_p{}_s{}.csv'.format(process_count,
-                                                      submission_count)
+      stats_filename = os.path.join(
+          tempfile.gettempdir(),
+          'load_test_p{}_s{}.csv'.format(process_count, submission_count))
+
     stats_file = None
     try:
-      stats_file = open(stats_filename, 'w')
+      stats_file = open(stats_filename, 'wt')
       stats_file.write('start_time,end_time,execution_time,version_incremental,'
                        'result\n')
     except IOError as e:
