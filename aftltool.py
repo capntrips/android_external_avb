@@ -1661,20 +1661,22 @@ class TransparencyLogConfig(object):
       The TransparencyLogConfig instance.
 
     Raises:
-      AftlError: If the format of arg is invalid.
+      argparse.ArgumentTypeError: If the format of arg is invalid.
     """
     api_key = None
     try:
       target, pub_key, *rest = arg.split(",", maxsplit=2)
-    except ValueError as e:
-      raise AftlError("Incorrect format for transparency log config: "
-                      "{}.".format(e))
+    except ValueError:
+      raise argparse.ArgumentTypeError("incorrect format for transparency log "
+                                       "server, expected "
+                                       "host:port,publickey_file.")
     if not target:
-      raise AftlError("Incorrect format for transparency log config: "
-                      "host:port cannot be empty.")
+      raise argparse.ArgumentTypeError("incorrect format for transparency log "
+                                       "server: host:port cannot be empty.")
     if not pub_key:
-      raise AftlError("Incorrect format for transparency log config: "
-                      "publickey_file cannot be empty.")
+      raise argparse.ArgumentTypeError("incorrect format for transparency log "
+                                       "server: publickey_file cannot be "
+                                       "empty.")
     if rest:
       api_key = rest[0]
     return TransparencyLogConfig(target, pub_key, api_key)
@@ -1871,7 +1873,7 @@ class AftlTool(avbtool.AvbTool):
       print('aftltool: error: too few arguments')
       sys.exit(2)
     except AftlError as e:
-      # Signals to calling tools that an unhandled exeception occured.
+      # Signals to calling tools that an unhandled exception occured.
       sys.stderr.write('Unhandled AftlError occured: {}\n'.format(e))
       sys.exit(2)
 
