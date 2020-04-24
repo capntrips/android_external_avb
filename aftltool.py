@@ -48,7 +48,7 @@ sys.path.append(os.path.join(EXEC_PATH, 'proto'))
 import avbtool
 import aftl_pb2
 import api_pb2
-from crypto import sigpb
+from crypto.sigpb import sigpb_pb2
 # pylint: enable=wrong-import-position,import-error
 
 
@@ -1354,7 +1354,7 @@ class Aftl(avbtool.Avb):
     except avbtool.AvbError as e:
       raise AftlError('Failed to sign FirmwareInfo with '
                       '--manufacturer_key: {}'.format(e))
-    fw_info_sig = sigpb.sigpb_pb2.DigitallySigned(
+    fw_info_sig = sigpb_pb2.DigitallySigned(
         hash_algorithm='SHA256',
         signature_algorithm='RSA',
         signature=signed_fw_info)
@@ -1559,6 +1559,7 @@ class Aftl(avbtool.Avb):
     if not stats_filename:
       stats_filename = 'load_test_p{}_s{}.csv'.format(process_count,
                                                       submission_count)
+    stats_file = None
     try:
       stats_file = open(stats_filename, 'w')
       stats_file.write('start_time,end_time,execution_time,version_incremental,'
