@@ -48,7 +48,7 @@ sys.path.append(os.path.join(EXEC_PATH, 'proto'))
 import avbtool
 import aftl_pb2
 import api_pb2
-from crypto import sigpb
+from crypto.sigpb import sigpb_pb2
 # pylint: enable=wrong-import-position,import-error
 
 
@@ -1354,7 +1354,7 @@ class Aftl(avbtool.Avb):
     except avbtool.AvbError as e:
       raise AftlError('Failed to sign FirmwareInfo with '
                       '--manufacturer_key: {}'.format(e))
-    fw_info_sig = sigpb.sigpb_pb2.DigitallySigned(
+    fw_info_sig = sigpb_pb2.DigitallySigned(
         hash_algorithm='SHA256',
         signature_algorithm='RSA',
         signature=signed_fw_info)
@@ -1491,8 +1491,9 @@ class Aftl(avbtool.Avb):
       process_number: The number of the processes executing the function.
       submission_count: Number of total submissions to perform per
         process_count.
-      preserve_icp_images: Boolean to indicate if the generated vbmeta
-        image files with inclusion proofs should preserved.
+      preserve_icp_images: Boolean to indicate if the generated vbmeta image
+        files with inclusion proofs should be preserved in the temporary
+        directory.
       timeout: Duration in seconds before requests to the AFTL times out. A
         value of 0 or None means there will be no timeout.
       result_queue: Multiprocessing.Queue object for posting execution results.
@@ -1500,7 +1501,8 @@ class Aftl(avbtool.Avb):
     for count in range(0, submission_count):
       version_incremental = 'aftl_load_testing_{}_{}'.format(process_number,
                                                              count)
-      output_file = '{}_icp.img'.format(version_incremental)
+      output_file = os.path.join(tempfile.gettempdir(),
+                                 '{}_icp.img'.format(version_incremental))
       output = open(output_file, 'wb')
 
       # Instrumented section.
@@ -1543,6 +1545,7 @@ class Aftl(avbtool.Avb):
       submission_count: Number of total submissions to perform per
         process_count.
       stats_filename: Path to the stats file to write the raw execution data to.
+        If None, it will be written to the temp directory.
       preserve_icp_images: Boolean to indicate if the generated vbmeta
         image files with inclusion proofs should preserved.
       timeout: Duration in seconds before requests to the AFTL times out. A
@@ -1557,10 +1560,13 @@ class Aftl(avbtool.Avb):
       return False
 
     if not stats_filename:
-      stats_filename = 'load_test_p{}_s{}.csv'.format(process_count,
-                                                      submission_count)
+      stats_filename = os.path.join(
+          tempfile.gettempdir(),
+          'load_test_p{}_s{}.csv'.format(process_count, submission_count))
+
+    stats_file = None
     try:
-      stats_file = open(stats_filename, 'w')
+      stats_file = open(stats_filename, 'wt')
       stats_file.write('start_time,end_time,execution_time,version_incremental,'
                        'result\n')
     except IOError as e:
@@ -1661,20 +1667,22 @@ class TransparencyLogConfig(object):
       The TransparencyLogConfig instance.
 
     Raises:
-      AftlError: If the format of arg is invalid.
+      argparse.ArgumentTypeError: If the format of arg is invalid.
     """
     api_key = None
     try:
       target, pub_key, *rest = arg.split(",", maxsplit=2)
-    except ValueError as e:
-      raise AftlError("Incorrect format for transparency log config: "
-                      "{}.".format(e))
+    except ValueError:
+      raise argparse.ArgumentTypeError("incorrect format for transparency log "
+                                       "server, expected "
+                                       "host:port,publickey_file.")
     if not target:
-      raise AftlError("Incorrect format for transparency log config: "
-                      "host:port cannot be empty.")
+      raise argparse.ArgumentTypeError("incorrect format for transparency log "
+                                       "server: host:port cannot be empty.")
     if not pub_key:
-      raise AftlError("Incorrect format for transparency log config: "
-                      "publickey_file cannot be empty.")
+      raise argparse.ArgumentTypeError("incorrect format for transparency log "
+                                       "server: publickey_file cannot be "
+                                       "empty.")
     if rest:
       api_key = rest[0]
     return TransparencyLogConfig(target, pub_key, api_key)
@@ -1871,7 +1879,7 @@ class AftlTool(avbtool.AvbTool):
       print('aftltool: error: too few arguments')
       sys.exit(2)
     except AftlError as e:
-      # Signals to calling tools that an unhandled exeception occured.
+      # Signals to calling tools that an unhandled exception occured.
       sys.stderr.write('Unhandled AftlError occured: {}\n'.format(e))
       sys.exit(2)
 
