@@ -732,11 +732,12 @@ class ImageHandler(object):
   NUM_CHUNKS_AND_BLOCKS_FORMAT = '<II'
   NUM_CHUNKS_AND_BLOCKS_OFFSET = 16
 
-  def __init__(self, image_filename):
+  def __init__(self, image_filename, read_only=False):
     """Initializes an image handler.
 
     Arguments:
       image_filename: The name of the file to operate on.
+      read_only: True if file is only opened for read-only operations.
 
     Raises:
       ValueError: If data in the file is invalid.
@@ -745,6 +746,7 @@ class ImageHandler(object):
     self._num_total_blocks = 0
     self._num_total_chunks = 0
     self._file_pos = 0
+    self._read_only = read_only
     self._read_header()
 
   def _read_header(self):
@@ -759,7 +761,10 @@ class ImageHandler(object):
     self.is_sparse = False
     self.block_size = 4096
     self._file_pos = 0
-    self._image = open(self.filename, 'r+b')
+    if self._read_only:
+      self._image = open(self.filename, 'rb')
+    else:
+      self._image = open(self.filename, 'r+b')
     self._image.seek(0, os.SEEK_END)
     self.image_size = self._image.tell()
 
@@ -885,8 +890,14 @@ class ImageHandler(object):
 
     Arguments:
       num_bytes: Size in number of bytes of the DONT_CARE chunk.
+
+    Raises
+      OSError: If ImageHandler was initialized in read-only mode.
     """
     assert num_bytes % self.block_size == 0
+
+    if self._read_only:
+      raise OSError('ImageHandler is in read-only mode.')
 
     if not self.is_sparse:
       self._image.seek(0, os.SEEK_END)
@@ -916,8 +927,14 @@ class ImageHandler(object):
 
     Arguments:
       data: Data to append as bytes.
+
+    Raises
+      OSError: If ImageHandler was initialized in read-only mode.
     """
     assert len(data) % self.block_size == 0
+
+    if self._read_only:
+      raise OSError('ImageHandler is in read-only mode.')
 
     if not self.is_sparse:
       self._image.seek(0, os.SEEK_END)
@@ -947,10 +964,16 @@ class ImageHandler(object):
     Arguments:
       fill_data: Fill data to append - must be four bytes.
       size: Number of chunk - must be a multiple of four and the block size.
+
+    Raises
+      OSError: If ImageHandler was initialized in read-only mode.
     """
     assert len(fill_data) == 4
     assert size % 4 == 0
     assert size % self.block_size == 0
+
+    if self._read_only:
+      raise OSError('ImageHandler is in read-only mode.')
 
     if not self.is_sparse:
       self._image.seek(0, os.SEEK_END)
@@ -1051,7 +1074,11 @@ class ImageHandler(object):
 
     Raises:
       ValueError: If desired size isn't a multiple of the block size.
+      OSError: If ImageHandler was initialized in read-only mode.
     """
+    if self._read_only:
+      raise OSError('ImageHandler is in read-only mode.')
+
     if not self.is_sparse:
       self._image.truncate(size)
       self._read_header()
@@ -1467,7 +1494,7 @@ class AvbHashtreeDescriptor(AvbDescriptor):
       image = image_containing_descriptor
     else:
       image_filename = os.path.join(image_dir, self.partition_name + image_ext)
-      image = ImageHandler(image_filename)
+      image = ImageHandler(image_filename, read_only=True)
     # Generate the hashtree and checks that it matches what's in the file.
     digest_size = len(hashlib.new(self.hash_algorithm).digest())
     digest_padding = round_to_pow2(digest_size) - digest_size
@@ -1635,7 +1662,7 @@ class AvbHashDescriptor(AvbDescriptor):
       image = image_containing_descriptor
     else:
       image_filename = os.path.join(image_dir, self.partition_name + image_ext)
-      image = ImageHandler(image_filename)
+      image = ImageHandler(image_filename, read_only=True)
     data = image.read(self.image_size)
     ha = hashlib.new(self.hash_algorithm)
     ha.update(self.salt)
@@ -2169,7 +2196,7 @@ class Avb(object):
     Raises:
       AvbError: If there's no footer in the image.
     """
-    image = ImageHandler(image_filename)
+    image = ImageHandler(image_filename, read_only=True)
     (footer, _, _, _) = self._parse_image(image)
     if not footer:
       raise AvbError('Given image does not have a footer.')
@@ -2365,7 +2392,7 @@ class Avb(object):
       image_filename: Image file to get information from (file object).
       output: Output file to write human-readable information to (file object).
     """
-    image = ImageHandler(image_filename)
+    image = ImageHandler(image_filename, read_only=True)
     o = output
     (footer, header, descriptors, image_size) = self._parse_image(image)
 
@@ -2460,7 +2487,7 @@ class Avb(object):
       print('Verifying image {} using embedded public key'.format(
           image_filename))
 
-    image = ImageHandler(image_filename)
+    image = ImageHandler(image_filename, read_only=True)
     (footer, header, descriptors, _) = self._parse_image(image)
     offset = 0
     if footer:
@@ -2553,7 +2580,7 @@ class Avb(object):
     Raises:
       AvbError: If getting the partition digests from the image fails.
     """
-    image = ImageHandler(image_filename)
+    image = ImageHandler(image_filename, read_only=True)
     (_, _, descriptors, _) = self._parse_image(image)
 
     for desc in descriptors:
@@ -2590,7 +2617,7 @@ class Avb(object):
     image_dir = os.path.dirname(image_filename)
     image_ext = os.path.splitext(image_filename)[1]
 
-    image = ImageHandler(image_filename)
+    image = ImageHandler(image_filename, read_only=True)
     (footer, header, descriptors, _) = self._parse_image(image)
     offset = 0
     if footer:
@@ -2607,7 +2634,7 @@ class Avb(object):
       if isinstance(desc, AvbChainPartitionDescriptor):
         ch_image_filename = os.path.join(image_dir,
                                          desc.partition_name + image_ext)
-        ch_image = ImageHandler(ch_image_filename)
+        ch_image = ImageHandler(ch_image_filename, read_only=True)
         (ch_footer, ch_header, _, _) = self._parse_image(ch_image)
         ch_offset = 0
         ch_size = (ch_header.SIZE + ch_header.authentication_data_block_size +
@@ -2630,7 +2657,7 @@ class Avb(object):
       output: Output file to write human-readable information to (file object).
     """
 
-    image = ImageHandler(image_filename)
+    image = ImageHandler(image_filename, read_only=True)
     _, _, descriptors, _ = self._parse_image(image)
 
     image_dir = os.path.dirname(image_filename)
@@ -2641,7 +2668,7 @@ class Avb(object):
       if isinstance(desc, AvbChainPartitionDescriptor):
         ch_image_filename = os.path.join(image_dir,
                                          desc.partition_name + image_ext)
-        ch_image = ImageHandler(ch_image_filename)
+        ch_image = ImageHandler(ch_image_filename, read_only=True)
         _, _, ch_descriptors, _ = self._parse_image(ch_image)
         for ch_desc in ch_descriptors:
           if isinstance(ch_desc, AvbKernelCmdlineDescriptor):
@@ -2871,7 +2898,8 @@ class Avb(object):
       # Use the bump logic in AvbVBMetaHeader to calculate the max required
       # version of all included descriptors.
       for image in include_descriptors_from_image:
-        (_, image_header, _, _) = self._parse_image(ImageHandler(image.name))
+        (_, image_header, _, _) = self._parse_image(ImageHandler(
+            image.name, read_only=True))
         tmp_header.bump_required_libavb_version_minor(
             image_header.required_libavb_version_minor)
 
