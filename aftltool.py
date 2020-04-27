@@ -1169,7 +1169,7 @@ class Aftl(avbtool.Avb):
     """
     # Reads and parses the vbmeta image.
     try:
-      image = avbtool.ImageHandler(image_filename)
+      image = avbtool.ImageHandler(image_filename, read_only=True)
     except (IOError, ValueError) as e:
       sys.stderr.write('The image does not contain a valid VBMeta structure: '
                        '{}.\n'.format(e))
@@ -1212,7 +1212,7 @@ class Aftl(avbtool.Avb):
       return None
 
     try:
-      image = avbtool.ImageHandler(image_filename)
+      image = avbtool.ImageHandler(image_filename, read_only=True)
     except ValueError as e:
       sys.stderr.write('The image does not contain a valid VBMeta structure: '
                        '{}.\n'.format(e))
