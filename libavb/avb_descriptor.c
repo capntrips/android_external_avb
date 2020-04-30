@@ -88,6 +88,10 @@ bool avb_descriptor_foreach(const uint8_t* image_data,
   }
 
   for (p = desc_start; p < desc_end;) {
+    if (p + sizeof(AvbDescriptor) > desc_end) {
+      avb_error("Invalid descriptor length.\n");
+      goto out;
+    }
     const AvbDescriptor* dh = (const AvbDescriptor*)p;
     avb_assert_aligned(dh);
     uint64_t nb_following = avb_be64toh(dh->num_bytes_following);
