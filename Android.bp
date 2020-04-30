@@ -85,6 +85,7 @@ python_binary_host {
         },
         py3: {
             enabled: true,
+            embedded_launcher: true,
         },
     },
 }
