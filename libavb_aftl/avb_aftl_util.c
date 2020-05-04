@@ -624,27 +624,15 @@ static bool parse_firmware_info(AftlIcpEntry* icp_entry, uint8_t** aftl_blob) {
    The blob is expected to be pointing to the beginning of a
    serialized AftlIcpEntry structure. */
 AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size) {
-  AftlIcpEntry *icp_entry, *tmp_icp_entry;
-  uint32_t proof_size;
+  AftlIcpEntry* icp_entry;
   uint64_t parsed_size;
 
-  /* Make a temp AftlIcpEntry to get the inclusion proof size
-     for memory allocation purposes.*/
-  tmp_icp_entry = (AftlIcpEntry*)*aftl_blob;
-  proof_size = avb_be32toh(tmp_icp_entry->inc_proof_size);
-
-  /* Ensure the calculated size is sane. */
-  if (proof_size > AVB_AFTL_MAX_PROOF_SIZE) {
-    avb_error("Invalid inclusion proof size.\n");
-    return NULL;
-  }
-
-  if (*remaining_size < proof_size + AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE) {
+  if (*remaining_size < AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE) {
     avb_error("Invalid AftlImage\n");
     return NULL;
   }
 
-  icp_entry = (AftlIcpEntry*)avb_calloc(proof_size + sizeof(AftlIcpEntry));
+  icp_entry = (AftlIcpEntry*)avb_calloc(sizeof(AftlIcpEntry));
   if (!icp_entry) {
     avb_error("Failure allocating AftlIcpEntry\n");
     return NULL;
@@ -718,8 +706,9 @@ AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size) {
              *aftl_blob,
              avb_aftl_member_size(AftlIcpEntry, inc_proof_size));
   icp_entry->inc_proof_size = avb_be32toh(icp_entry->inc_proof_size);
-  if (icp_entry->inc_proof_size !=
-      icp_entry->proof_hash_count * AVB_AFTL_HASH_SIZE) {
+  if ((icp_entry->inc_proof_size !=
+       icp_entry->proof_hash_count * AVB_AFTL_HASH_SIZE) ||
+      (icp_entry->inc_proof_size > AVB_AFTL_MAX_PROOF_SIZE)) {
     avb_error("Invalid inclusion proof size.\n");
     avb_free(icp_entry);
     return NULL;
@@ -808,6 +797,11 @@ AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size) {
     return NULL;
   }
 
+  icp_entry->proofs = avb_calloc(icp_entry->inc_proof_size);
+  if (!icp_entry->proofs) {
+    free_aftl_icp_entry(icp_entry);
+    return NULL;
+  }
   /* Finally, copy the proof hash data from the blob to the AftlImage. */
   avb_memcpy(icp_entry->proofs, *aftl_blob, icp_entry->inc_proof_size);
   *aftl_blob += icp_entry->inc_proof_size;
@@ -887,6 +881,7 @@ void free_aftl_icp_entry(AftlIcpEntry* icp_entry) {
       avb_free(icp_entry->log_root_descriptor.metadata);
     if (icp_entry->log_root_descriptor.root_hash)
       avb_free(icp_entry->log_root_descriptor.root_hash);
+    if (icp_entry->proofs) avb_free(icp_entry->proofs);
     /* Finally, free the AftlIcpEntry. */
     avb_free(icp_entry);
   }
