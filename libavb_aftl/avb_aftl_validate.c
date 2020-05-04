@@ -42,14 +42,15 @@ bool avb_aftl_verify_vbmeta_hash(uint8_t* vbmeta,
 
   /* Only SHA256 hashes are currently supported. If the vbmeta hash
      size is not AVB_AFTL_HASH_SIZE, return false. */
-  if (icp_entry->fw_info_leaf.vbmeta_hash_size != AVB_AFTL_HASH_SIZE) {
+  if (icp_entry->annotation_leaf->annotation->vbmeta_hash_size !=
+      AVB_AFTL_HASH_SIZE) {
     avb_error("Invalid VBMeta hash size.\n");
     return false;
   }
 
   /* Return whether the calculated VBMeta hash matches the stored one. */
   return avb_safe_memcmp(vbmeta_hash,
-                         icp_entry->fw_info_leaf.vbmeta_hash,
+                         icp_entry->annotation_leaf->annotation->vbmeta_hash,
                          AVB_AFTL_HASH_SIZE) == 0;
 }
 
@@ -57,25 +58,14 @@ bool avb_aftl_verify_vbmeta_hash(uint8_t* vbmeta,
 bool avb_aftl_verify_icp_root_hash(AftlIcpEntry* icp_entry) {
   uint8_t leaf_hash[AVB_AFTL_HASH_SIZE];
   uint8_t result_hash[AVB_AFTL_HASH_SIZE];
-  uint8_t* buffer;
 
   avb_assert(icp_entry != NULL);
-  if (icp_entry->fw_info_leaf_size > AVB_AFTL_MAX_FW_INFO_SIZE) {
-    avb_error("Invalid FirmwareInfo leaf size\n");
-    return false;
-  }
-  buffer = (uint8_t*)avb_malloc(icp_entry->fw_info_leaf_size);
-  if (buffer == NULL) {
-    avb_error("Allocation failure in avb_aftl_verify_icp_root_hash\n");
-    return false;
-  }
   /* Calculate the RFC 6962 hash of the seed entry. */
-  if (!avb_aftl_rfc6962_hash_leaf(icp_entry->fw_info_leaf.json_data,
-                                  icp_entry->fw_info_leaf_size,
+  if (!avb_aftl_rfc6962_hash_leaf(icp_entry->annotation_leaf_raw,
+                                  icp_entry->annotation_leaf_size,
                                   leaf_hash)) {
     return false;
   }
-  avb_free(buffer);
   /* Calculate the Merkle tree's root hash. */
   if (!avb_aftl_root_from_icp(icp_entry->leaf_index,
                               icp_entry->log_root_descriptor.tree_size,
