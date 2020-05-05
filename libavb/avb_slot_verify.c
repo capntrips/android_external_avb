@@ -105,11 +105,11 @@ static AvbSlotVerifyResult load_full_partition(AvbOps* ops,
     }
 
     if (*out_image_buf != NULL) {
+      *out_image_preloaded = true;
       if (part_num_read != image_size) {
         avb_errorv(part_name, ": Read incorrect number of bytes.\n", NULL);
         return AVB_SLOT_VERIFY_RESULT_ERROR_IO;
       }
-      *out_image_preloaded = true;
     }
   }
 
