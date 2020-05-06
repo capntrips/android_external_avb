@@ -831,6 +831,64 @@ TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMetaWithPreloadedPartition) {
   avb_slot_verify_data_free(slot_data);
 }
 
+TEST_F(AvbSlotVerifyTest, SmallPreallocatedPreloadedPartitionFailGracefully) {
+  const size_t boot_partition_size = 16 * 1024 * 1024;
+  const size_t boot_image_size = 5 * 1024 * 1024;
+  // Generate vbmeta based on this boot image.
+  base::FilePath boot_path = GenerateImage("boot_a.img", boot_image_size);
+
+  // Preload smaller image than expected on the stack
+  // libavb should not attempt to free this buffer.
+  const size_t fake_preload_image_size = 1024;
+  uint8_t fake_preload_buf[fake_preload_image_size];
+
+  EXPECT_COMMAND(
+      0,
+      "./avbtool add_hash_footer"
+      " --image %s"
+      " --rollback_index 0"
+      " --partition_name boot"
+      " --partition_size %zd"
+      " --kernel_cmdline 'cmdline in hash footer $(ANDROID_SYSTEM_PARTUUID)'"
+      " --salt deadbeef"
+      " --internal_release_string \"\"",
+      boot_path.value().c_str(),
+      boot_partition_size);
+
+  GenerateVBMetaImage(
+      "vbmeta_a.img",
+      "SHA256_RSA2048",
+      4,
+      base::FilePath("test/data/testkey_rsa2048.pem"),
+      base::StringPrintf(
+          "--include_descriptors_from_image %s"
+          " --kernel_cmdline 'cmdline in vbmeta $(ANDROID_BOOT_PARTUUID)'"
+          " --internal_release_string \"\"",
+          boot_path.value().c_str()));
+
+  EXPECT_COMMAND(0,
+                 "./avbtool erase_footer"
+                 " --image %s",
+                 boot_path.value().c_str());
+
+  ops_.set_expected_public_key(
+      PublicKeyAVB(base::FilePath("test/data/testkey_rsa2048.pem")));
+  ops_.enable_get_preloaded_partition();
+  EXPECT_TRUE(ops_.preload_preallocated_partition(
+      "boot_a", fake_preload_buf, fake_preload_image_size));
+
+  AvbSlotVerifyData* slot_data = NULL;
+  const char* requested_partitions[] = {"boot", NULL};
+  EXPECT_EQ(AVB_SLOT_VERIFY_RESULT_ERROR_IO,
+            avb_slot_verify(ops_.avb_ops(),
+                            requested_partitions,
+                            "_a",
+                            AVB_SLOT_VERIFY_FLAGS_NONE,
+                            AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE,
+                            &slot_data));
+  EXPECT_EQ(nullptr, slot_data);
+}
+
 TEST_F(AvbSlotVerifyTest, HashDescriptorInVBMetaCorruptBoot) {
   size_t boot_partition_size = 16 * 1024 * 1024;
   base::FilePath boot_path = GenerateImage("boot_a.img", 5 * 1024 * 1024);
