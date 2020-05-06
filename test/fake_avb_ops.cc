@@ -87,6 +87,18 @@ bool FakeAvbOps::preload_partition(const std::string& partition,
   return true;
 }
 
+bool FakeAvbOps::preload_preallocated_partition(const std::string& partition,
+                                                uint8_t* buffer,
+                                                size_t size) {
+  if (preallocated_preloaded_partitions_.count(partition) > 0) {
+    fprintf(stderr, "Partition '%s' already preloaded\n", partition.c_str());
+    return false;
+  }
+
+  preallocated_preloaded_partitions_[partition] = std::make_pair(buffer, size);
+  return true;
+}
+
 AvbIOResult FakeAvbOps::read_from_partition(const char* partition,
                                             int64_t offset,
                                             size_t num_bytes,
@@ -160,6 +172,15 @@ AvbIOResult FakeAvbOps::get_preloaded_partition(
   if (hidden_partitions_.find(partition) != hidden_partitions_.end()) {
     return AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION;
   }
+
+  std::map<std::string, std::pair<uint8_t*, size_t>>::iterator prealloc_it =
+      preallocated_preloaded_partitions_.find(std::string(partition));
+  if (prealloc_it != preallocated_preloaded_partitions_.end()) {
+    *out_pointer = prealloc_it->second.first;
+    *out_num_bytes_preloaded = std::min(prealloc_it->second.second, num_bytes);
+    return AVB_IO_RESULT_OK;
+  }
+
   std::map<std::string, uint8_t*>::iterator it =
       preloaded_partitions_.find(std::string(partition));
   if (it == preloaded_partitions_.end()) {
@@ -173,11 +194,8 @@ AvbIOResult FakeAvbOps::get_preloaded_partition(
   if (result != AVB_IO_RESULT_OK) {
     return result;
   }
-  if (size != num_bytes) {
-    return AVB_IO_RESULT_ERROR_IO;
-  }
 
-  *out_num_bytes_preloaded = num_bytes;
+  *out_num_bytes_preloaded = std::min(static_cast<size_t>(size), num_bytes);
   *out_pointer = it->second;
   return AVB_IO_RESULT_OK;
 }
