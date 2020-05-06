@@ -211,6 +211,10 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
   bool preload_partition(const std::string& partition,
                          const base::FilePath& path);
 
+  bool preload_preallocated_partition(const std::string& partition,
+                                      uint8_t* buffer,
+                                      size_t size);
+
   // Gets the partition names that were passed to the
   // read_from_partition() operation.
   std::set<std::string> get_partition_names_read_from();
@@ -315,6 +319,8 @@ class FakeAvbOps : public FakeAvbOpsDelegate {
 
   std::set<std::string> partition_names_read_from_;
   std::map<std::string, uint8_t*> preloaded_partitions_;
+  std::map<std::string, std::pair<uint8_t*, size_t>>
+      preallocated_preloaded_partitions_;
   std::set<std::string> hidden_partitions_;
 
   std::map<std::string, std::string> stored_values_;
