@@ -209,6 +209,11 @@ design, this authority can be easily revoked by simply updating
 Storing signed verification data on other images - for example
 `boot.img` and `system.img` - is also done with `avbtool`.
 
+The minimum requirement for running `avbtool` is to either have
+Python 3.5 installed or build the avbtool with the embedded launcher
+using `m avbtool` and then run it out of the build artifact directory:
+`out/soong/host/linux-x86/bin/avbtool`
+
 In addition to `avbtool`, a library - `libavb` - is provided. This
 library performs all verification on the device side e.g. it starts by
 loading the `vbmeta` partition, checks the signature, and then goes on
