@@ -141,6 +141,7 @@ typedef struct AftlIcpEntry {
   uint32_t inc_proof_size;
   uint8_t* log_url;
   TrillianLogRootDescriptor log_root_descriptor;
+  uint8_t* log_root_descriptor_raw;
   FirmwareInfo fw_info_leaf;
   uint8_t* log_root_signature;
   uint8_t (*proofs)[AVB_AFTL_HASH_SIZE];

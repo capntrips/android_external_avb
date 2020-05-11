@@ -47,105 +47,6 @@ bool avb_aftl_sha256(uint8_t* data,
   return true;
 }
 
-/* Calculates a SHA256 hash of the TrillianLogRootDescriptor in icp_entry.
-
-   The hash is calculated over the entire TrillianLogRootDescriptor
-   structure. Some of the fields in this implementation are dynamically
-   allocated, and so the data needs to be reconstructed so that the hash
-   can be properly calculated. The TrillianLogRootDescriptor is defined
-   here: https://github.com/google/trillian/blob/master/trillian.proto#L255 */
-bool avb_aftl_hash_log_root_descriptor(AftlIcpEntry* icp_entry, uint8_t* hash) {
-  uint8_t* buffer;
-  uint8_t* lrd_offset; /* Byte offset into the descriptor. */
-  uint32_t tlrd_size;
-  uint16_t version;
-  uint64_t tree_size;
-  uint64_t timestamp;
-  uint64_t revision;
-  uint16_t metadata_size;
-  bool retval;
-
-  avb_assert(icp_entry != NULL && hash != NULL);
-
-  /* Size of the non-pointer elements of the TrillianLogRootDescriptor. */
-  tlrd_size = sizeof(uint16_t) * 2 + sizeof(uint64_t) * 3 + sizeof(uint8_t);
-  /* Ensure the log_root_descriptor size is correct. */
-  if (icp_entry->log_root_descriptor_size > AVB_AFTL_MAX_TLRD_SIZE) {
-    avb_error("Invalid log root descriptor size.\n");
-    return false;
-  }
-  if (icp_entry->log_root_descriptor_size !=
-      (tlrd_size + icp_entry->log_root_descriptor.root_hash_size +
-       icp_entry->log_root_descriptor.metadata_size)) {
-    avb_error("Log root descriptor size doesn't match fields.\n");
-    return false;
-  }
-  /* Check that the root_hash exists, and if not, it's size is sane. */
-  if (!icp_entry->log_root_descriptor.root_hash &&
-      (icp_entry->log_root_descriptor.root_hash_size != 0)) {
-    avb_error("Invalid tree root hash values.\n");
-    return false;
-  }
-
-  /* Check that the metadata exists, and if not, it's size is sane. */
-  if (!icp_entry->log_root_descriptor.metadata &&
-      (icp_entry->log_root_descriptor.metadata_size != 0)) {
-    avb_error("Invalid log root descriptor metadata values.\n");
-    return false;
-  }
-  buffer = (uint8_t*)avb_malloc(icp_entry->log_root_descriptor_size);
-  if (buffer == NULL) {
-    avb_error("Allocation failure in avb_aftl_hash_log_root_descriptor.\n");
-    return false;
-  }
-  lrd_offset = buffer;
-  /* Copy in the version, tree_size and root hash length. */
-  /* Ensure endianness is correct. */
-  version = avb_be16toh(icp_entry->log_root_descriptor.version);
-  avb_memcpy(lrd_offset, &version, sizeof(uint16_t));
-  lrd_offset += sizeof(uint16_t);
-  /* Ensure endianness is correct. */
-  tree_size = avb_be64toh(icp_entry->log_root_descriptor.tree_size);
-  avb_memcpy(lrd_offset, &tree_size, sizeof(uint64_t));
-  lrd_offset += sizeof(uint64_t);
-  avb_memcpy(lrd_offset,
-             &(icp_entry->log_root_descriptor.root_hash_size),
-             sizeof(uint8_t));
-  lrd_offset += sizeof(uint8_t);
-  /* Copy the root hash. */
-  if (icp_entry->log_root_descriptor.root_hash_size > 0) {
-    avb_memcpy(lrd_offset,
-               icp_entry->log_root_descriptor.root_hash,
-               icp_entry->log_root_descriptor.root_hash_size);
-  }
-  lrd_offset += icp_entry->log_root_descriptor.root_hash_size;
-  /* Copy in the timestamp, revision, and the metadata length. */
-  /* Ensure endianness is correct. */
-  timestamp = avb_be64toh(icp_entry->log_root_descriptor.timestamp);
-  avb_memcpy(lrd_offset, &timestamp, sizeof(uint64_t));
-  lrd_offset += sizeof(uint64_t);
-  /* Ensure endianness is correct. */
-  revision = avb_be64toh(icp_entry->log_root_descriptor.revision);
-  avb_memcpy(lrd_offset, &revision, sizeof(uint64_t));
-  lrd_offset += sizeof(uint64_t);
-  /* Ensure endianness is correct. */
-  metadata_size = avb_be16toh(icp_entry->log_root_descriptor.metadata_size);
-  avb_memcpy(lrd_offset, &metadata_size, sizeof(uint16_t));
-  lrd_offset += sizeof(uint16_t);
-
-  /* Copy the metadata if it exists. */
-  if (icp_entry->log_root_descriptor.metadata_size > 0) {
-    avb_memcpy(lrd_offset,
-               icp_entry->log_root_descriptor.metadata,
-               icp_entry->log_root_descriptor.metadata_size);
-  }
-  /* Hash the result & clean up. */
-
-  retval = avb_aftl_sha256(buffer, icp_entry->log_root_descriptor_size, hash);
-  avb_free(buffer);
-  return retval;
-}
-
 /* Computes a leaf hash as detailed by https://tools.ietf.org/html/rfc6962. */
 bool avb_aftl_rfc6962_hash_leaf(uint8_t* leaf,
                                 uint64_t leaf_size,
@@ -755,6 +656,16 @@ AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size) {
     free_aftl_icp_entry(icp_entry);
     return NULL;
   }
+  icp_entry->log_root_descriptor_raw =
+      (uint8_t*)avb_calloc(icp_entry->log_root_descriptor_size);
+  if (!icp_entry->log_root_descriptor_raw) {
+    avb_error("Failure to allocate log root descriptor.\n");
+    free_aftl_icp_entry(icp_entry);
+    return NULL;
+  }
+  avb_memcpy(icp_entry->log_root_descriptor_raw,
+             *aftl_blob,
+             icp_entry->log_root_descriptor_size);
   if (!parse_trillian_log_root_descriptor(
           icp_entry, aftl_blob, icp_entry->log_root_descriptor_size)) {
     free_aftl_icp_entry(icp_entry);
@@ -878,6 +789,8 @@ void free_aftl_icp_entry(AftlIcpEntry* icp_entry) {
       avb_free(icp_entry->log_root_descriptor.metadata);
     if (icp_entry->log_root_descriptor.root_hash)
       avb_free(icp_entry->log_root_descriptor.root_hash);
+    if (icp_entry->log_root_descriptor_raw)
+      avb_free(icp_entry->log_root_descriptor_raw);
     if (icp_entry->proofs) avb_free(icp_entry->proofs);
     /* Finally, free the AftlIcpEntry. */
     avb_free(icp_entry);
