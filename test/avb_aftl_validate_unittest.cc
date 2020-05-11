@@ -82,8 +82,7 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
     if (!log_sig_bytes_) return;
     base::ReadFile(
         base::FilePath(kAftlLogSigPath), (char*)log_sig_bytes_, log_sig_size_);
-    icp_entry_ =
-        (AftlIcpEntry*)avb_malloc(sizeof(AftlIcpEntry) + AVB_AFTL_HASH_SIZE);
+    icp_entry_ = (AftlIcpEntry*)avb_malloc(sizeof(AftlIcpEntry));
     if (!icp_entry_) return;
     icp_entry_->log_root_descriptor.version = 1;
     icp_entry_->log_root_descriptor.tree_size = 3;
@@ -118,6 +117,8 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
            icp_entry_->fw_info_leaf_size);
     icp_entry_->leaf_index = 2;
 
+    icp_entry_->proofs =
+        (uint8_t(*)[AVB_AFTL_HASH_SIZE])avb_calloc(AVB_AFTL_HASH_SIZE);
     memcpy(icp_entry_->proofs[0],
            "\xfa\xc5\x42\x03\xe7\xcc\x69\x6c\xf0\xdf\xcb\x42\xc9\x2a\x1d\x9d"
            "\xba\xf7\x0a\xd9\xe6\x21\xf4\xbd\x8d\x98\x66\x2f\x00\xe3\xc1\x25",
@@ -140,6 +141,7 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
         avb_free(icp_entry_->fw_info_leaf.vbmeta_hash);
       if (icp_entry_->log_root_descriptor.root_hash != NULL)
         avb_free(icp_entry_->log_root_descriptor.root_hash);
+      if (icp_entry_->proofs != NULL) avb_free(icp_entry_->proofs);
       avb_free(icp_entry_);
     }
     avb_free(key_bytes_);
