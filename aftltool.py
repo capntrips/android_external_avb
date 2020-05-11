@@ -24,10 +24,11 @@
 #
 """Command-line tool for AFTL support for Android Verified Boot images."""
 
+import abc
 import argparse
-import base64
+import enum
 import hashlib
-import json
+import io
 import multiprocessing
 import os
 import queue
@@ -46,9 +47,7 @@ sys.path.append(os.path.join(EXEC_PATH, 'proto'))
 
 # pylint: disable=wrong-import-position,import-error
 import avbtool
-import aftl_pb2
 import api_pb2
-from crypto.sigpb import sigpb_pb2
 # pylint: enable=wrong-import-position,import-error
 
 
@@ -350,14 +349,16 @@ class AftlIcpEntry(object):
     log_url_size: Length of the string representing the transparency log URL.
     leaf_index: Leaf index in the transparency log representing this entry.
     log_root_descriptor_size: Size of the transparency log's SignedLogRoot.
-    fw_info_leaf_size: Size of the FirmwareInfo leaf passed to the log.
+    annotation_leaf_size: Size of the SignedVBMetaPrimaryAnnotationLeaf passed
+        to the log.
     log_root_sig_size: Size in bytes of the log_root_signature
     proof_hash_count: Number of hashes comprising the inclusion proof.
     inc_proof_size: The total size of the inclusion proof, in bytes.
     log_url: The URL for the transparency log that generated this inclusion
         proof.
     log_root_descriptor: The data comprising the signed tree head structure.
-    fw_info_leaf: The data comprising the FirmwareInfo leaf.
+    annotation_leaf: The data comprising the SignedVBMetaPrimaryAnnotationLeaf
+        leaf.
     log_root_signature: The data comprising the log root signature.
     proofs: The hashes comprising the inclusion proof.
 
@@ -370,9 +371,8 @@ class AftlIcpEntry(object):
                    'H'    # log root signature size
                    'B'    # number of hashes in the inclusion proof
                    'L')   # size of the inclusion proof in bytes
-  # These are used to capture the log_url, log_root_descriptor,
-  # fw_info leaf, log root signature, and the proofs elements for the
-  # encode function.
+  # This header is followed by the log_url, log_root_descriptor,
+  # annotation leaf, log root signature, and the proofs elements.
 
   def __init__(self, data=None):
     """Initializes a new ICP entry object.
@@ -391,7 +391,7 @@ class AftlIcpEntry(object):
       (self._log_url_size_expected,
        self.leaf_index,
        self._log_root_descriptor_size_expected,
-       self._fw_info_leaf_size_expected,
+       self._annotation_leaf_size_expected,
        self._log_root_sig_size_expected,
        self._proof_hash_count_expected,
        self._inc_proof_size_expected) = struct.unpack(self.FORMAT_STRING,
@@ -401,18 +401,20 @@ class AftlIcpEntry(object):
       expected_format_string = '{}s{}s{}s{}s{}s'.format(
           self._log_url_size_expected,
           self._log_root_descriptor_size_expected,
-          self._fw_info_leaf_size_expected,
+          self._annotation_leaf_size_expected,
           self._log_root_sig_size_expected,
           self._inc_proof_size_expected)
 
-      (log_url, log_root_descriptor_bytes, fw_info_leaf_bytes,
+      (log_url, log_root_descriptor_bytes, annotation_leaf_bytes,
        self.log_root_signature, proof_bytes) = struct.unpack(
            expected_format_string, data[self.SIZE:self.get_expected_size()])
 
       self.log_url = log_url.decode('ascii')
       self.log_root_descriptor = TrillianLogRootDescriptor(
           log_root_descriptor_bytes)
-      self.fw_info_leaf = FirmwareInfoLeaf(fw_info_leaf_bytes)
+
+      self.annotation_leaf = SignedVBMetaPrimaryAnnotationLeaf.parse(
+          annotation_leaf_bytes)
 
       self.proofs = []
       if self._proof_hash_count_expected > 0:
@@ -427,7 +429,7 @@ class AftlIcpEntry(object):
       self.leaf_index = 0
       self.log_url = ''
       self.log_root_descriptor = TrillianLogRootDescriptor()
-      self.fw_info_leaf = FirmwareInfoLeaf()
+      self.annotation_leaf = SignedVBMetaPrimaryAnnotationLeaf()
       self.log_root_signature = b''
       self.proofs = []
     if not self.is_valid():
@@ -448,11 +450,11 @@ class AftlIcpEntry(object):
     return self._log_root_descriptor_size_expected
 
   @property
-  def fw_info_leaf_size(self):
-    """Gets the size of the fw_info_leaf attribute."""
-    if hasattr(self, 'fw_info_leaf'):
-      return self.fw_info_leaf.get_expected_size()
-    return self._fw_info_leaf_size_expected
+  def annotation_leaf_size(self):
+    """Gets the size of the annotation_leaf attribute."""
+    if hasattr(self, 'annotation_leaf'):
+      return self.annotation_leaf.get_expected_size()
+    return self._annotation_leaf_size_expected
 
   @property
   def log_root_sig_size(self):
@@ -490,7 +492,7 @@ class AftlIcpEntry(object):
     if not transparency_log_pub_key:
       return False
 
-    leaf_hash = rfc6962_hash_leaf(self.fw_info_leaf.encode())
+    leaf_hash = rfc6962_hash_leaf(self.annotation_leaf.encode())
     calc_root = root_from_icp(self.leaf_index,
                               self.log_root_descriptor.tree_size,
                               self.proofs,
@@ -513,7 +515,7 @@ class AftlIcpEntry(object):
 
     Returns:
       True if the inclusion proof validates and the vbmeta hash of the given
-      VBMeta image matches the one in the fw_info_leaf; otherwise False.
+      VBMeta image matches the one in the annotation leaf; otherwise False.
     """
     if not vbmeta_image:
       return False
@@ -524,13 +526,13 @@ class AftlIcpEntry(object):
     # Validates the inclusion proof and then compare the calculated vbmeta_hash
     # against the one in the inclusion proof.
     return (self.verify_icp(transparency_log_pub_key)
-            and self.fw_info_leaf.vbmeta_hash == vbmeta_hash)
+            and self.annotation_leaf.annotation.vbmeta_hash == vbmeta_hash)
 
   def encode(self):
-    """Serializes the header |SIZE| and data to a bytearray().
+    """Serializes the header |SIZE| and data to bytes.
 
     Returns:
-      A bytearray() with the encoded header.
+      bytes with the encoded header.
 
     Raises:
       AftlError: If invalid entry structure.
@@ -543,7 +545,7 @@ class AftlIcpEntry(object):
         self.FORMAT_STRING,
         self.log_url_size,
         self.log_root_descriptor_size,
-        self.fw_info_leaf_size,
+        self.annotation_leaf_size,
         self.log_root_sig_size,
         self.inc_proof_size)
 
@@ -552,30 +554,31 @@ class AftlIcpEntry(object):
 
     return struct.pack(expected_format_string,
                        self.log_url_size, self.leaf_index,
-                       self.log_root_descriptor_size, self.fw_info_leaf_size,
+                       self.log_root_descriptor_size, self.annotation_leaf_size,
                        self.log_root_sig_size, self.proof_hash_count,
                        self.inc_proof_size, self.log_url.encode('ascii'),
                        self.log_root_descriptor.encode(),
-                       self.fw_info_leaf.encode(),
+                       self.annotation_leaf.encode(),
                        self.log_root_signature,
                        proof_bytes)
 
-  def translate_response(self, log_url, afi_response):
-    """Translates an AddFirmwareInfoResponse object to an AftlIcpEntry.
+  def translate_response(self, log_url, avbm_response):
+    """Translates an AddVBMetaResponse object to an AftlIcpEntry.
 
     Arguments:
       log_url: String representing the transparency log URL.
-      afi_response: The AddFirmwareResponse object to translate.
+      avbm_response: The AddVBMetaResponse object to translate.
     """
     self.log_url = log_url
 
-    # Deserializes from AddFirmwareInfoResponse.
-    self.leaf_index = afi_response.fw_info_proof.proof.leaf_index
-    self.log_root_descriptor = TrillianLogRootDescriptor(
-        afi_response.fw_info_proof.sth.log_root)
-    self.fw_info_leaf = FirmwareInfoLeaf(afi_response.fw_info_leaf)
-    self.log_root_signature = afi_response.fw_info_proof.sth.log_root_signature
-    self.proofs = afi_response.fw_info_proof.proof.hashes
+    # Deserializes from AddVBMetaResponse.
+    proof = avbm_response.annotation_proof
+    self.leaf_index = proof.proof.leaf_index
+    self.log_root_descriptor = TrillianLogRootDescriptor(proof.sth.log_root)
+    self.annotation_leaf = SignedVBMetaPrimaryAnnotationLeaf.parse(
+        avbm_response.annotation_leaf)
+    self.log_root_signature = proof.sth.log_root_signature
+    self.proofs = proof.proof.hashes
 
   def get_expected_size(self):
     """Gets the expected size of the full entry out of the header.
@@ -584,7 +587,7 @@ class AftlIcpEntry(object):
       The expected size of the AftlIcpEntry from the header.
     """
     return (self.SIZE + self.log_url_size + self.log_root_descriptor_size +
-            self.fw_info_leaf_size + self.log_root_sig_size +
+            self.annotation_leaf_size + self.log_root_sig_size +
             self.inc_proof_size)
 
   def is_valid(self):
@@ -604,9 +607,9 @@ class AftlIcpEntry(object):
       sys.stderr.write('ICP entry: invalid TrillianLogRootDescriptor.\n')
       return False
 
-    if (not self.fw_info_leaf or
-        not isinstance(self.fw_info_leaf, FirmwareInfoLeaf)):
-      sys.stderr.write('ICP entry: invalid FirmwareInfo.\n')
+    if (not self.annotation_leaf or
+        not isinstance(self.annotation_leaf, Leaf)):
+      sys.stderr.write('ICP entry: invalid Leaf.\n')
       return False
     return True
 
@@ -626,7 +629,7 @@ class AftlIcpEntry(object):
         o.write(' ' * 29)
       o.write('{}\n'.format(proof_hash.hex()))
     self.log_root_descriptor.print_desc(o)
-    self.fw_info_leaf.print_desc(o)
+    self.annotation_leaf.print_desc(o)
 
 
 class TrillianLogRootDescriptor(object):
@@ -793,144 +796,511 @@ class TrillianLogRootDescriptor(object):
       o.write(fmt.format(i, 'Metadata:', self.metadata.hex()))
 
 
-class FirmwareInfoLeaf(object):
-  """A class representing the FirmwareInfo leaf.
+def tls_decode_bytes(byte_size, stream):
+  """Decodes a variable-length vector.
 
-  AFTL returns the fw_info_leaf as a JSON blob and this class is able to
-  parse the blog and provide necessary attributes needed for validation.
+  In the TLS presentation language, a variable-length vector is a pair
+  (size, value). |size| describes the size of the |value| to read
+  in bytes. All values are encoded in big-endian.
+  See https://tools.ietf.org/html/rfc8446#section-3 for more details.
+
+  Arguments:
+      byte_size: A format character as described in the struct module
+          which describes the expected length of the size. For
+          instance, "B", "H", "L" or "Q".
+      stream: a BytesIO which contains the value to decode.
+
+  Returns:
+    A bytes containing the value decoded.
+
+  Raises:
+    AftlError: If |byte_size| is not a known format character, or if not
+    enough data is available to decode the size or the value.
+  """
+  byte_size_format = "!" + byte_size
+  try:
+    byte_size_length = struct.calcsize(byte_size_format)
+  except struct.error:
+    raise AftlError("Invalid byte_size character: {}. It must be a "
+                    "format supported by struct.".format(byte_size))
+  try:
+    value_size = struct.unpack(byte_size_format,
+                               stream.read(byte_size_length))[0]
+  except struct.error:
+    raise AftlError("Not enough data to read size: {}".format(byte_size))
+  value = stream.read(value_size)
+  if value_size != len(value):
+    raise AftlError("Not enough data to read value: "
+                    "{} != {}".format(value_size, len(value)))
+  return value
+
+def tls_encode_bytes(byte_size, value, stream):
+  """Encodes a variable-length vector.
+
+  In the TLS presentation language, a variable-length vector is a pair
+  (size, value). |size| describes the size of the |value| to read
+  in bytes. All values are encoded in big-endian.
+  See https://tools.ietf.org/html/rfc8446#section-3 for more details.
+
+  Arguments:
+      byte_size: A format character as described in the struct module
+          which describes the expected length of the size. For
+          instance, "B", "H", "L" or "Q".
+      value: the value to encode. The length of |value| must be
+          representable with |byte_size|.
+      stream: a BytesIO to which the value is encoded to.
+
+  Raises:
+    AftlError: If |byte_size| is not a known format character, or if
+    |value|'s length cannot be represent with |byte_size|.
+  """
+  byte_size_format = "!" + byte_size
+  try:
+    stream.write(struct.pack(byte_size_format, len(value)))
+  except struct.error:
+    # Whether byte_size is invalid or not large enough to represent value,
+    # struct returns an struct.error exception. Instead of matching on the
+    # exception message, capture both cases in a generic message.
+    raise AftlError("Invalid byte_size to store {} bytes".format(len(value)))
+  stream.write(value)
+
+class HashAlgorithm(enum.Enum):
+  SHA256 = 0
+
+class SignatureAlgorithm(enum.Enum):
+  RSA = 0
+  ECDSA = 1
+
+class Signature(object):
+  """Represents a signature of some data.
+
+  It is usually made using a manufacturer key and used to sign part of a leaf
+  that belongs to the transparency log. The encoding of this structure must
+  match the server expectation.
 
   Attributes:
-    vbmeta_hash: This is the SHA256 hash of vbmeta.
-    version_incremental: Subcomponent of the build fingerprint as defined at
-      https://source.android.com/compatibility/android-cdd#3_2_2_build_parameters.
-      For example, a Pixel device with the following build fingerprint
-      google/crosshatch/crosshatch:9/PQ3A.190605.003/5524043:user/release-keys,
-      would have 5524043 for the version incremental.
-    platform_key: Public key of the platform. This is the same key used to sign
-      the vbmeta.
-    manufacturer_key_hash:  SHA256 of the manufacturer public key (DER-encoded,
-      x509 subjectPublicKeyInfo format). The public key MUST already be in the
-      list of root keys known and trusted by the AFTL.
-    description: Free form description field. It can be used to annotate this
-      message with further context on the build (e.g., carrier specific build).
+    hash_algorithm: the HashAlgorithm used for the signature.
+    signature_algorithm: the SignatureAlgorithm used.
+    signature: the raw signature in bytes.
   """
+  FORMAT_STRING = ('!B'    # Hash algorithm
+                   'B'     # Signing algorithm
+                  )
+  # Followed by the raw signature, encoded as a TLS variable-length vector
+  # which size is represented using 2 bytes.
 
-  def __init__(self, data=None):
-    """Initializes a new FirmwareInfoLeaf descriptor."""
-    if data:
-      # We have to preserve the original fw_info_leaf bytes in order to preserve
-      # hash equivalence with what is stored in the Trillian log and matches up
-      # with the proofs.
-      self._fw_info_leaf_bytes = data
+  def __init__(self, hash_algorithm=HashAlgorithm.SHA256,
+               signature_algorithm=SignatureAlgorithm.RSA, signature=b''):
+    self.hash_algorithm = hash_algorithm
+    self.signature_algorithm = signature_algorithm
+    self.signature = signature
 
-      # Deserialize the JSON blob and keep only the FirmwareInfo parts.
-      try:
-        fw_info_leaf = json.loads(self._fw_info_leaf_bytes)
-        self._fw_info_leaf_dict = (
-            fw_info_leaf['Value']['FwInfo']['info']['info'])
-      except (ValueError, KeyError) as e:
-        raise AftlError('Invalid structure for FirmwareInfoLeaf: {}'.format(e))
-    else:
-      self._fw_info_leaf_bytes = b''
-      self._fw_info_leaf_dict = dict()
-
-    if not self.is_valid():
-      raise AftlError('Invalid structure for FirmwareInfoLeaf.')
-
-  @property
-  def vbmeta_hash(self):
-    """Gets the vbmeta_hash attribute."""
-    return self._lookup_base64_attribute('vbmeta_hash')
-
-  @property
-  def version_incremental(self):
-    """Gets the version_incremental attribute."""
-    return self._fw_info_leaf_dict.get('version_incremental')
-
-  @property
-  def platform_key(self):
-    """Gets the platform key attribute."""
-    return self._lookup_base64_attribute('platform_key')
-
-  @property
-  def manufacturer_key_hash(self):
-    """Gets the manufacturer_key_hash attribute."""
-    return self._lookup_base64_attribute('manufacturer_key_hash')
-
-  @property
-  def description(self):
-    """Gets the description attribute."""
-    return self._fw_info_leaf_dict.get('description')
-
-  def _lookup_base64_attribute(self, key):
-    """Looks up an attribute that is Base64 encoded and decodes it.
+  @classmethod
+  def parse(cls, stream):
+    """Parses a TLS-encoded structure and returns a new Signature.
 
     Arguments:
-      key: The name of the attribute to look up.
+      stream: a BytesIO to read the signature from.
 
     Returns:
-      The attribute value or None if not defined.
+      A new Signature object.
+
+    Raises:
+      AftlError: If the hash algorithm or signature algorithm value is
+        unknown; or if the decoding failed.
     """
-    result = self._fw_info_leaf_dict.get(key)
-    if result:
-      result = base64.b64decode(result)
-    return result
+    data_length = struct.calcsize(cls.FORMAT_STRING)
+    (hash_algorithm, signature_algorithm) = struct.unpack(
+        cls.FORMAT_STRING, stream.read(data_length))
+    try:
+      hash_algorithm = HashAlgorithm(hash_algorithm)
+    except ValueError:
+      raise AftlError('unknown hash algorithm: {}'.format(hash_algorithm))
+    try:
+      signature_algorithm = SignatureAlgorithm(signature_algorithm)
+    except ValueError:
+      raise AftlError('unknown signature algorithm: {}'.format(
+          signature_algorithm))
+    signature = tls_decode_bytes('H', stream)
+    return Signature(hash_algorithm, signature_algorithm, signature)
 
   def get_expected_size(self):
-    """Gets the expected size of the JSON-serialized FirmwareInfoLeaf.
+    """Returns the size of the encoded Signature."""
+    return struct.calcsize(self.FORMAT_STRING) + \
+        struct.calcsize('H') + len(self.signature)
+
+  def encode(self, stream):
+    """Encodes the Signature.
+
+    Arguments:
+      stream: a BytesIO to which the signature is written.
+    """
+    stream.write(struct.pack(self.FORMAT_STRING, self.hash_algorithm.value,
+                             self.signature_algorithm.value))
+    tls_encode_bytes('H', self.signature, stream)
+
+class VBMetaPrimaryAnnotation(object):
+  """An annotation that contains metadata about a VBMeta image.
+
+  Attributes:
+    vbmeta_hash: the SHA256 of the VBMeta it references.
+    version_incremental: the version incremental of the build, as string.
+    manufacturer_key_hash: the hash of the manufacturer key that will
+        sign this annotation.
+    description: a free-form field.
+  """
+
+  def __init__(self, vbmeta_hash=b'', version_incremental='',
+               manufacturer_key_hash=b'', description=''):
+    """Default constructor."""
+    self.vbmeta_hash = vbmeta_hash
+    self.version_incremental = version_incremental
+    self.manufacturer_key_hash = manufacturer_key_hash
+    self.description = description
+
+  @classmethod
+  def parse(cls, stream):
+    """Parses a VBMetaPrimaryAnnotation from data.
+
+    Arguments:
+      stream: an io.BytesIO to decode the annotation from.
 
     Returns:
-      The expected size of the FirmwareInfo leaf in byte or 0 if not initalized.
-    """
-    if not self._fw_info_leaf_bytes:
-      return 0
-    return len(self._fw_info_leaf_bytes)
+      A new VBMetaPrimaryAnnotation.
 
-  def encode(self):
-    """Serializes the FirmwareInfoLeaf.
+    Raises:
+      AftlError: If an error occured while parsing the annotation.
+    """
+    vbmeta_hash = tls_decode_bytes("B", stream)
+    version_incremental = tls_decode_bytes("B", stream)
+    try:
+      version_incremental = version_incremental.decode("ascii")
+    except UnicodeError:
+      raise AftlError('Failed to convert version incremental to an ASCII'
+                      'string')
+    manufacturer_key_hash = tls_decode_bytes("B", stream)
+    description = tls_decode_bytes("H", stream)
+    try:
+      description = description.decode("utf-8")
+    except UnicodeError:
+      raise AftlError('Failed to convert description to an UTF-8 string')
+    return cls(vbmeta_hash, version_incremental, manufacturer_key_hash,
+               description)
+
+  def sign(self, manufacturer_key_path, signing_helper=None,
+           signing_helper_with_files=None):
+    """Signs the annotation.
+
+    Arguments:
+      manufacturer_key_path: Path to key used to sign messages sent to the
+        transparency log servers.
+      signing_helper: Program which signs a hash and returns a signature.
+      signing_helper_with_files: Same as signing_helper but uses files instead.
 
     Returns:
-      A bytearray() with the JSON-serialized FirmwareInfoLeaf.
-    """
-    return self._fw_info_leaf_bytes
+      A new SignedVBMetaPrimaryAnnotation.
 
-  def is_valid(self):
-    """Ensures that values in the descritor are sane.
-
-    Returns:
-      True if the values are sane; otherwise False.
+    Raises:
+      AftlError: If an error occured while signing the annotation.
     """
-    # Checks that the decode fw_info_leaf at max contains values defined in the
-    # FirmwareInfo proto buf.
-    expected_fields = set(aftl_pb2.FirmwareInfo()
-                          .DESCRIPTOR.fields_by_name.keys())
-    actual_fields = set(self._fw_info_leaf_dict.keys())
-    if actual_fields.issubset(expected_fields):
-      return True
-    return False
+    # AFTL supports SHA256_RSA4096 for now, more will be available.
+    algorithm_name = 'SHA256_RSA4096'
+    encoded_leaf = io.BytesIO()
+    self.encode(encoded_leaf)
+    try:
+      rsa_key = avbtool.RSAPublicKey(manufacturer_key_path)
+      raw_signature = rsa_key.sign(algorithm_name, encoded_leaf.getvalue(),
+                                   signing_helper, signing_helper_with_files)
+    except avbtool.AvbError as e:
+      raise AftlError('Failed to sign VBMetaPrimaryAnnotation with '
+                      '--manufacturer_key: {}'.format(e))
+    signature = Signature(hash_algorithm=HashAlgorithm.SHA256,
+                          signature_algorithm=SignatureAlgorithm.RSA,
+                          signature=raw_signature)
+    return SignedVBMetaPrimaryAnnotation(signature=signature, annotation=self)
+
+  def encode(self, stream):
+    """Encodes the VBMetaPrimaryAnnotation.
+
+    Arguments:
+      stream: a BytesIO to which the signature is written.
+
+    Raises:
+      AftlError: If the encoding failed.
+    """
+    tls_encode_bytes("B", self.vbmeta_hash, stream)
+    try:
+      tls_encode_bytes("B", self.version_incremental.encode("ascii"), stream)
+    except UnicodeError:
+      raise AftlError('Unable to encode version incremental to ASCII')
+    tls_encode_bytes("B", self.manufacturer_key_hash, stream)
+    try:
+      tls_encode_bytes("H", self.description.encode("utf-8"), stream)
+    except UnicodeError:
+      raise AftlError('Unable to encode description to UTF-8')
+
+  def get_expected_size(self):
+    """Returns the size of the encoded annotation."""
+    b = io.BytesIO()
+    self.encode(b)
+    return len(b.getvalue())
 
   def print_desc(self, o):
-    """Print the FirmwareInfoLeaf.
+    """Print the VBMetaPrimaryAnnotation.
 
     Arguments:
       o: The object to write the output to.
     """
-    o.write('    Firmware Info Leaf:\n')
-    # The order of the fields is based on the definition in
-    # proto.aftl_pb2.FirmwareInfo.
-    i = ' ' * 6
+    o.write('      VBMeta Primary Annotation:\n')
+    i = ' ' * 8
     fmt = '{}{:23}{}\n'
     if self.vbmeta_hash:
       o.write(fmt.format(i, 'VBMeta hash:', self.vbmeta_hash.hex()))
     if self.version_incremental:
       o.write(fmt.format(i, 'Version incremental:', self.version_incremental))
-    if self.platform_key:
-      o.write(fmt.format(i, 'Platform key:', self.platform_key))
     if self.manufacturer_key_hash:
       o.write(fmt.format(i, 'Manufacturer key hash:',
                          self.manufacturer_key_hash.hex()))
     if self.description:
       o.write(fmt.format(i, 'Description:', self.description))
+
+
+class SignedVBMetaPrimaryAnnotation(object):
+  """A Signed VBMetaPrimaryAnnotation.
+
+  Attributes:
+    signature: a Signature.
+    annotation: a VBMetaPrimaryAnnotation.
+  """
+
+  def __init__(self, signature=None, annotation=None):
+    """Default constructor."""
+    if not signature:
+      signature = Signature()
+    self.signature = signature
+    if not annotation:
+      annotation = VBMetaPrimaryAnnotation()
+    self.annotation = annotation
+
+  @classmethod
+  def parse(cls, stream):
+    """Parses a signed annotation."""
+    signature = Signature.parse(stream)
+    annotation = VBMetaPrimaryAnnotation.parse(stream)
+    return cls(signature, annotation)
+
+  def get_expected_size(self):
+    """Returns the size of the encoded signed annotation."""
+    return self.signature.get_expected_size() + \
+             self.annotation.get_expected_size()
+
+  def encode(self, stream):
+    """Encodes the SignedVBMetaPrimaryAnnotation.
+
+    Arguments:
+      stream: a BytesIO to which the object is written.
+
+    Raises:
+      AftlError: If the encoding failed.
+    """
+    self.signature.encode(stream)
+    self.annotation.encode(stream)
+
+  def print_desc(self, o):
+    """Prints the annotation.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    self.annotation.print_desc(o)
+
+class Leaf(abc.ABC):
+  """An abstract class to represent the leaves in the transparency log."""
+  FORMAT_STRING = ('!B'   # Version
+                   'Q'    # Timestamp
+                   'B'    # LeafType
+                  )
+
+  class LeafType(enum.Enum):
+    VBMetaType = 0
+    SignedVBMetaPrimaryAnnotationType = 1
+
+  def __init__(self, version=1, timestamp=0, leaf_type=LeafType.VBMetaType):
+    """Build a new leaf."""
+    self.version = version
+    self.timestamp = timestamp
+    self.leaf_type = leaf_type
+
+  @classmethod
+  def _parse_header(cls, stream):
+    """Parses the header of a leaf.
+
+    This is called with the parse method of the subclasses.
+
+    Arguments:
+      stream: a BytesIO to read the header from.
+
+    Returns:
+      A tuple (version, timestamp, leaf_type).
+
+    Raises:
+      AftlError: If the header cannot be decoded; or if the leaf type is
+          unknown.
+    """
+    data_length = struct.calcsize(cls.FORMAT_STRING)
+    try:
+      (version, timestamp, leaf_type) = struct.unpack(
+          cls.FORMAT_STRING, stream.read(data_length))
+    except struct.error:
+      raise AftlError("Not enough data to parse leaf header")
+    try:
+      leaf_type = cls.LeafType(leaf_type)
+    except ValueError:
+      raise AftlError("Unknown leaf type: {}".format(leaf_type))
+    return version, timestamp, leaf_type
+
+  @classmethod
+  @abc.abstractmethod
+  def parse(cls, data):
+    """Parses a leaf and returned a new object.
+
+    This abstract method must be implemented by the subclass. It may use
+    _parse_header to parse the common fields.
+
+    Arguments:
+      data: a bytes-like object.
+
+    Returns:
+      An object of the type of the particular subclass.
+
+    Raises:
+      AftlError: If the leaf type is incorrect; or if the decoding failed.
+    """
+
+  @abc.abstractmethod
+  def encode(self):
+    """Encodes a leaf.
+
+    This abstract method must be implemented by the subclass. It may use
+    _encode_header to encode the common fields.
+
+    Returns:
+      A bytes with the encoded leaf.
+
+    Raises:
+      AftlError: If the encoding failed.
+    """
+
+  def _get_expected_header_size(self):
+    """Returns the size of the leaf header."""
+    return struct.calcsize(self.FORMAT_STRING)
+
+  def _encode_header(self, stream):
+    """Encodes the header of the leaf.
+
+    This method is called by the encode method in the subclass.
+
+    Arguments:
+      stream: a BytesIO to which the object is written.
+
+    Raises:
+      AftlError: If the encoding failed.
+    """
+    try:
+      stream.write(struct.pack(self.FORMAT_STRING, self.version, self.timestamp,
+                               self.leaf_type.value))
+    except struct.error:
+      raise AftlError('Unable to encode the leaf header')
+
+  def print_desc(self, o):
+    """Prints the leaf header.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    i = ' ' * 6
+    fmt = '{}{:23}{}\n'
+    o.write(fmt.format(i, 'Version:', self.version))
+    o.write(fmt.format(i, 'Timestamp:', self.timestamp))
+    o.write(fmt.format(i, 'Type:', self.leaf_type))
+
+
+class SignedVBMetaPrimaryAnnotationLeaf(Leaf):
+  """A Signed VBMetaPrimaryAnnotation leaf."""
+
+  def __init__(self, version=1, timestamp=0,
+               signed_vbmeta_primary_annotation=None):
+    """Builds a new Signed VBMeta Primary Annotation leaf."""
+    super(SignedVBMetaPrimaryAnnotationLeaf, self).__init__(
+        version=version, timestamp=timestamp,
+        leaf_type=self.LeafType.SignedVBMetaPrimaryAnnotationType)
+    if not signed_vbmeta_primary_annotation:
+      signed_vbmeta_primary_annotation = SignedVBMetaPrimaryAnnotation()
+    self.signed_vbmeta_primary_annotation = signed_vbmeta_primary_annotation
+
+  @property
+  def annotation(self):
+    """Returns the VBMetaPrimaryAnnotation contained in the leaf."""
+    return self.signed_vbmeta_primary_annotation.annotation
+
+  @property
+  def signature(self):
+    """Returns the Signature contained in the leaf."""
+    return self.signed_vbmeta_primary_annotation.signature
+
+  @classmethod
+  def parse(cls, data):
+    """Parses an encoded contained in data.
+
+    Arguments:
+      data: a bytes-like object.
+
+    Returns:
+      A SignedVBMetaPrimaryAnnotationLeaf.
+
+    Raises:
+      AftlError if the leaf type is incorrect; or if the decoding failed.
+    """
+    encoded_leaf = io.BytesIO(data)
+    version, timestamp, leaf_type = Leaf._parse_header(encoded_leaf)
+    if leaf_type != Leaf.LeafType.SignedVBMetaPrimaryAnnotationType:
+      raise AftlError("Incorrect leaf type")
+    signed_annotation = SignedVBMetaPrimaryAnnotation.parse(encoded_leaf)
+    return cls(version=version, timestamp=timestamp,
+               signed_vbmeta_primary_annotation=signed_annotation)
+
+  def get_expected_size(self):
+    """Returns the size of the leaf."""
+    size = self._get_expected_header_size()
+    if self.signed_vbmeta_primary_annotation:
+      size += self.signed_vbmeta_primary_annotation.get_expected_size()
+    return size
+
+  def encode(self):
+    """Encodes the leaf.
+
+    Returns:
+      bytes which contains the encoded leaf.
+
+    Raises:
+      AftlError: If the encoding failed.
+    """
+    stream = io.BytesIO()
+    self._encode_header(stream)
+    self.signed_vbmeta_primary_annotation.encode(stream)
+    return stream.getvalue()
+
+  def print_desc(self, o):
+    """Prints the leaf.
+
+    Arguments:
+      o: The object to write the output to.
+    """
+    i = ' ' * 4
+    fmt = '{}{:25}{}\n'
+    o.write(fmt.format(i, 'Leaf:', ''))
+    super(SignedVBMetaPrimaryAnnotationLeaf, self).print_desc(o)
+    self.signed_vbmeta_primary_annotation.print_desc(o)
 
 
 class AftlImage(object):
@@ -1087,40 +1457,40 @@ class AftlCommunication(object):
     else:
       self.timeout = None
 
-  def add_firmware_info(self, request):
-    """Calls the AddFirmwareInfo RPC on the AFTL server.
+  def add_vbmeta(self, request):
+    """Calls the AddVBMeta RPC on the AFTL server.
 
     Arguments:
-      request: A AddFirmwareInfoRequest message.
+      request: An AddVBMetaRequest message.
 
     Returns:
-      An AddFirmwareInfoReponse message.
+      An AddVBMetaResponse message.
 
     Raises:
       AftlError: If grpc or the proto modules cannot be loaded, if there is an
         error communicating with the log.
     """
     raise NotImplementedError(
-        'AddFirmwareInfo() needs to be implemented by subclass.')
+        'add_vbmeta() needs to be implemented by subclass.')
 
 
 class AftlGrpcCommunication(AftlCommunication):
   """Class that implements GRPC communication to the AFTL server."""
 
-  def add_firmware_info(self, request):
-    """Calls the AddFirmwareInfo RPC on the AFTL server.
+  def add_vbmeta(self, request):
+    """Calls the AddVBMeta RPC on the AFTL server.
 
     Arguments:
-      request: A AddFirmwareInfoRequest message.
+      request: An AddVBMetaRequest message.
 
     Returns:
-      An AddFirmwareInfoReponse message.
+      An AddVBMetaResponse message.
 
     Raises:
       AftlError: If grpc or the proto modules cannot be loaded, if there is an
         error communicating with the log.
     """
-    # Import grpc now to avoid global dependencies as it otherwise breakes
+    # Import grpc now to avoid global dependencies as it otherwise breaks
     # running unittest with atest.
     try:
       import grpc  # pylint: disable=import-outside-toplevel
@@ -1145,8 +1515,8 @@ class AftlGrpcCommunication(AftlCommunication):
                      'with domain {}.\n'.format(
                          self.transparency_log_config.target))
     try:
-      response = stub.AddFirmwareInfo(request, timeout=self.timeout,
-                                      metadata=metadata)
+      response = stub.AddVBMeta(request, timeout=self.timeout,
+                                metadata=metadata)
     except grpc.RpcError as e:
       raise AftlError('Error: grpc failure ({})'.format(e))
     return response
@@ -1340,34 +1710,26 @@ class Aftl(avbtool.Avb):
     # Calculate the hash of the manufacturer key data.
     m_key_hash = hashlib.sha256(manufacturer_key_data).digest()
 
-    # Create an AddFirmwareInfoRequest protobuf for transmission to AFTL.
-    fw_info = aftl_pb2.FirmwareInfo(vbmeta_hash=vbmeta_hash,
-                                    version_incremental=version_inc,
-                                    manufacturer_key_hash=m_key_hash)
-    signed_fw_info = b''
-    # AFTL supports SHA256_RSA4096 for now, more will be available.
-    algorithm_name = 'SHA256_RSA4096'
-    try:
-      rsa_key = avbtool.RSAPublicKey(manufacturer_key_path)
-      signed_fw_info = rsa_key.sign(algorithm_name, fw_info.SerializeToString(),
-                                    signing_helper, signing_helper_with_files)
-    except avbtool.AvbError as e:
-      raise AftlError('Failed to sign FirmwareInfo with '
-                      '--manufacturer_key: {}'.format(e))
-    fw_info_sig = sigpb_pb2.DigitallySigned(
-        hash_algorithm='SHA256',
-        signature_algorithm='RSA',
-        signature=signed_fw_info)
+    # Build VBMetaPrimaryAnnotation with that data.
+    annotation = VBMetaPrimaryAnnotation(
+        vbmeta_hash=vbmeta_hash, version_incremental=version_inc,
+        manufacturer_key_hash=m_key_hash)
 
-    sfw_info = aftl_pb2.SignedFirmwareInfo(info=fw_info,
-                                           info_signature=fw_info_sig)
-    request = api_pb2.AddFirmwareInfoRequest(
-        vbmeta=vbmeta_image, fw_info=sfw_info)
+    # Sign annotation and add it to the request.
+    signed_annotation = annotation.sign(
+        manufacturer_key_path, signing_helper=signing_helper,
+        signing_helper_with_files=signing_helper_with_files)
 
-    # Submit signed FirmwareInfo to the server.
+    encoded_signed_annotation = io.BytesIO()
+    signed_annotation.encode(encoded_signed_annotation)
+    request = api_pb2.AddVBMetaRequest(
+        vbmeta=vbmeta_image,
+        signed_vbmeta_primary_annotation=encoded_signed_annotation.getvalue())
+
+    # Submit signed VBMeta annotation to the server.
     if not aftl_comms:
       aftl_comms = AftlGrpcCommunication(transparency_log_config, timeout)
-    response = aftl_comms.add_firmware_info(request)
+    response = aftl_comms.add_vbmeta(request)
 
     # Return an AftlIcpEntry representing this response.
     icp_entry = AftlIcpEntry()
@@ -1870,14 +2232,14 @@ class AftlTool(avbtool.AvbTool):
     sub_parser.set_defaults(func=self.load_test_aftl)
 
     args = parser.parse_args(argv[1:])
-    try:
-      success = args.func(args)
-    except AttributeError:
+    if not 'func' in args:
       # This error gets raised when the command line tool is called without any
       # arguments. It mimics the original Python 2 behavior.
       parser.print_usage()
       print('aftltool: error: too few arguments')
       sys.exit(2)
+    try:
+      success = args.func(args)
     except AftlError as e:
       # Signals to calling tools that an unhandled exception occured.
       sys.stderr.write('Unhandled AftlError occured: {}\n'.format(e))
