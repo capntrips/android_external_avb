@@ -25,7 +25,6 @@
 """Unit tests for aftltool."""
 
 import argparse
-import base64
 import binascii
 import io
 import os
@@ -46,6 +45,107 @@ import api_pb2
 # location independent where the script is called from.
 # TODO(b/149307145): Remove workaround once the referenced bug is fixed.
 TEST_EXEC_PATH = os.path.dirname(os.path.realpath(__file__))
+
+class TlsDataTest(unittest.TestCase):
+
+  def test_decode(self):
+    data = io.BytesIO(b'\x01\x02')
+    value = aftltool.tls_decode_bytes('B', data)
+    self.assertEqual(value, b'\x02')
+    self.assertEqual(data.read(), b'')
+
+    data = io.BytesIO(b'\x00\x01\x03\xff')
+    value = aftltool.tls_decode_bytes('H', data)
+    self.assertEqual(value, b'\x03')
+    self.assertEqual(data.read(), b'\xff')
+
+    data = io.BytesIO(b'\x00\x00\x00\x02\x04\x05\xff\xff')
+    value = aftltool.tls_decode_bytes('L', data)
+    self.assertEqual(value, b'\x04\x05')
+    self.assertEqual(data.read(), b'\xff\xff')
+
+  def test_decode_invalid(self):
+    # Insufficient data for reading the size.
+    with self.assertRaises(aftltool.AftlError):
+      aftltool.tls_decode_bytes('B', io.BytesIO(b''))
+
+    # Invalid byte_size character.
+    with self.assertRaises(aftltool.AftlError):
+      aftltool.tls_decode_bytes('/o/', io.BytesIO(b'\x01\x02\xff'))
+
+    # Insufficient data for reading the value.
+    with self.assertRaises(aftltool.AftlError):
+      aftltool.tls_decode_bytes('B', io.BytesIO(b'\x01'))
+
+  def test_encode(self):
+    stream = io.BytesIO()
+    aftltool.tls_encode_bytes('B', b'\x01\x02\x03\x04', stream)
+    self.assertEqual(stream.getvalue(), b'\x04\x01\x02\x03\x04')
+
+    stream = io.BytesIO()
+    aftltool.tls_encode_bytes('H', b'\x01\x02\x03\x04', stream)
+    self.assertEqual(stream.getvalue(), b'\x00\x04\x01\x02\x03\x04')
+
+  def test_encode_invalid(self):
+    # Byte size is not large enough to encode the value.
+    stream = io.BytesIO()
+    with self.assertRaises(aftltool.AftlError):
+      aftltool.tls_encode_bytes('B', b'\x01'*256, stream)
+
+    # Invalid byte_size character.
+    stream = io.BytesIO()
+    with self.assertRaises(aftltool.AftlError):
+      aftltool.tls_encode_bytes('/o/', b'\x01\x02', stream)
+
+
+class VBMetaPrimaryAnnotationTest(unittest.TestCase):
+
+  def test_decode(self):
+    stream = io.BytesIO(b'\x00\x00\x00\x00\x00')
+    anno = aftltool.VBMetaPrimaryAnnotation.parse(stream)
+    self.assertEqual(anno.vbmeta_hash, b'')
+    self.assertEqual(anno.version_incremental, '')
+    self.assertEqual(anno.manufacturer_key_hash, b'')
+    self.assertEqual(anno.description, '')
+
+  def test_encode(self):
+    stream = io.BytesIO()
+    anno = aftltool.VBMetaPrimaryAnnotation()
+    anno.encode(stream)
+    self.assertEqual(stream.getvalue(), b'\x00\x00\x00\x00\x00')
+
+  def test_encode_invalid(self):
+    stream = io.BytesIO()
+    anno = aftltool.VBMetaPrimaryAnnotation()
+    # Version incremental should be ASCII only.
+    anno.version_incremental = '☃'
+    with self.assertRaises(aftltool.AftlError):
+      anno.encode(stream)
+
+
+class SignedVBMetaAnnotationLeafTest(unittest.TestCase):
+
+  def test_encode(self):
+    leaf = aftltool.SignedVBMetaPrimaryAnnotationLeaf()
+    self.assertEqual(leaf.encode(),
+                     b'\x01'   # Version
+                     b'\x00\x00\x00\x00\x00\x00\x00\x00'  # Timestamp
+                     b'\x01' + # Leaf Type
+                     b'\x00' * 4 + # Empty Signature
+                     b'\x00' * 5) # Empty Annotation
+
+  def test_encode_invalid_type(self):
+    # The version field must be a 1-byte integer.
+    leaf = aftltool.SignedVBMetaPrimaryAnnotationLeaf()
+    leaf.version = 'x'
+    with self.assertRaises(aftltool.AftlError):
+      leaf.encode()
+
+  def test_encode_invalid_size(self):
+    leaf = aftltool.SignedVBMetaPrimaryAnnotationLeaf()
+    leaf.version = 256
+    with self.assertRaises(aftltool.AftlError):
+      leaf.encode()
 
 
 class AftltoolTestCase(unittest.TestCase):
@@ -99,6 +199,28 @@ class AftltoolTestCase(unittest.TestCase):
         b''                                  # metadata (empty)
     )
 
+    # Test Annotation #1
+    anno_1 = aftltool.VBMetaPrimaryAnnotation(vbmeta_hash=b'w'*32,
+                                              version_incremental='x'*5,
+                                              manufacturer_key_hash=b'y'*32,
+                                              description='z'*51)
+    signed_anno_1 = aftltool.SignedVBMetaPrimaryAnnotation(annotation=anno_1)
+
+    self.test_anno_1 = aftltool.SignedVBMetaPrimaryAnnotationLeaf(
+        signed_vbmeta_primary_annotation=signed_anno_1)
+    self.test_anno_1_bytes = (
+        b'\x01'                              # version
+        b'\x00\x00\x00\x00\x00\x00\x00\x00'  # timestamp
+        b'\x01'                              # leaf_type
+        b'\x00'                              # hash_algorithm
+        b'\x00'                              # signature_algorithm
+        + b'\x00\x00'                        # signature
+        + b'\x20' + b'w' * 32                # vbmeta_hash
+        + b'\x05' + b'x' * 5                 # version_incremental
+        + b'\x20' + b'y' * 32                # manufacturer_key_hash
+        + b'\x00\x33' + b'z' * 51            # description
+    )
+
     # Fill each structure with an easily observable pattern for easy validation.
     self.test_proof_hashes_1 = []
     self.test_proof_hashes_1.append(b'b' * 32)
@@ -110,6 +232,7 @@ class AftltoolTestCase(unittest.TestCase):
     self.test_entry_1 = aftltool.AftlIcpEntry()
     self.test_entry_1.log_url = self.test_tl_url_1
     self.test_entry_1.leaf_index = 1
+    self.test_entry_1.annotation_leaf = self.test_anno_1
     self.test_entry_1.log_root_descriptor = self.test_sth_1
     self.test_entry_1.proofs = self.test_proof_hashes_1
     self.test_entry_1.log_root_signature = b'g' * 512
@@ -118,12 +241,13 @@ class AftltoolTestCase(unittest.TestCase):
         b'\x00\x00\x00\x1b'                  # Transparency log url size.
         b'\x00\x00\x00\x00\x00\x00\x00\x01'  # Leaf index.
         b'\x00\x00\x00\x3d'                  # Log root descriptor size.
-        b'\x00\x00\x00\x00'                  # Firmware info leaf size.
+        b'\x00\x00\x00\x8b'                  # Annotation leaf size.
         b'\x02\x00'                          # Log root signature size.
         b'\x04'                              # Number of hashes in ICP.
         b'\x00\x00\x00\x80'                  # Size of ICP in bytes.
         + self.test_tl_url_1.encode('ascii') # Transparency log url.
         + self.test_sth_1_bytes
+        + self.test_anno_1_bytes
         + b'g' * 512                         # Log root signature.
         + b'b' * 32                          # Hashes...
         + b'c' * 32
@@ -161,6 +285,7 @@ class AftltoolTestCase(unittest.TestCase):
     self.test_entry_2 = aftltool.AftlIcpEntry()
     self.test_entry_2.log_url = self.test_tl_url_2
     self.test_entry_2.leaf_index = 2
+    self.test_entry_2.annotation_leaf = self.test_anno_1
     self.test_entry_2.log_root_descriptor = self.test_sth_2
     self.test_entry_2.log_root_signature = b'd' * 512
     self.test_entry_2.proofs = self.test_proof_hashes_2
@@ -169,12 +294,13 @@ class AftltoolTestCase(unittest.TestCase):
         b'\x00\x00\x00\x1a'                   # Transparency log url size.
         b'\x00\x00\x00\x00\x00\x00\x00\x02'   # Leaf index.
         b'\x00\x00\x00\x3f'                   # Log root descriptor size.
-        b'\x00\x00\x00\x00'                   # Firmware info leaf size.
+        b'\x00\x00\x00\x8b'                   # Annotation leaf size.
         b'\x02\x00'                           # Log root signature size.
         b'\x02'                               # Number of hashes in ICP.
         b'\x00\x00\x00\x40'                   # Size of ICP in bytes.
         + self.test_tl_url_2.encode('ascii')  # Transparency log url.
         + self.test_sth_2_bytes               # Log root
+        + self.test_anno_1_bytes
         + b'd' * 512                          # Log root signature.
         + b'g' * 32                           # Hashes...
         + b'h' * 32)
@@ -188,61 +314,88 @@ class AftltoolTestCase(unittest.TestCase):
         b'AFTL'                                         # Magic.
         + struct.pack('!L', avbtool.AVB_VERSION_MAJOR)  # Major version.
         + struct.pack('!L', avbtool.AVB_VERSION_MINOR)  # Minor version.
-        + b'\x00\x00\x05\xb9'                           # Image size.
+        + b'\x00\x00\x06\xcf'                           # Image size.
         b'\x00\x02'                                     # Number of ICP entries.
         + self.test_entry_1_bytes
         + self.test_entry_2_bytes)
 
-    # pylint: disable=no-member
-    self.test_afi_resp = api_pb2.AddFirmwareInfoResponse()
-    self.test_afi_resp.fw_info_proof.proof.leaf_index = 6263
+    self.test_avbm_resp = api_pb2.AddVBMetaResponse()
+    self.test_avbm_resp.annotation_proof.proof.leaf_index = 9127
     hashes = [
-        '3ad99869646980c0a51d637a9791f892d12e0bc83f6bac5d305a9e289e7f7e8b',
-        '2e5c664d2aee64f71cb4d292e787d0eae7ca9ed80d1e08abb41d26baca386c05',
-        'a671dd99f8d97e9155cc2f0a9dc776a112a5ec5b821ec71571bb258ac790717a',
-        '78046b839595e4e49ad4b0c73f92bf4803aacd4a3351181086509d057ef0d7a9',
-        'c0a7e013f03e7c69e9402070e113dadb345868cf144ccb174fabc384b5605abf',
-        'dc36e5dbe36abe9f4ad10f14170aa0148b6fe3fcaba9df43deaf4dede01b02e8',
-        'b063e7fb665370a361718208756c363dc5206e2e9af9b4d847d81289cdae30de',
-        'a69ea5ba88a221103636d3f4245c800570eb86ad9276121481521f97d0a04a81']
+        '61076ca285b4982669e67757f55682ddc43ab5c11ba671260f82a8efa8831f94',
+        '89c2fbcc58da25a65ce5e9b4fb22aaf208b20601f0bc023f73f05d35bc1f3bac',
+        '75d26b5f754b4bed332a3ce2a2bfea0334706a974b7e00ee663f0279fa8b446e',
+        'e1cd9c96feb893b5ef7771e424ac1c6c47509c2b98bc578d22ad07369c9641aa',
+        'e83e0e4dd352b1670a55f93f88781a73bb41efcadb9927399f59459dfa14bc40',
+        '8d5d25996117c88655d66f685baa3c94390867a040507b10587b17fbe92b496a',
+        '5de4c627e9ca712f207d6056f56f0d3286ed4a5381ed7f3cc1aa470217734138',
+        '19acfdb424d7fe28d1f850c76302f78f9a50146a5b9c65f9fdfbbc0173fd6993']
     for h in hashes:
-      self.test_afi_resp.fw_info_proof.proof.hashes.append(
+      self.test_avbm_resp.annotation_proof.proof.hashes.append(
           binascii.unhexlify(h))
-    self.test_afi_resp.fw_info_proof.sth.key_hint = binascii.unhexlify(
+    self.test_avbm_resp.annotation_proof.sth.key_hint = binascii.unhexlify(
         '5af859abce8fe1ea')
-    self.test_afi_resp.fw_info_proof.sth.log_root = binascii.unhexlify(
-        '000100000000000018782053b182b55dc1377197c938637f50093131daea4'
-        'd0696b1eae5b8a014bfde884a15edb28f1fc7954400000000000013a50000'
+    self.test_avbm_resp.annotation_proof.sth.log_root = binascii.unhexlify(
+        '0001'
+        '00000000000023a8'
+        '20'
+        '9a5f71340f8dc98bdc6320f976dda5f34db8554cb273ba5ab60f1697c519d6f6'
+        '1609ae15024774b1'
+        '0000000000001e5a'
+        '0000'
     )
-    self.test_afi_resp.fw_info_proof.sth.log_root_signature = (
+    self.test_avbm_resp.annotation_proof.sth.log_root_signature = (
         binascii.unhexlify(
-            'c264bc7986a1cf56364ca4dd04989f45515cb8764d05b4fb2b880172585ea404'
-            '2105f95a0e0471fb6e0f8c762b14b2e526fb78eaddcc61484917795a12f6ab3b'
-            '557b5571d492d07d7950595f9ad8647a606c7c633f4697c5eb59c272aeca0419'
-            '397c70a3b9b51537537c4ea6b49d356110e70a9286902f814cc6afbeafe612e4'
-            '9e180146140e902bdd9e9dae66b37b4943150a9571949027a648db88a4eea3ad'
-            'f930b4fa6a183e97b762ab0e55a3a26aa6b0fd44d30531e2541ecb94bf645e62'
-            '59e8e3151e7c3b51a09fe24557ce2fd2c0ecdada7ce99c390d2ef10e5d075801'
-            '7c10d49c55cdee930959cc35f0104e04f296591eeb5defbc9ebb237da7b204ca'
-            'a4608cb98d6bc3a01f18585a04441caf8ec7a35aa2d35f7483b92b14fd0f4a41'
-            '3a91133545579309adc593222ca5032a103b00d8fcaea911936dbec11349e4dd'
-            '419b091ea7d1130570d70e2589dd9445fd77fd7492507e1c87736847b9741cc6'
-            '236868af42558ff6e833e12010c8ede786e43ada40ff488f5f1870d1619887d7'
-            '66a24ad0a06a47cc14e2f7db07361be191172adf3155f49713807c7c265f5a84'
-            '040fc84246ccf7913e44721f0043cea05ee774e457e13206775eee992620c3f9'
-            'd2b2584f58aac19e4afe35f0a17df699c45729f94101083f9fc4302659a7e6e0'
-            'e7eb36f8d1ca0be2c9010160d329bd2d17bb707b010fdd63c30b667a0b886cf9'
+            '7c37903cc76e8689a6b31da9ad56c3daeb6194029510297cc7d147278390da33'
+            '09c4d9eb1f6be0cdcd1de5315b0b3b573cc9fcd8620d3fab956abbe3c597a572'
+            '46e5a5d277c4cc4b590872d0292fa64e1d3285626b1dedeb00b6aa0a7a0717c0'
+            '7d4c89b68fda9091be06180be1369675a7c4ce7f42cca133ef0daf8dcc5ba1ee'
+            '930cef6dcb71b0a7690446e19661c8e18c089a5d6f6fc9299a0592efb33a4db5'
+            '4c640027fa4f0ad0009f8bf75ec5fc17e0fa1091fabe74fe52738443745066ab'
+            '48f99b297809b863c01016abda17a2479fce91f9929c60bc2ce15e474204fc5a'
+            '8e79b2190aadb7c149671e8c76a4da506860f8d6020fb2eaabfee025cc267bad'
+            '3c8257186c8aaf1da9eefe50cae4b3e8deb66033ebc4bfcda2b317f9e7d2dd78'
+            'b47f2d86795815d82058ad4cba8fc7983a3bbf843e9b8c7ec7f1ae137be6848d'
+            '03c76eefdac40ce5e66cc23d9f3e79ad87acbe7ec0c0bb419a7d368ae1e73c85'
+            '742871f847bde69c871e8797638e0e270282fb058ef1cbcba52aded9dcc8249b'
+            '38fbed8424c33b8cfcde4f49797c64dda8d089d73b84062602fd41c66091543c'
+            'e13c18cfa7f8300530ad4b7adb8924bbb86d17bcc5f1d3d74c522a7dcc8c3c1f'
+            '28a999f2fe1bfe5520c66f93f7c90996dc7f52e62dd95ace9ceace90324c3040'
+            '669b7f5aeb5c5a53f217f1de46e32f80d0aaaf7d9cc9d0e8f8fd7026c612103a'
         )
     )
-    self.test_afi_resp.fw_info_leaf = (
-        b'{\"timestamp\":{\"seconds\":1580115370,\"nanos\":621454825},\"Va'
-        b'lue\":{\"FwInfo\":{\"info\":{\"info\":{\"vbmeta_hash\":\"ViNzEQS'
-        b'/oc/bJ13yl40fk/cvXw90bxHQbzCRxgHDIGc=\",\"version_incremental\":'
-        b'\"1\",\"manufacturer_key_hash\":\"yBCrUOdjvaAh4git5EgqWa5neegUao'
-        b'XeLlB67+N8ObY=\"}}}}}')
 
-    self.test_fw_info_leaf = aftltool.FirmwareInfoLeaf(
-        self.test_afi_resp.fw_info_leaf)
+    anno = aftltool.VBMetaPrimaryAnnotation(
+        vbmeta_hash=bytes.fromhex(
+            '5623731104bfa1cfdb275df2978d1f93f72f5f0f746f11d06f3091c601c32067'),
+        version_incremental='only_for_testing',
+        manufacturer_key_hash=bytes.fromhex(
+            '83ab3b109b73a1d32dce4153a2de57a1a0485052db8364f3180d98614749d7f7'))
+    raw_signature = bytes.fromhex(
+        '6a523021bc5b933bb58c38c8238be3a5fe1166002f5df8b77dee9dd22d353595'
+        'be7996656d3824ebf4e1411a05ee3652d64669d3d62b167d3290dbdf4f2741ba'
+        '4b6472e1bd71fc1860465fdcdca1ff08c4ab0420d7dcbf4ad144f64e211d8f92'
+        '081ba51192358e2478195e573d000282423b23e6dd945069907dcf11520ff11a'
+        '250e26643b820f8a5d80ccfe7d5d84f58e549cd05630f2254ade8edc88d9aa8a'
+        'ec2089f84643854e1f265a4f746598ce4cae529c4eaa637f6e35fa1d1da9254e'
+        'ec8dfede7a4313f7b151547dcdde98782ce6fb3149326ee5b8e750813d3fd37a'
+        '738fe92f6111bf0dff4091769e216b842980e05716f2e50268a7dcca430e175e'
+        '711f80e41a1a28f20635741ac11a56f97492d30db6d1955a827daf8e83faebe5'
+        'a96e18a13c558ae561a02c90982514c853db0296c2e791e68b77c30e6232a3b7'
+        'ed355441d4706277f33a01735f56cb8279336491731939691683f96f1c3e3183'
+        'a0b77510d6ff0199b7688902044829793106546fd6fd4a5294d63c31c91256ad'
+        'f7be6d053e77875698ad32ffaaeaac5d54b432e537f72549d2543072ae35578f'
+        '138d82afcadd668511ba276ce02b6f9c18ef3b6f2f6ae0d123e9f8cb930f21a9'
+        'c49a6d9e95de741c7860593a956735e1b77e9851ecb1f6572abf6e2c8ba15085'
+        'e37e0f7bab0a30d108b997ed5edd74cf7f89cf082590a6f0af7a3a1f68c0077a')
+    signature = aftltool.Signature(signature=raw_signature)
+    signed_anno = aftltool.SignedVBMetaPrimaryAnnotation(annotation=anno,
+                                                         signature=signature)
+    leaf = aftltool.SignedVBMetaPrimaryAnnotationLeaf(
+        timestamp=1587991742919072870,
+        signed_vbmeta_primary_annotation=signed_anno).encode()
+    self.test_avbm_resp.annotation_leaf = leaf
+
 
   def tearDown(self):
     """Tears down the test bed for the unit tests."""
@@ -448,56 +601,6 @@ class AftlImageTest(AftltoolTestCase):
     # Valid image but checked with empty list of keys.
     self.assertFalse(desc.verify_vbmeta_image(vbmeta_image, []))
 
-  def test_verify_vbmeta_image_with_2_icp_from_different_logs(self):
-    """Tests the verify_vbmeta_image method."""
-    # Valid vbmeta image without footer with 2 ICPs from different logs.
-    tool = aftltool.Aftl()
-    image_path = self.get_testdata_path(
-        'aftltool/aftl_output_vbmeta_with_2_icp_different_logs.img')
-    vbmeta_image, _ = tool.get_vbmeta_image(image_path)
-    desc = tool.get_aftl_image(image_path)
-
-    # Valid image checked against log keys from both logs.
-    self.assertTrue(desc.verify_vbmeta_image(
-        vbmeta_image, [
-            self.get_testdata_path('aftltool/aftl_pubkey_1.pub'),
-            self.get_testdata_path('aftltool/aftl_pubkey_2.pub')
-        ]))
-
-    # Valid image checked with one of the keys with an invalid file path.
-    self.assertFalse(desc.verify_vbmeta_image(
-        vbmeta_image, [
-            self.get_testdata_path('aftltool/aftl_pubkey_1.pub'),
-            self.get_testdata_path('non_existent_blabli')
-        ]))
-
-    # Valid image checked with one of the keys being a invalid key.
-    self.assertFalse(desc.verify_vbmeta_image(
-        vbmeta_image, [
-            self.get_testdata_path('aftltool/aftl_pubkey_1.pub'),
-            self.get_testdata_path('large_blob.bin')
-        ]))
-
-    # Valid image checked with one of the keys being None.
-    self.assertFalse(desc.verify_vbmeta_image(
-        vbmeta_image, [
-            self.get_testdata_path('aftltool/aftl_pubkey_1.pub'),
-            None
-        ]))
-
-    # Valid vbmeta image checked against only one of the log keys.
-    self.assertFalse(desc.verify_vbmeta_image(
-        vbmeta_image, [self.get_testdata_path('aftltool/aftl_pubkey_1.pub')]))
-    self.assertFalse(desc.verify_vbmeta_image(
-        vbmeta_image, [self.get_testdata_path('aftltool/aftl_pubkey_2.pub')]))
-
-    # Valid image checked with invalid key.
-    self.assertFalse(desc.verify_vbmeta_image(
-        vbmeta_image, [self.get_testdata_path('large_blob.bin')]))
-
-    # Valid image but checked with empty list of keys.
-    self.assertFalse(desc.verify_vbmeta_image(vbmeta_image, []))
-
   def test_encode(self):
     """Tests encode method."""
     desc_bytes = self.test_aftl_desc.encode()
@@ -649,7 +752,7 @@ class AftlIcpEntryTest(AftltoolTestCase):
     self.assertEqual(entry.log_url_size, 0)
     self.assertEqual(entry.leaf_index, 0)
     self.assertEqual(entry.log_root_descriptor_size, 29)
-    self.assertEqual(entry.fw_info_leaf_size, 0)
+    self.assertEqual(entry.annotation_leaf_size, 19)
     self.assertEqual(entry.log_root_sig_size, 0)
     self.assertEqual(entry.proof_hash_count, 0)
     self.assertEqual(entry.inc_proof_size, 0)
@@ -663,7 +766,7 @@ class AftlIcpEntryTest(AftltoolTestCase):
     entry = aftltool.AftlIcpEntry(self.test_entry_1_bytes)
     self.assertEqual(entry.log_url_size, len(self.test_tl_url_1))
     self.assertEqual(entry.leaf_index, 1)
-    self.assertEqual(entry.fw_info_leaf_size, 0)
+    self.assertEqual(entry.annotation_leaf_size, 139)
     self.assertEqual(entry.log_root_sig_size, 512)
     self.assertEqual(entry.proof_hash_count, len(self.test_proof_hashes_1))
     self.assertEqual(entry.inc_proof_size, 128)
@@ -680,11 +783,11 @@ class AftlIcpEntryTest(AftltoolTestCase):
     """Tests get_expected_size method."""
     # Default record.
     entry = aftltool.AftlIcpEntry()
-    self.assertEqual(entry.get_expected_size(), 56)
+    self.assertEqual(entry.get_expected_size(), 75)
     self.assertEqual(entry.get_expected_size(), len(entry.encode()))
 
     # Test record.
-    self.assertEqual(self.test_entry_1.get_expected_size(), 755)
+    self.assertEqual(self.test_entry_1.get_expected_size(), 894)
     self.assertEqual(self.test_entry_1.get_expected_size(),
                      len(self.test_entry_1.encode()))
 
@@ -717,15 +820,17 @@ class AftlIcpEntryTest(AftltoolTestCase):
   def test_translate_response(self):
     """Tests translate_response method."""
     entry = aftltool.AftlIcpEntry()
-    entry.translate_response('aftl-test.foo.bar:80', self.test_afi_resp)
+    entry.translate_response('aftl-test.foo.bar:80', self.test_avbm_resp)
     self.assertEqual(entry.log_url, 'aftl-test.foo.bar:80')
-    self.assertEqual(entry.leaf_index, 6263)
+    self.assertEqual(entry.leaf_index, 9127)
     self.assertEqual(entry.log_root_descriptor.encode(),
-                     self.test_afi_resp.fw_info_proof.sth.log_root)
-    self.assertEqual(entry.log_root_signature,
-                     self.test_afi_resp.fw_info_proof.sth.log_root_signature)
-    self.assertEqual(entry.proofs,
-                     self.test_afi_resp.fw_info_proof.proof.hashes)
+                     self.test_avbm_resp.annotation_proof.sth.log_root)
+    self.assertEqual(
+        entry.log_root_signature,
+        self.test_avbm_resp.annotation_proof.sth.log_root_signature)
+    self.assertEqual(
+        entry.proofs,
+        self.test_avbm_resp.annotation_proof.proof.hashes)
 
   def test_verify_icp(self):
     """Tests verify_icp method."""
@@ -735,17 +840,18 @@ class AftlIcpEntryTest(AftltoolTestCase):
 
       # Valid ICP.
       entry = aftltool.AftlIcpEntry()
-      entry.translate_response(self.test_tl_url_1, self.test_afi_resp)
+      entry.translate_response(self.test_tl_url_1, self.test_avbm_resp)
       self.assertTrue(entry.verify_icp(key_file.name))
 
-      # Invalid ICP where fw_info_leaf is not matching up with proofs.
+      # Invalid ICP where annotation_leaf is not matching up with proofs.
       # pylint: disable=protected-access
       entry = aftltool.AftlIcpEntry()
-      entry.translate_response(self.test_tl_url_1, self.test_afi_resp)
-      fw_info_leaf_bytes = entry.fw_info_leaf._fw_info_leaf_bytes.replace(
-          b'ViNzEQS', b'1234567')
-      entry.fw_info_leaf._fw_info_leaf_bytes = fw_info_leaf_bytes
-      self.assertFalse(entry.verify_icp(key_file.name))
+      entry.translate_response(self.test_tl_url_1, self.test_avbm_resp)
+      vbmeta_hash = entry.annotation_leaf.annotation.vbmeta_hash
+      vbmeta_hash = vbmeta_hash.replace(b"\x56\x23\x73\x11",
+                                        b"\x00\x00\x00\x00")
+      entry.annotation_leaf.annotation.vbmeta_hash = vbmeta_hash
+      self.assertFalse(entry.verify_icp(key_file))
 
   def test_verify_vbmeta_image(self):
     """Tests the verify_vbmeta_image method."""
@@ -995,94 +1101,54 @@ class TrillianLogRootDescriptorTest(AftltoolTestCase):
     self.assertIn('Metadata:', desc)
 
 
-class FirmwareInfoLeafTest(AftltoolTestCase):
-  """Test suite for testing the FirmwareInfoLeaf."""
+class SignedVBMetaPrimaryAnnotationLeafTest(AftltoolTestCase):
+  """Test suite for testing the Leaf."""
 
   def test__init__(self):
     """Tests constructor and properties methods."""
     # Calls constructor without data.
-    leaf = aftltool.FirmwareInfoLeaf()
-    self.assertTrue(leaf.is_valid())
-    self.assertEqual(leaf.vbmeta_hash, None)
-    self.assertEqual(leaf.version_incremental, None)
-    self.assertEqual(leaf.platform_key, None)
-    self.assertEqual(leaf.manufacturer_key_hash, None)
-    self.assertEqual(leaf.description, None)
+    leaf = aftltool.SignedVBMetaPrimaryAnnotationLeaf()
+    self.assertEqual(leaf.version, 1)
+    self.assertEqual(leaf.timestamp, 0)
+    self.assertEqual(leaf.signature.signature, b'')
+    self.assertEqual(leaf.annotation.vbmeta_hash, b'')
+    self.assertEqual(leaf.annotation.description, '')
 
-    # Calls constructor with data.
-    leaf = aftltool.FirmwareInfoLeaf(self.test_afi_resp.fw_info_leaf)
-    self.assertTrue(leaf.is_valid())
-    self.assertEqual(
-        leaf.vbmeta_hash,
-        base64.b64decode('ViNzEQS/oc/bJ13yl40fk/cvXw90bxHQbzCRxgHDIGc='))
-    self.assertEqual(leaf.version_incremental, '1')
-    self.assertEqual(leaf.platform_key, None)
-    self.assertEqual(
-        leaf.manufacturer_key_hash,
-        base64.b64decode('yBCrUOdjvaAh4git5EgqWa5neegUaoXeLlB67+N8ObY='))
-    self.assertEqual(leaf.description, None)
+  def test_parse(self):
+    # Calls parse with valid data.
+    leaf = aftltool.SignedVBMetaPrimaryAnnotationLeaf.parse(
+        self.test_anno_1_bytes)
+    self.assertEqual(leaf.annotation.vbmeta_hash, b'w'*32)
+    self.assertEqual(leaf.annotation.version_incremental, 'x'*5)
+    self.assertEqual(leaf.annotation.manufacturer_key_hash, b'y'*32)
+    self.assertEqual(leaf.annotation.description, 'z'*51)
 
-    # Calls constructor with invalid JSON data.
+    # Calls parse with invalid data.
     with self.assertRaises(aftltool.AftlError):
-      leaf = aftltool.FirmwareInfoLeaf('Invalid JSON.')
+      leaf = aftltool.SignedVBMetaPrimaryAnnotationLeaf.parse(b'Invalid data')
 
   def test_get_expected_size(self):
     """Tests get_expected_size method."""
     # Calls constructor without data.
-    leaf = aftltool.FirmwareInfoLeaf()
-    self.assertEqual(leaf.get_expected_size(), 0)
+    leaf = aftltool.SignedVBMetaPrimaryAnnotationLeaf()
+    self.assertEqual(leaf.get_expected_size(), 19)
 
     # Calls constructor with data.
-    leaf = aftltool.FirmwareInfoLeaf(self.test_afi_resp.fw_info_leaf)
+    leaf = aftltool.SignedVBMetaPrimaryAnnotationLeaf.parse(
+        self.test_anno_1_bytes)
     self.assertEqual(leaf.get_expected_size(),
-                     len(self.test_afi_resp.fw_info_leaf))
+                     len(self.test_anno_1_bytes))
 
   def test_encode(self):
     """Tests encode method."""
-    # Calls constructor without data.
-    leaf = aftltool.FirmwareInfoLeaf()
-    self.assertEqual(leaf.encode(), b'')
-
     # Calls constructor with data.
-    self.assertEqual(self.test_fw_info_leaf.encode(),
-                     self.test_afi_resp.fw_info_leaf)
-
-  def test_is_valid(self):
-    """Tests is_valid method."""
-    # Calls constructor without data.
-    leaf = aftltool.FirmwareInfoLeaf()
-    self.assertTrue(leaf.is_valid())
-
-    # Calls constructor with data.
-    self.assertTrue(self.test_fw_info_leaf.is_valid())
-
-    # Incorrect name for Value key.
-    invalid_value_key_name = (
-        b'{\"timestamp\":{\"seconds\":1580115370,\"nanos\":621454825},\"In'
-        b'val\":{\"FwInfo\":{\"info\":{\"info\":{\"vbmeta_hash\":\"ViNzEQS'
-        b'/oc/bJ13yl40fk/cvXw90bxHQbzCRxgHDIGc=\",\"version_incremental\":'
-        b'\"1\",\"manufacturer_key_hash\":\"yBCrUOdjvaAh4git5EgqWa5neegUao'
-        b'XeLlB67+N8ObY=\"}}}}}')
-
-    with self.assertRaises(aftltool.AftlError):
-      aftltool.FirmwareInfoLeaf(invalid_value_key_name)
-
-    # Within Firmware Info having a field which does not exist in
-    # proto.aftl_pb2.FirmwareInfo.
-    invalid_fields = (
-        b'{\"timestamp\":{\"seconds\":1580115370,\"nanos\":621454825},\"Va'
-        b'lue\":{\"FwInfo\":{\"info\":{\"info\":{\"invalid_field\":\"ViNzEQS'
-        b'/oc/bJ13yl40fk/cvXw90bxHQbzCRxgHDIGc=\",\"version_incremental\":'
-        b'\"1\",\"manufacturer_key_hash\":\"yBCrUOdjvaAh4git5EgqWa5neegUao'
-        b'XeLlB67+N8ObY=\"}}}}}')
-
-    with self.assertRaises(aftltool.AftlError):
-      aftltool.FirmwareInfoLeaf(invalid_fields)
+    self.assertEqual(self.test_anno_1.encode(),
+                     self.test_anno_1_bytes)
 
   def test_print_desc(self):
     """Tests print_desc method."""
     buf = io.StringIO()
-    self.test_fw_info_leaf.print_desc(buf)
+    self.test_anno_1.print_desc(buf)
     desc = buf.getvalue()
 
     # Cursory check whether the printed description contains something useful.
@@ -1098,7 +1164,7 @@ class AftlMockCommunication(aftltool.AftlCommunication):
 
     Arguments:
       transparency_log_config: An aftltool.TransparencyLogConfig instance.
-      canned_response: AddFirmwareInfoResponse to return or the Exception to
+      canned_response: AddVBMetaResponse to return or the Exception to
         raise.
     """
     super(AftlMockCommunication, self).__init__(transparency_log_config,
@@ -1106,7 +1172,7 @@ class AftlMockCommunication(aftltool.AftlCommunication):
     self.request = None
     self.canned_response = canned_response
 
-  def add_firmware_info(self, request):
+  def add_vbmeta(self, request):
     """Records the request and returns the canned response."""
     self.request = request
 
@@ -1122,7 +1188,7 @@ class AftlMock(aftltool.Aftl):
     """Initializes the object.
 
     Arguments:
-      canned_response: AddFirmwareInfoResponse to return or the Exception to
+      canned_response: AddVBMetaResponse to return or the Exception to
         raise.
     """
     self.mock_canned_response = canned_response
@@ -1284,30 +1350,36 @@ class AftlTest(AftlTestCase):
   def test_request_inclusion_proof(self):
     """Tests the request_inclusion_proof method."""
     # Always work with a mock independent if run as unit or integration tests.
-    aftl = AftlMock(self.test_afi_resp)
+    aftl = AftlMock(self.test_avbm_resp)
 
     icp = aftl.request_inclusion_proof(
         self.transparency_log_config, b'a' * 1024, '1',
         self.get_testdata_path('testkey_rsa4096.pem'), None, None, None)
     self.assertEqual(icp.leaf_index,
-                     self.test_afi_resp.fw_info_proof.proof.leaf_index)
+                     self.test_avbm_resp.annotation_proof.proof.leaf_index)
     self.assertEqual(icp.proof_hash_count,
-                     len(self.test_afi_resp.fw_info_proof.proof.hashes))
+                     len(self.test_avbm_resp.annotation_proof.proof.hashes))
     self.assertEqual(icp.log_url, self.aftl_host)
     self.assertEqual(
         icp.log_root_descriptor.root_hash, binascii.unhexlify(
-            '53b182b55dc1377197c938637f50093131daea4d0696b1eae5b8a014bfde884a'))
+            '9a5f71340f8dc98bdc6320f976dda5f34db8554cb273ba5ab60f1697c519d6f6'))
 
-    self.assertEqual(icp.fw_info_leaf.version_incremental, '1')
+    self.assertEqual(icp.annotation_leaf.annotation.version_incremental,
+                     'only_for_testing')
     # To calculate the hash of the a RSA key use the following command:
     # openssl rsa -in test/data/testkey_rsa4096.pem -pubout \
     #    -outform DER | sha256sum
-    self.assertEqual(icp.fw_info_leaf.manufacturer_key_hash, base64.b64decode(
-        'yBCrUOdjvaAh4git5EgqWa5neegUaoXeLlB67+N8ObY='))
+    self.assertEqual(
+        icp.annotation_leaf.annotation.manufacturer_key_hash,
+        bytes.fromhex(
+            "83ab3b109b73a1d32dce4153a2de57a1a0485052db8364f3180d98614749d7f7"))
 
-    self.assertEqual(icp.log_root_signature,
-                     self.test_afi_resp.fw_info_proof.sth.log_root_signature)
-    self.assertEqual(icp.proofs, self.test_afi_resp.fw_info_proof.proof.hashes)
+    self.assertEqual(
+        icp.log_root_signature,
+        self.test_avbm_resp.annotation_proof.sth.log_root_signature)
+    self.assertEqual(
+        icp.proofs,
+        self.test_avbm_resp.annotation_proof.proof.hashes)
 
   # pylint: disable=no-member
   def test_request_inclusion_proof_failure(self):
@@ -1323,7 +1395,7 @@ class AftlTest(AftlTestCase):
   def test_request_inclusion_proof_manuf_key_not_4096(self):
     """Tests request_inclusion_proof with manufacturing key not of size 4096."""
     # Always work with a mock independent if run as unit or integration tests.
-    aftl = AftlMock(self.test_afi_resp)
+    aftl = AftlMock(self.test_avbm_resp)
     with self.assertRaises(aftltool.AftlError) as e:
       aftl.request_inclusion_proof(
           self.transparency_log_config, b'a' * 1024, 'version_inc',
@@ -1332,7 +1404,7 @@ class AftlTest(AftlTestCase):
 
   def test_make_and_verify_icp_with_1_log(self):
     """Tests make_icp_from_vbmeta, verify_image_icp & info_image_icp."""
-    aftl = self.get_aftl_implementation(self.test_afi_resp)
+    aftl = self.get_aftl_implementation(self.test_avbm_resp)
 
     # Make a VBmeta image with ICP.
     with tempfile.NamedTemporaryFile('wb+') as output_file:
@@ -1357,7 +1429,7 @@ class AftlTest(AftlTestCase):
 
   def test_make_and_verify_icp_with_2_logs(self):
     """Tests make_icp_from_vbmeta, verify_image_icp & info_image_icp."""
-    aftl = self.get_aftl_implementation(self.test_afi_resp)
+    aftl = self.get_aftl_implementation(self.test_avbm_resp)
 
     # Reconfigures default parameters with two transparency logs.
     self.make_icp_default_params['transparency_log_configs'] = [
@@ -1388,10 +1460,10 @@ class AftlTest(AftlTestCase):
   def test_info_image_icp(self):
     """Tests info_image_icp with vbmeta image with 2 ICP."""
     # Always work with a mock independent if run as unit or integration tests.
-    aftl = AftlMock(self.test_afi_resp)
+    aftl = AftlMock(self.test_avbm_resp)
 
     image_path = self.get_testdata_path(
-        'aftltool/aftl_output_vbmeta_with_2_icp_different_logs.img')
+        'aftltool/aftl_output_vbmeta_with_2_icp_same_log.img')
     self.info_icp_default_params['vbmeta_image_path'] = image_path
 
     # Verifies the generated image.
@@ -1401,7 +1473,7 @@ class AftlTest(AftlTestCase):
   def test_info_image_icp_fail(self):
     """Tests info_image_icp with invalid vbmeta image."""
     # Always work with a mock independent if run as unit or integration tests.
-    aftl = AftlMock(self.test_afi_resp)
+    aftl = AftlMock(self.test_avbm_resp)
 
     image_path = self.get_testdata_path('large_blob.bin')
     self.info_icp_default_params['vbmeta_image_path'] = image_path
@@ -1413,33 +1485,17 @@ class AftlTest(AftlTestCase):
   def test_verify_image_icp(self):
     """Tets verify_image_icp with 2 ICP with all matching log keys."""
     # Always work with a mock independent if run as unit or integration tests.
-    aftl = AftlMock(self.test_afi_resp)
+    aftl = AftlMock(self.test_avbm_resp)
 
     image_path = self.get_testdata_path(
-        'aftltool/aftl_output_vbmeta_with_2_icp_different_logs.img')
+        'aftltool/aftl_output_vbmeta_with_2_icp_same_log.img')
     self.verify_icp_default_params['vbmeta_image_path'] = image_path
     self.verify_icp_default_params['transparency_log_pub_keys'] = [
         self.get_testdata_path('aftltool/aftl_pubkey_1.pub'),
-        self.get_testdata_path('aftltool/aftl_pubkey_2.pub')
     ]
 
     result = aftl.verify_image_icp(**self.verify_icp_default_params)
     self.assertTrue(result)
-
-  def test_verify_image_icp_failure(self):
-    """Tests verify_image_icp with 2 ICP but only one matching log key."""
-    # Always work with a mock independent if run as unit or integration tests.
-    aftl = AftlMock(self.test_afi_resp)
-
-    image_path = self.get_testdata_path(
-        'aftltool/aftl_output_vbmeta_with_2_icp_different_logs.img')
-    self.verify_icp_default_params['vbmeta_image_path'] = image_path
-    self.verify_icp_default_params['transparency_log_pub_keys'] = [
-        self.get_testdata_path('aftltool/aftl_pubkey_1.pub')
-    ]
-
-    result = aftl.verify_image_icp(**self.verify_icp_default_params)
-    self.assertFalse(result)
 
   def test_make_icp_with_invalid_grpc_service(self):
     """Tests make_icp_from_vbmeta command with a host not supporting GRPC."""
@@ -1468,7 +1524,7 @@ class AftlTest(AftlTestCase):
 
   def test_load_test_single_process_single_submission(self):
     """Tests load_test_aftl command with 1 process which does 1 submission."""
-    aftl = self.get_aftl_implementation(self.test_afi_resp)
+    aftl = self.get_aftl_implementation(self.test_avbm_resp)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
       self.load_test_aftl_default_params[
@@ -1485,7 +1541,7 @@ class AftlTest(AftlTestCase):
 
   def test_load_test_multi_process_multi_submission(self):
     """Tests load_test_aftl command with 2 processes and 2 submissions each."""
-    aftl = self.get_aftl_implementation(self.test_afi_resp)
+    aftl = self.get_aftl_implementation(self.test_avbm_resp)
 
     self.load_test_aftl_default_params['process_count'] = 2
     self.load_test_aftl_default_params['submission_count'] = 2
