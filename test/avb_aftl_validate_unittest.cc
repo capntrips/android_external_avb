@@ -67,6 +67,22 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
         "VT3Ngec17SeZUFfKj1Uv1z6bt6fusfv6Veb84ch0Yx5elLXNfnvvguF0z5qZp+"
         "AjlkUEbhI5sRKrE9v1wV/IFiwYuHNMX3NBuKpx+8e7SXwZodXRBeocpSlA/"
         "Qf8dtomxAALZrB30HSOzYavMs/4=\"}}}}}";
+    uint8_t kLogRootDescriptorHeader[] =
+        "\x00\x01"                          // Version
+        "\x00\x00\x00\x00\x00\x00\x00\x03"  // Tree size
+        "\x20";                             // Root hash size
+    /* We define kLogRootDescriptorHeader as a string literal (to be able to
+     * annotate the bytes). Do not count the final null byte that is
+     * automatically appended */
+    size_t kLogRootDescriptorHeaderSize = sizeof(kLogRootDescriptorHeader) - 1;
+    uint8_t kLogRootDescriptorHash[] =
+        "\x5a\xb3\x43\x21\x8f\x54\x4d\x05\x46\x34\x62\x86\x2f\xa8\xf8\x6e"
+        "\x3b\xa3\x19\x2d\xe9\x9c\xb2\xab\x8e\x09\xd8\x55\xc3\xde\x34\xd6";
+    uint8_t kLogRootDescriptorFooter[] =
+        "\x00\x00\x00\x00\x13\x36\x4b\xff"  // Timestamp
+        "\x00\x00\x00\x00\x00\x00\x00\x00"  // Revision
+        "\x00\x00";                         // Metadata size
+    size_t kLogRootDescriptorFooterSize = sizeof(kLogRootDescriptorFooter) - 1;
     BaseAvbToolTest::SetUp();
 
     /* Read in test data from the key and log_sig binaries. */
@@ -94,6 +110,28 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
     icp_entry_->log_root_descriptor_size =
         icp_entry_->log_root_descriptor.root_hash_size +
         icp_entry_->log_root_descriptor.metadata_size + 29;
+    icp_entry_->log_root_descriptor_raw =
+        (uint8_t*)avb_malloc(icp_entry_->log_root_descriptor_size);
+    if (!icp_entry_->log_root_descriptor_raw) {
+      return;
+    }
+    memcpy(icp_entry_->log_root_descriptor_raw,
+           kLogRootDescriptorHeader,
+           kLogRootDescriptorHeaderSize);
+    memcpy(icp_entry_->log_root_descriptor_raw + kLogRootDescriptorHeaderSize,
+           kLogRootDescriptorHash,
+           AVB_AFTL_HASH_SIZE);
+    memcpy(icp_entry_->log_root_descriptor_raw + kLogRootDescriptorHeaderSize +
+               AVB_AFTL_HASH_SIZE,
+           kLogRootDescriptorFooter,
+           kLogRootDescriptorFooterSize);
+    icp_entry_->log_root_descriptor.root_hash =
+        (uint8_t*)avb_malloc(AVB_AFTL_HASH_SIZE);
+    if (!icp_entry_->log_root_descriptor.root_hash) return;
+    /* Copy the hash from within the raw version */
+    memcpy(icp_entry_->log_root_descriptor.root_hash,
+           kLogRootDescriptorHash,
+           AVB_AFTL_HASH_SIZE);
 
     icp_entry_->fw_info_leaf_size = sizeof(kAftlJsonData);
     icp_entry_->fw_info_leaf.vbmeta_hash_size = AVB_AFTL_HASH_SIZE;
@@ -124,24 +162,19 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
            "\xba\xf7\x0a\xd9\xe6\x21\xf4\xbd\x8d\x98\x66\x2f\x00\xe3\xc1\x25",
            AVB_AFTL_HASH_SIZE);
     icp_entry_->proof_hash_count = 1;
-    icp_entry_->log_root_descriptor.root_hash =
-        (uint8_t*)avb_malloc(AVB_AFTL_HASH_SIZE);
-    if (!icp_entry_->log_root_descriptor.root_hash) return;
-    memcpy(icp_entry_->log_root_descriptor.root_hash,
-           "\x5a\xb3\x43\x21\x8f\x54\x4d\x05\x46\x34\x62\x86\x2f\xa8\xf8\x6e"
-           "\x3b\xa3\x19\x2d\xe9\x9c\xb2\xab\x8e\x09\xd8\x55\xc3\xde\x34\xd6",
-           AVB_AFTL_HASH_SIZE);
   }
 
   void TearDown() override {
-    if (icp_entry_ != NULL) {
-      if (icp_entry_->fw_info_leaf.json_data != NULL)
+    if (icp_entry_) {
+      if (icp_entry_->fw_info_leaf.json_data)
         avb_free(icp_entry_->fw_info_leaf.json_data);
-      if (icp_entry_->fw_info_leaf.vbmeta_hash != NULL)
+      if (icp_entry_->fw_info_leaf.vbmeta_hash)
         avb_free(icp_entry_->fw_info_leaf.vbmeta_hash);
-      if (icp_entry_->log_root_descriptor.root_hash != NULL)
+      if (icp_entry_->log_root_descriptor.root_hash)
         avb_free(icp_entry_->log_root_descriptor.root_hash);
-      if (icp_entry_->proofs != NULL) avb_free(icp_entry_->proofs);
+      if (icp_entry_->log_root_descriptor_raw)
+        avb_free(icp_entry_->log_root_descriptor_raw);
+      if (icp_entry_->proofs) avb_free(icp_entry_->proofs);
       avb_free(icp_entry_);
     }
     avb_free(key_bytes_);
@@ -166,16 +199,6 @@ TEST_F(AvbAftlValidateTest, AvbAftlVerifySignature) {
   EXPECT_EQ(true,
             avb_aftl_verify_entry_signature(key_bytes_, key_size_, icp_entry_));
   avb_free(icp_entry_->log_root_signature);
-}
-
-TEST_F(AvbAftlValidateTest, AvbAftlHashLogRootDescriptor) {
-  uint8_t hash[AVB_AFTL_HASH_SIZE];
-
-  /* Initialize the icp_entry components used with the test. */
-
-  avb_aftl_hash_log_root_descriptor(icp_entry_, hash);
-  EXPECT_EQ("4f932f328f4b1c9b16500d6d09005c46abebf5c4dc761bbd1e8602378789edac",
-            mem_to_hexstring(hash, AVB_AFTL_HASH_SIZE));
 }
 
 TEST_F(AvbAftlValidateTest, AvbAftlVerifyIcpRootHash) {
