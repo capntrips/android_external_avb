@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC
+// Copyright 2019-2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,27 +17,35 @@ syntax = "proto3";
 package aftl;
 option go_package = "proto";
 
-import "aftl.proto";
+import "trillian.proto";
 
-message AddFirmwareInfoRequest {
+message InclusionProof {
+  trillian.Proof proof = 1;
+  trillian.SignedLogRoot sth = 2;
+}
+
+message AddVBMetaRequest {
   // VBMeta structure as described in
   // https://android.googlesource.com/platform/external/avb/+/master/README.md.
   // In case of chained partitions, each VBMeta is added via a separate call.
   // The default size for gRPC payload is about 4MB. We expect vbmeta to be
-  // in the order of 1kB.
+  // in the order of 64kB.
   bytes vbmeta = 1;
 
-  SignedFirmwareInfo fw_info = 2;
+  // Serialized SignedVBMetaPrimaryAnnotation. This annotation contains the hash
+  // of the vbmeta structure. It is signed using the manufacturer key.
+  // See types/types.go.
+  bytes signed_vbmeta_primary_annotation = 2;
 }
 
-message AddFirmwareInfoResponse {
+message AddVBMetaResponse {
   // Inclusion proof and the leaf that was added to the log, which contains
-  // information on the firmware.
+  // the annotation on VBMeta.
   // It is required to have the complete leaf to validate the inclusion proof.
   // For on-device verification, only these first 2 fields are required to
   // validate the inclusion.
-  InclusionProof fw_info_proof = 1;
-  bytes          fw_info_leaf = 2;
+  InclusionProof annotation_proof = 1;
+  bytes          annotation_leaf = 2;
 
   // Inclusion proof and leaf that was added to the log, which contains the full
   // vbmeta partition.
@@ -47,12 +55,13 @@ message AddFirmwareInfoResponse {
   bytes          vbmeta_leaf = 4;
 }
 
-message AddFirmwareImageRequest {
+message AnnotateVBMetaWithBuildRequest {
+  // Serialized SignedVBMetaBuildAnnotation.  This annotation contains the hash
+  // of the full build image. See types/types.go.
+  bytes signed_vbmeta_build_annotation = 1;
 
-  SignedFirmwareImageInfo fw_image_info = 1;
-
-  // Bytes of the binary images. These are not signed as their final
-  // hash value is already signed in fw_image_info.hash
+  // Bytes of the binary images. The hash value of the concatenation of these
+  // chunk is contained in SignedVBMetaBuildAnnotation.
   // This is ignored if any of the requests origin_url is set.
   bytes image_chunk = 2;
 
@@ -61,14 +70,13 @@ message AddFirmwareImageRequest {
   string origin_url = 3;
 }
 
-message AddFirmwareImageResponse {
-
+message AnnotateVBMetaWithBuildResponse {
   // Inclusion proof and leaf for the firmware image. The leaf contains the URL
   // where the image was stored.
   // It is not required for vendors to keep this information. However, this can
   // be used for their records to ensure the correctness of the log.
-  InclusionProof fw_image_info_proof = 1;
-  Leaf           fw_image_info_leaf = 2;
+  InclusionProof  annotation_proof = 1;
+  bytes           annotation_leaf = 2;
 }
 
 service AFTLog {
@@ -76,12 +84,11 @@ service AFTLog {
   // Insert a new VBMeta structure into the log.
   // This request will effectively create 2 log entries:
   //  - VBMeta itself
-  //  - Vendor annotations, including a reference to the VBMeta leaf.
-  rpc AddFirmwareInfo(AddFirmwareInfoRequest) returns (AddFirmwareInfoResponse) {}
+  //  - Vendor annotations, which includes a reference to the VBMeta.
+  rpc AddVBMeta(AddVBMetaRequest) returns (AddVBMetaResponse) {}
 
   // Upload (or copy) the complete firmware image.
-  rpc AddFirmwareImage(stream AddFirmwareImageRequest) returns (AddFirmwareImageResponse) {}
+  rpc AnnotateVBMetaWithBuild(stream AnnotateVBMetaWithBuildResponse) returns (AnnotateVBMetaWithBuildResponse) {}
 
-  // TODO GetProofByHash, GetSthConsistency, GetEntries, GetRootKeys
+  // TODO(tweek): GetProofByHash, GetSthConsistency, GetEntries, GetRootKeys
 }
-
