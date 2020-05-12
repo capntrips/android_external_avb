@@ -105,15 +105,6 @@ TrillianLogRootDescriptor + the largest possible metadata size. */
 #define AVB_AFTL_MAX_TLRD_SIZE \
   (AVB_AFTL_MIN_TLRD_SIZE + AVB_AFTL_MAX_METADATA_SIZE)
 
-/* Data structure containing AFTL header information. */
-typedef struct AftlImageHeader {
-  uint32_t magic;
-  uint32_t required_icp_version_major;
-  uint32_t required_icp_version_minor;
-  uint32_t image_size; /* Total size of the AftlImage, including this header */
-  uint16_t icp_count;
-} AVB_ATTR_PACKED AftlImageHeader;
-
 /* Data structure containing a Trillian LogRootDescriptor, from
    https://github.com/google/trillian/blob/master/trillian.proto#L255
    The log_root_signature is calculated over this structure. */
@@ -150,16 +141,26 @@ typedef struct AftlIcpEntry {
   uint32_t inc_proof_size;
   uint8_t* log_url;
   TrillianLogRootDescriptor log_root_descriptor;
+  uint8_t* log_root_descriptor_raw;
   FirmwareInfo fw_info_leaf;
   uint8_t* log_root_signature;
-  uint8_t proofs[/*proof_hash_count*/][AVB_AFTL_HASH_SIZE];
-} AVB_ATTR_PACKED AftlIcpEntry;
+  uint8_t (*proofs)[AVB_AFTL_HASH_SIZE];
+} AftlIcpEntry;
+
+/* Data structure containing AFTL header information. */
+typedef struct AftlImageHeader {
+  uint32_t magic;
+  uint32_t required_icp_version_major;
+  uint32_t required_icp_version_minor;
+  uint32_t image_size; /* Total size of the AftlImage, including this header */
+  uint16_t icp_count;
+} AVB_ATTR_PACKED AftlImageHeader;
 
 /* Main data structure for an AFTL image. */
 typedef struct AftlImage {
   AftlImageHeader header;
   AftlIcpEntry** entries;
-} AVB_ATTR_PACKED AftlImage;
+} AftlImage;
 
 #ifdef __cplusplus
 }

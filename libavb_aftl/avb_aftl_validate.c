@@ -114,7 +114,9 @@ bool avb_aftl_verify_entry_signature(const uint8_t* key,
   log_root_hash_num_bytes = AVB_AFTL_HASH_SIZE;
 
   /* Calculate the SHA256 of the TrillianLogRootDescriptor. */
-  if (!avb_aftl_hash_log_root_descriptor(icp_entry, log_root_hash))
+  if (!avb_aftl_sha256(icp_entry->log_root_descriptor_raw,
+                       icp_entry->log_root_descriptor_size,
+                       log_root_hash))
     return false;
 
   /* algorithm_data is used to calculate the padding for signature verification.

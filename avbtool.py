@@ -3075,7 +3075,7 @@ class Avb(object):
     if include_descriptors_from_image:
       descriptors_dict = dict()
       for image in include_descriptors_from_image:
-        image_handler = ImageHandler(image.name)
+        image_handler = ImageHandler(image.name, read_only=True)
         (_, image_vbmeta_header, image_descriptors, _) = self._parse_image(
             image_handler)
         # Bump the required libavb version to support all included descriptors.
