@@ -547,17 +547,17 @@ class AftlImageTest(AftltoolTestCase):
     # Valid vbmeta image without footer with 1 ICP.
     tool = aftltool.Aftl()
     image_path = self.get_testdata_path(
-        'aftltool/aftl_output_vbmeta_with_1_icp.img')
+        'aftl_output_vbmeta_with_1_icp.img')
     vbmeta_image, _ = tool.get_vbmeta_image(image_path)
     desc = tool.get_aftl_image(image_path)
 
     # Valid image checked against correct log key.
     self.assertTrue(desc.verify_vbmeta_image(
-        vbmeta_image, [self.get_testdata_path('aftltool/aftl_pubkey_1.pub')]))
+        vbmeta_image, [self.get_testdata_path('aftl_pubkey_1.pem')]))
 
     # Valid image checked with a key from another log.
     self.assertFalse(desc.verify_vbmeta_image(
-        vbmeta_image, [self.get_testdata_path('aftltool/aftl_pubkey_2.pub')]))
+        vbmeta_image, [self.get_testdata_path('testkey_rsa4096_pub.pem')]))
 
     # Valid image checked with non existed key file path.
     self.assertFalse(desc.verify_vbmeta_image(
@@ -578,17 +578,17 @@ class AftlImageTest(AftltoolTestCase):
     # Valid vbmeta image without footer with 2 ICPs from same log.
     tool = aftltool.Aftl()
     image_path = self.get_testdata_path(
-        'aftltool/aftl_output_vbmeta_with_2_icp_same_log.img')
+        'aftl_output_vbmeta_with_2_icp_same_log.img')
     vbmeta_image, _ = tool.get_vbmeta_image(image_path)
     desc = tool.get_aftl_image(image_path)
 
     # Valid image checked against correct log key.
     self.assertTrue(desc.verify_vbmeta_image(
-        vbmeta_image, [self.get_testdata_path('aftltool/aftl_pubkey_1.pub')]))
+        vbmeta_image, [self.get_testdata_path('aftl_pubkey_1.pem')]))
 
     # Valid vbmeta image checked with key from another log.
     self.assertFalse(desc.verify_vbmeta_image(
-        vbmeta_image, [self.get_testdata_path('aftltool/aftl_pubkey_2.pub')]))
+        vbmeta_image, [self.get_testdata_path('testkey_rsa4096_pub.pem')]))
 
     # Valid image checked with non existed key file path.
     self.assertFalse(desc.verify_vbmeta_image(
@@ -858,7 +858,7 @@ class AftlIcpEntryTest(AftltoolTestCase):
     # Valid vbmeta image without footer with 1 ICP.
     tool = aftltool.Aftl()
     image_path = self.get_testdata_path(
-        'aftltool/aftl_output_vbmeta_with_1_icp.img')
+        'aftl_output_vbmeta_with_1_icp.img')
     vbmeta_image, _ = tool.get_vbmeta_image(image_path)
     desc = tool.get_aftl_image(image_path)
 
@@ -868,11 +868,11 @@ class AftlIcpEntryTest(AftltoolTestCase):
 
     # Valid vbmeta image checked with correct log key.
     self.assertTrue(entry.verify_vbmeta_image(
-        vbmeta_image, self.get_testdata_path('aftltool/aftl_pubkey_1.pub')))
+        vbmeta_image, self.get_testdata_path('aftl_pubkey_1.pem')))
 
     # Valid vbmeta image checked with public key of another log.
     self.assertFalse(entry.verify_vbmeta_image(
-        vbmeta_image, self.get_testdata_path('aftltool/aftl_pubkey_2.pub')))
+        vbmeta_image, self.get_testdata_path('testkey_rsa4096_pub.pem')))
 
     # Valid vbmeta image checked with invalid key.
     self.assertFalse(entry.verify_vbmeta_image(
@@ -886,7 +886,7 @@ class AftlIcpEntryTest(AftltoolTestCase):
     # Valid vbmeta image without footer with 1 ICP.
     tool = aftltool.Aftl()
     image_path = self.get_testdata_path(
-        'aftltool/aftl_output_vbmeta_with_1_icp.img')
+        'aftl_output_vbmeta_with_1_icp.img')
     vbmeta_image, _ = tool.get_vbmeta_image(image_path)
     desc = tool.get_aftl_image(image_path)
 
@@ -898,7 +898,7 @@ class AftlIcpEntryTest(AftltoolTestCase):
 
     # Invalid vbmeta image checked with correct log key.
     self.assertFalse(entry.verify_vbmeta_image(
-        vbmeta_image, self.get_testdata_path('aftltool/aftl_pubkey_1.pub')))
+        vbmeta_image, self.get_testdata_path('aftl_pubkey_1.pem')))
 
     # Invalid vbmeta image checked with invalid key.
     self.assertFalse(entry.verify_vbmeta_image(
@@ -909,7 +909,7 @@ class AftlIcpEntryTest(AftltoolTestCase):
 
     # None image checked with a key.
     self.assertFalse(entry.verify_vbmeta_image(
-        None, self.get_testdata_path('aftltool/aftl_pubkey_1.pub')))
+        None, self.get_testdata_path('aftl_pubkey_1.pem')))
 
   def test_print_desc(self):
     """Tests print_desc method."""
@@ -1290,8 +1290,8 @@ class AftlTest(AftlTestCase):
   def set_up_environment(self):
     """Sets up the environment for unit testing without networking."""
     self.aftl_host = 'test.foo.bar:9000'
-    self.aftl_pubkey = self.get_testdata_path('aftltool/aftl_pubkey_1.pub')
-    self.vbmeta_image = self.get_testdata_path('aftltool/aftl_input_vbmeta.img')
+    self.aftl_pubkey = self.get_testdata_path('aftl_pubkey_1.pem')
+    self.vbmeta_image = self.get_testdata_path('aftl_input_vbmeta.img')
     self.manufacturer_key = self.get_testdata_path('testkey_rsa4096.pem')
 
   def get_aftl_implementation(self, canned_response):
@@ -1304,14 +1304,14 @@ class AftlTest(AftlTestCase):
 
     # Valid vbmeta image without footer and AftlImage.
     image, footer = tool.get_vbmeta_image(
-        self.get_testdata_path('aftltool/aftl_input_vbmeta.img'))
+        self.get_testdata_path('aftl_input_vbmeta.img'))
     self.assertIsNotNone(image)
     self.assertEqual(len(image), 4352)
     self.assertIsNone(footer)
 
     # Valid vbmeta image without footer but with AftlImage.
     image, footer = tool.get_vbmeta_image(
-        self.get_testdata_path('aftltool/aftl_output_vbmeta_with_1_icp.img'))
+        self.get_testdata_path('aftl_output_vbmeta_with_1_icp.img'))
     self.assertIsNotNone(image)
     self.assertEqual(len(image), 4352)
     self.assertIsNone(footer)
@@ -1334,12 +1334,12 @@ class AftlTest(AftlTestCase):
 
     # Valid vbmeta image without footer with AftlImage.
     desc = tool.get_aftl_image(
-        self.get_testdata_path('aftltool/aftl_output_vbmeta_with_1_icp.img'))
+        self.get_testdata_path('aftl_output_vbmeta_with_1_icp.img'))
     self.assertIsInstance(desc, aftltool.AftlImage)
 
     # Valid vbmeta image without footer and AftlImage.
     desc = tool.get_aftl_image(
-        self.get_testdata_path('aftltool/aftl_input_vbmeta.img'))
+        self.get_testdata_path('aftl_input_vbmeta.img'))
     self.assertIsNone(desc)
 
     # Invalid vbmeta image.
@@ -1463,7 +1463,7 @@ class AftlTest(AftlTestCase):
     aftl = AftlMock(self.test_avbm_resp)
 
     image_path = self.get_testdata_path(
-        'aftltool/aftl_output_vbmeta_with_2_icp_same_log.img')
+        'aftl_output_vbmeta_with_2_icp_same_log.img')
     self.info_icp_default_params['vbmeta_image_path'] = image_path
 
     # Verifies the generated image.
@@ -1488,10 +1488,10 @@ class AftlTest(AftlTestCase):
     aftl = AftlMock(self.test_avbm_resp)
 
     image_path = self.get_testdata_path(
-        'aftltool/aftl_output_vbmeta_with_2_icp_same_log.img')
+        'aftl_output_vbmeta_with_2_icp_same_log.img')
     self.verify_icp_default_params['vbmeta_image_path'] = image_path
     self.verify_icp_default_params['transparency_log_pub_keys'] = [
-        self.get_testdata_path('aftltool/aftl_pubkey_1.pub'),
+        self.get_testdata_path('aftl_pubkey_1.pem'),
     ]
 
     result = aftl.verify_image_icp(**self.verify_icp_default_params)
