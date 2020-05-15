@@ -36,12 +36,15 @@
 namespace {
 
 /* Log transparency key */
-const char kAftlTestKey[] = "test/data/aftl_log_key_bytes.bin";
-/* Regular VBMeta structure without AFTL-specific data */
-const char kVbmetaBin[] = "test/data/aftl_verify_vbmeta.bin";
-/* Full vbmeta partition which contains the VBMeta above followed by its
- * associated AftlDescriptor */
-const char kVbmetaWithAftlDescBin[] = "test/data/aftl_verify_full.img";
+const char kAftlTestKey[] = "test/data/aftl_pubkey_1.bin";
+/* Full VBMeta partition which contains an AftlImage */
+/* TODO(b/154115873): These VBMetas are manually generated. We need to implement
+ * a mock in aftltool that generates an inclusion proof and call that mock from
+ * the unit tests, similarly to what is done with GenerateVBMetaImage. */
+const char kVbmetaWithAftlDescBin[] =
+    "test/data/aftl_output_vbmeta_with_1_icp.img";
+/* Size of the VBMetaImage in the partition */
+const uint64_t kVbmetaSize = 0x1100;
 
 } /* namespace */
 
@@ -60,24 +63,11 @@ class AvbAftlVerifyTest : public BaseAvbToolTest,
     asv_test_data_ = NULL;
 
     /* Read in the test data. */
-    base::GetFileSize(base::FilePath(kAftlTestKey), &key_size_);
-    key_bytes_ = (uint8_t*)avb_malloc(key_size_);
-    ASSERT_TRUE(key_bytes_ != NULL);
-    base::ReadFile(base::FilePath(kAftlTestKey), (char*)key_bytes_, key_size_);
-
-    base::GetFileSize(base::FilePath(kVbmetaBin), &vbmeta_blob_size_);
-    vbmeta_blob_ = (uint8_t*)avb_malloc(vbmeta_blob_size_);
-    ASSERT_TRUE(vbmeta_blob_ != NULL);
-    base::ReadFile(
-        base::FilePath(kVbmetaBin), (char*)vbmeta_blob_, vbmeta_blob_size_);
-
-    base::GetFileSize(base::FilePath(kVbmetaWithAftlDescBin),
-                      &vbmeta_full_blob_size_);
-    vbmeta_full_blob_ = (uint8_t*)avb_malloc(vbmeta_full_blob_size_);
-    ASSERT_TRUE(vbmeta_full_blob_ != NULL);
-    base::ReadFile(base::FilePath(kVbmetaWithAftlDescBin),
-                   (char*)vbmeta_full_blob_,
-                   vbmeta_full_blob_size_);
+    ASSERT_TRUE(base::ReadFileToString(base::FilePath(kAftlTestKey), &key_));
+    ASSERT_TRUE(base::ReadFileToString(base::FilePath(kVbmetaWithAftlDescBin),
+                                       &vbmeta_icp_));
+    /* Keep a truncated version of the image without the ICP */
+    vbmeta_ = vbmeta_icp_.substr(0, kVbmetaSize);
 
     /* Set up required parts of asv_test_data */
     asv_test_data_ = (AvbSlotVerifyData*)avb_calloc(sizeof(AvbSlotVerifyData));
@@ -87,20 +77,18 @@ class AvbAftlVerifyTest : public BaseAvbToolTest,
     asv_test_data_->vbmeta_images =
         (AvbVBMetaData*)avb_calloc(sizeof(AvbVBMetaData));
     ASSERT_TRUE(asv_test_data_->vbmeta_images != NULL);
-    asv_test_data_->vbmeta_images[0].vbmeta_size = vbmeta_blob_size_;
+    asv_test_data_->vbmeta_images[0].vbmeta_size = vbmeta_.size();
     asv_test_data_->vbmeta_images[0].vbmeta_data =
-        (uint8_t*)avb_calloc(vbmeta_blob_size_);
+        (uint8_t*)avb_calloc(vbmeta_.size());
     ASSERT_TRUE(asv_test_data_->vbmeta_images[0].vbmeta_data != NULL);
     memcpy(asv_test_data_->vbmeta_images[0].vbmeta_data,
-           vbmeta_blob_,
-           vbmeta_blob_size_);
-    asv_test_data_->vbmeta_images[0].partition_name = (char*)"aftl_verify_full";
+           vbmeta_.data(),
+           vbmeta_.size());
+    asv_test_data_->vbmeta_images[0].partition_name =
+        (char*)"aftl_output_vbmeta_with_1_icp";
   }
 
   void TearDown() override {
-    if (key_bytes_ != NULL) avb_free(key_bytes_);
-    if (vbmeta_blob_ != NULL) avb_free(vbmeta_blob_);
-    if (vbmeta_full_blob_ != NULL) avb_free(vbmeta_full_blob_);
     if (asv_test_data_ != NULL) {
       if (asv_test_data_->vbmeta_images != NULL) {
         if (asv_test_data_->vbmeta_images[0].vbmeta_data != NULL) {
@@ -115,41 +103,37 @@ class AvbAftlVerifyTest : public BaseAvbToolTest,
 
  protected:
   AvbSlotVerifyData* asv_test_data_;
-  uint8_t* key_bytes_;
-  int64_t key_size_;
-
-  uint8_t* vbmeta_blob_;
-  int64_t vbmeta_blob_size_;
-  uint8_t* vbmeta_full_blob_;
-  int64_t vbmeta_full_blob_size_;
+  std::string key_;
+  std::string vbmeta_;
+  std::string vbmeta_icp_;
 };
 
 TEST_F(AvbAftlVerifyTest, Basic) {
-  AftlSlotVerifyResult result =
-      aftl_slot_verify(ops_.avb_ops(), asv_test_data_, key_bytes_, key_size_);
+  AftlSlotVerifyResult result = aftl_slot_verify(
+      ops_.avb_ops(), asv_test_data_, (uint8_t*)key_.data(), key_.size());
   EXPECT_EQ(result, AFTL_SLOT_VERIFY_RESULT_OK);
 }
 
 TEST_F(AvbAftlVerifyTest, PartitionError) {
   asv_test_data_->vbmeta_images[0].partition_name = (char*)"do-no-exist";
-  AftlSlotVerifyResult result =
-      aftl_slot_verify(ops_.avb_ops(), asv_test_data_, key_bytes_, key_size_);
+  AftlSlotVerifyResult result = aftl_slot_verify(
+      ops_.avb_ops(), asv_test_data_, (uint8_t*)key_.data(), key_.size());
   EXPECT_EQ(result, AFTL_SLOT_VERIFY_RESULT_ERROR_IMAGE_NOT_FOUND);
 }
 
 TEST_F(AvbAftlVerifyTest, MismatchingVBMeta) {
   asv_test_data_->vbmeta_images[0].vbmeta_data[0] = 'X';
-  AftlSlotVerifyResult result =
-      aftl_slot_verify(ops_.avb_ops(), asv_test_data_, key_bytes_, key_size_);
+  AftlSlotVerifyResult result = aftl_slot_verify(
+      ops_.avb_ops(), asv_test_data_, (uint8_t*)key_.data(), key_.size());
   EXPECT_EQ(result, AFTL_SLOT_VERIFY_RESULT_ERROR_VBMETA_HASH_MISMATCH);
 }
 
 TEST_F(AvbAftlVerifyTest, InvalidKey) {
   // Corrupt the key in order to fail the verification: complement the last
   // byte, we keep the key header valid.
-  key_bytes_[key_size_ - 1] = ~key_bytes_[key_size_ - 1];
-  AftlSlotVerifyResult result =
-      aftl_slot_verify(ops_.avb_ops(), asv_test_data_, key_bytes_, key_size_);
+  key_[key_.size() - 1] = ~key_[key_.size() - 1];
+  AftlSlotVerifyResult result = aftl_slot_verify(
+      ops_.avb_ops(), asv_test_data_, (uint8_t*)key_.data(), key_.size());
   EXPECT_EQ(result, AFTL_SLOT_VERIFY_RESULT_ERROR_INVALID_PROOF_SIGNATURE);
 }
 
