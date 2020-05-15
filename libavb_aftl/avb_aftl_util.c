@@ -807,6 +807,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size) {
 AftlImage* parse_aftl_image(uint8_t* aftl_blob, size_t aftl_blob_size) {
   AftlImage* image;
   AftlImageHeader* image_header;
+  AftlIcpEntry* entry;
   size_t image_size;
   size_t i;
   size_t remaining_size;
@@ -851,7 +852,12 @@ AftlImage* parse_aftl_image(uint8_t* aftl_blob, size_t aftl_blob_size) {
   aftl_blob += sizeof(AftlImageHeader);
   remaining_size = aftl_blob_size - sizeof(AftlImageHeader);
   for (i = 0; i < image->header.icp_count && remaining_size > 0; i++) {
-    image->entries[i] = parse_icp_entry(&aftl_blob, &remaining_size);
+    entry = parse_icp_entry(&aftl_blob, &remaining_size);
+    if (!entry) {
+      free_aftl_image(image);
+      return NULL;
+    }
+    image->entries[i] = entry;
   }
 
   return image;
