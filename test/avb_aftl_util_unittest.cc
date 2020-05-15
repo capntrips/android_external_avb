@@ -29,8 +29,13 @@
 
 namespace {
 
-const char kAftlImagePath[] = "test/data/aftl_image.bin";
-const char kAftlImageMultiPath[] = "test/data/aftl_image_multi.bin";
+/* TODO(b/154115873): These VBMetas are manually generated. We need to implement
+ * a mock in aftltool that generates an inclusion proof and call that mock from
+ * the unit tests, similarly to what is done with GenerateVBMetaImage. */
+const char kAftlImagePath[] = "test/data/aftl_output_vbmeta_with_1_icp.img";
+const uint64_t kAftlImageOffset = 0x1100;
+const char kAftlImageMultiPath[] =
+    "test/data/aftl_output_vbmeta_with_2_icp_same_log.img";
 
 }  // namespace
 
@@ -41,31 +46,23 @@ class AvbAftlUtilTest : public BaseAvbToolTest {
   AvbAftlUtilTest() {}
   ~AvbAftlUtilTest() {}
   void SetUp() override {
-    uint8_t* aftl_blob;
-    int64_t aftl_image_size;
+    std::string content;
 
     BaseAvbToolTest::SetUp();
     /* Read in test data from the aftl_image binaries. */
-    base::GetFileSize(base::FilePath(kAftlImagePath), &aftl_image_size);
-    ASSERT_GT(aftl_image_size, 0);
-    aftl_blob = (uint8_t*)avb_malloc(aftl_image_size);
-    ASSERT_TRUE(aftl_blob != NULL);
-    base::ReadFile(
-        base::FilePath(kAftlImagePath), (char*)aftl_blob, aftl_image_size);
+    ASSERT_TRUE(
+        base::ReadFileToString(base::FilePath(kAftlImagePath), &content));
+    content = content.substr(kAftlImageOffset);
     /* Allocate and populate an AftlImage for testing. */
-    aftl_image_ = parse_aftl_image(aftl_blob, aftl_image_size);
-    avb_free(aftl_blob);
+    aftl_image_ = parse_aftl_image((uint8_t*)content.data(), content.size());
 
     /* Read in test data from the aftl_image file with multiple ICPs. */
-    base::GetFileSize(base::FilePath(kAftlImageMultiPath), &aftl_image_size);
-    ASSERT_GT(aftl_image_size, 0);
-    aftl_blob = (uint8_t*)avb_malloc(aftl_image_size);
-    ASSERT_TRUE(aftl_blob != NULL);
-    base::ReadFile(
-        base::FilePath(kAftlImageMultiPath), (char*)aftl_blob, aftl_image_size);
+    ASSERT_TRUE(
+        base::ReadFileToString(base::FilePath(kAftlImageMultiPath), &content));
+    content = content.substr(kAftlImageOffset);
     /* Allocate and populate an AftlImage for testing. */
-    aftl_image_multi_ = parse_aftl_image(aftl_blob, aftl_image_size);
-    avb_free(aftl_blob);
+    aftl_image_multi_ =
+        parse_aftl_image((uint8_t*)content.data(), content.size());
   }
 
   void TearDown() override {
@@ -77,7 +74,7 @@ class AvbAftlUtilTest : public BaseAvbToolTest {
   void TestAftlImageHeader(AftlImageHeader* aftl_header, uint16_t icp_count) {
     EXPECT_EQ(aftl_header->magic, 0x4c544641ul);
     EXPECT_EQ(aftl_header->required_icp_version_major, 1ul);
-    EXPECT_EQ(aftl_header->required_icp_version_minor, 1ul);
+    EXPECT_EQ(aftl_header->required_icp_version_minor, 2ul);
     EXPECT_EQ(aftl_header->icp_count, icp_count);
   }
 
@@ -86,7 +83,7 @@ class AvbAftlUtilTest : public BaseAvbToolTest {
     EXPECT_GT(icp_entry->log_url_size, 0ul);
     EXPECT_GT(icp_entry->leaf_index, 1ul);
     EXPECT_GT(icp_entry->log_root_descriptor_size, 0ul);
-    EXPECT_GT(icp_entry->fw_info_leaf_size, 0ul);
+    EXPECT_GT(icp_entry->annotation_leaf_size, 0ul);
     EXPECT_EQ(icp_entry->log_root_sig_size, AVB_AFTL_SIGNATURE_SIZE);
     EXPECT_GT(icp_entry->proof_hash_count, 0ul);
     EXPECT_LT(icp_entry->proof_hash_count, 64ul);
@@ -101,7 +98,8 @@ class AvbAftlUtilTest : public BaseAvbToolTest {
     EXPECT_GT(icp_entry->log_root_descriptor.revision, 0ull);
     EXPECT_EQ(icp_entry->log_root_descriptor.metadata_size, 0);
     /* Test the FirmwareInfo fields. */
-    EXPECT_EQ(icp_entry->fw_info_leaf.vbmeta_hash_size, AVB_AFTL_HASH_SIZE);
+    EXPECT_EQ(icp_entry->annotation_leaf->annotation->vbmeta_hash_size,
+              AVB_AFTL_HASH_SIZE);
     EXPECT_EQ(icp_entry->proof_hash_count * 32ul, icp_entry->inc_proof_size);
   }
 

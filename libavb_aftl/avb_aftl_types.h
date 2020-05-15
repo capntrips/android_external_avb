@@ -52,9 +52,8 @@ extern "C" {
 #define AVB_AFTL_MAX_PROOF_SIZE 64 * AVB_AFTL_HASH_SIZE
 /* Max URL limit. */
 #define AVB_AFTL_MAX_URL_SIZE 2048ul
-/* Minimum valid size for a FirmwareInfo leaf. Derived from a minimal json
-   response that contains only the vbmeta_hash. */
-#define AVB_AFTL_MIN_FW_INFO_SIZE 103ul
+/* Minimum valid size for an Annotation leaf. */
+#define AVB_AFTL_MIN_ANNOTATION_SIZE 18ul
 /* Minimum valid size for a TrillianLogRootDescriptor. See the
    TrillianLogRootDescriptor struct for details. The values here cover:
    version: sizeof(uint16_t)
@@ -74,27 +73,27 @@ extern "C" {
    log_url_size: sizeof(uint32_t)
    leaf_index: sizeof(uint64_t)
    log_root_descriptor_size: sizeof(uint32_t)
-   fw_info_leaf_size: sizeof(uint32_t)
+   annotation_leaf_size: sizeof(uint32_t)
    log_root_sig_size: sizeof(uint32_t)
    proof_hash_count: sizeof(uint8_t)
    inc_proof_size: sizeof(uint32_t)
    log_url: 4 (shortest practical URL)
    log_root_descriptor: AVB_AFTL_MIN_TLRD_SIZE
-   fw_info_leaf: AVB_AFTL_MIN_FW_INFO_SIZE
+   annotation_leaf: AVB_AFTL_MIN_ANNOTATION_SIZE
    log_root_signature: AVB_AFTL_SIGNATURE_SIZE
    proofs: AVB_AFTL_HASH_SIZE as there must be at least one hash. */
 #define AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE                                       \
   (sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t) + sizeof(uint32_t) + \
    sizeof(uint32_t) + sizeof(uint8_t) + sizeof(uint32_t) + 4 +                 \
-   AVB_AFTL_MIN_TLRD_SIZE + AVB_AFTL_MIN_FW_INFO_SIZE +                        \
+   AVB_AFTL_MIN_TLRD_SIZE + AVB_AFTL_MIN_ANNOTATION_SIZE +                     \
    AVB_AFTL_SIGNATURE_SIZE + AVB_AFTL_HASH_SIZE)
 /* The maximum AftlIcpEntrySize is the max AftlImage size minus the size
    of the AftlImageHeader. */
 #define AVB_AFTL_MAX_AFTL_ICP_ENTRY_SIZE \
   (AVB_AFTL_MAX_AFTL_IMAGE_SIZE - sizeof(AftlImageHeader))
-/* The maximum FirmwareInfo is the max AftlImage size minus the
+/* The maximum Annotation size is the max AftlImage size minus the
    size of the smallest valid AftlIcpEntry. */
-#define AVB_AFTL_MAX_FW_INFO_SIZE \
+#define AVB_AFTL_MAX_ANNOTATION_SIZE \
   (AVB_AFTL_MAX_AFTL_IMAGE_SIZE - AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE)
 /* The maximum metadata size in a TrillianLogRootDescriptor for AFTL is the
    max AftlImage size minus the smallest valid AftlIcpEntry size. */
@@ -119,15 +118,52 @@ typedef struct TrillianLogRootDescriptor {
   uint8_t* metadata;
 } TrillianLogRootDescriptor;
 
-/* Data structure containing the firmware image info stored in the
-   transparency log. This is defined in
-   https://android.googlesource.com/platform/external/avb/+/master/proto/aftl.proto
- */
-typedef struct FirmwareInfo {
-  uint32_t vbmeta_hash_size;
+typedef enum {
+  AVB_AFTL_HASH_SHA256,
+  _AVB_AFTL_HASH_ALGORITHM_NUM
+} HashAlgorithm;
+
+typedef enum {
+  AVB_AFTL_SIGNATURE_RSA,    // RSA with PKCS1v15
+  AVB_AFTL_SIGNATURE_ECDSA,  // ECDSA with P256 curve
+  _AVB_AFTL_SIGNATURE_ALGORITHM_NUM
+} SignatureAlgorithm;
+
+/* Data structure containing the signature within a leaf of the VBMeta
+ * annotation. This signature is made using the manufacturer key which is
+ * generally not available at boot time. Therefore, this structure is not
+ * verified by the bootloader. */
+typedef struct {
+  uint8_t hash_algorithm;
+  uint8_t signature_algorithm;
+  uint16_t signature_size;
+  uint8_t* signature;
+} Signature;
+
+/* Data structure containing the VBMeta annotation. */
+typedef struct {
+  uint8_t vbmeta_hash_size;
   uint8_t* vbmeta_hash;
-  uint8_t* json_data;
-} FirmwareInfo;
+  uint8_t version_incremental_size;
+  uint8_t* version_incremental;
+  uint8_t manufacturer_key_hash_size;
+  uint8_t* manufacturer_key_hash;
+  uint16_t description_size;
+  uint8_t* description;
+} VBMetaPrimaryAnnotation;
+
+#define AVB_AFTL_VBMETA_LEAF 0
+#define AVB_AFTL_SIGNED_VBMETA_PRIMARY_ANNOTATION_LEAF 1
+
+/* Data structure containing the leaf that is stored in the
+   transparency log. */
+typedef struct {
+  uint8_t version;
+  uint64_t timestamp;
+  uint8_t leaf_type;
+  Signature* signature;
+  VBMetaPrimaryAnnotation* annotation;
+} SignedVBMetaPrimaryAnnotationLeaf;
 
 /* Data structure containing AFTL inclusion proof data from a single
    transparency log. */
@@ -135,14 +171,15 @@ typedef struct AftlIcpEntry {
   uint32_t log_url_size;
   uint64_t leaf_index;
   uint32_t log_root_descriptor_size;
-  uint32_t fw_info_leaf_size;
+  uint32_t annotation_leaf_size;
   uint16_t log_root_sig_size;
   uint8_t proof_hash_count;
   uint32_t inc_proof_size;
   uint8_t* log_url;
   TrillianLogRootDescriptor log_root_descriptor;
   uint8_t* log_root_descriptor_raw;
-  FirmwareInfo fw_info_leaf;
+  SignedVBMetaPrimaryAnnotationLeaf* annotation_leaf;
+  uint8_t* annotation_leaf_raw;
   uint8_t* log_root_signature;
   uint8_t (*proofs)[AVB_AFTL_HASH_SIZE];
 } AftlIcpEntry;
