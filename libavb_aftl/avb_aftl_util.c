@@ -327,6 +327,28 @@ static bool read_u64(uint64_t* value, uint8_t** data, uint8_t* data_end) {
 }
 AVB_ATTR_WARN_UNUSED_RESULT
 
+/* Allocates |value_size| bytes into |value| and copy |value_size| bytes from
+ * |data|.  Ensure that we don't overflow beyond |data_end|. It is the caller
+ * responsibility to avb_free |value|. Advances the |data| pointer pass the
+ * value that has been read. Returns false if an overflow would have occurred or
+ * if the allocation failed.
+ */
+static bool read_mem(uint8_t** value,
+                     size_t value_size,
+                     uint8_t** data,
+                     uint8_t* data_end) {
+  if (*data + value_size < *data || *data + value_size > data_end) {
+    return false;
+  }
+  *value = (uint8_t*)avb_calloc(value_size);
+  if (!value) {
+    return false;
+  }
+  avb_memcpy(*value, *data, value_size);
+  *data += value_size;
+  return true;
+}
+
 /* Allocates and populates a TrillianLogRootDescriptor element in an
    AftlIcpEntry from a binary blob.
    The blob is expected to be pointing to the beginning of a
@@ -369,16 +391,13 @@ static bool parse_trillian_log_root_descriptor(AftlIcpEntry* icp_entry,
   }
 
   /* Copy in the root hash from the blob. */
-  icp_entry->log_root_descriptor.root_hash =
-      (uint8_t*)avb_calloc(icp_entry->log_root_descriptor.root_hash_size);
-  if (!icp_entry->log_root_descriptor.root_hash) {
-    avb_error("Failure to allocate root hash.\n");
+  if (!read_mem(&(icp_entry->log_root_descriptor.root_hash),
+                icp_entry->log_root_descriptor.root_hash_size,
+                aftl_blob,
+                blob_end)) {
+    avb_error("Unable to parse root hash.\n");
     return false;
   }
-  avb_memcpy(icp_entry->log_root_descriptor.root_hash,
-             *aftl_blob,
-             icp_entry->log_root_descriptor.root_hash_size);
-  *aftl_blob += icp_entry->log_root_descriptor.root_hash_size;
 
   /* Copy in the timestamp field from the blob. */
   if (!read_u64(
@@ -410,134 +429,179 @@ static bool parse_trillian_log_root_descriptor(AftlIcpEntry* icp_entry,
 
   /* If it exists, copy in the metadata field from the blob. */
   if (icp_entry->log_root_descriptor.metadata_size > 0) {
-    icp_entry->log_root_descriptor.metadata =
-        (uint8_t*)avb_calloc(icp_entry->log_root_descriptor.metadata_size);
-    if (!icp_entry->log_root_descriptor.metadata) {
-      avb_error("Failure to allocate metadata.\n");
+    if (!read_mem(&(icp_entry->log_root_descriptor.metadata),
+                  icp_entry->log_root_descriptor.metadata_size,
+                  aftl_blob,
+                  blob_end)) {
+      avb_error("Unable to parse metadata.\n");
       return false;
     }
-    avb_memcpy(icp_entry->log_root_descriptor.metadata,
-               *aftl_blob,
-               icp_entry->log_root_descriptor.metadata_size);
-    *aftl_blob += icp_entry->log_root_descriptor.metadata_size;
   } else {
     icp_entry->log_root_descriptor.metadata = NULL;
   }
   return true;
 }
 
-static void base64_decode(uint8_t* input,
-                          size_t input_size,
-                          uint8_t* output,
-                          size_t output_size) {
-  size_t i, j;
-  uint32_t tmp_val;
-  uint8_t decode_table[] = {
-      62, -1, -1, -1, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1,
-      -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
-      10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
-      -1, -1, -1, -1, -1, -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
-      36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51};
-  avb_assert(input != NULL);
-  avb_assert(output != NULL);
-
-  for (i = 0, j = 0; i < input_size; i += 4, j += 3) {
-    tmp_val = decode_table[input[i] - '+'];
-    tmp_val = (tmp_val << 6) | decode_table[input[i + 1] - '+'];
-    tmp_val <<= 6;
-    if (input[i + 2] != '=') tmp_val |= decode_table[input[i + 2] - '+'];
-    tmp_val <<= 6;
-    if (input[i + 3] != '=') tmp_val |= decode_table[input[i + 3] - '+'];
-
-    output[j] = (tmp_val >> 16) & 0xff;
-    if (input[i + 2] != '=') output[j + 1] = (tmp_val >> 8) & 0xff;
-    if (input[i + 3] != '=') output[j + 2] = tmp_val & 0xff;
-  }
-}
-
-static bool find_and_decode_vbmeta_hash(uint8_t* vbmeta_hash,
-                                        size_t vbmeta_size,
-                                        uint8_t* json_data,
-                                        size_t json_data_size) {
-  const char vbmeta_id[] = "\"vbmeta_hash\":";
-  size_t vbmeta_id_size = sizeof(vbmeta_id) - 1;
-  size_t vbmeta_base64_size;
-  uint8_t* vbmeta_ptr;
-  uint8_t* vbmeta_base64;
-
-  avb_assert(vbmeta_hash != NULL);
-  avb_assert(vbmeta_size == AVB_AFTL_HASH_SIZE);
-  avb_assert(json_data != NULL);
-  avb_assert(json_data_size > vbmeta_size);
-
-  vbmeta_ptr = (uint8_t*)avb_strstr((const char*)json_data, vbmeta_id);
-  if (vbmeta_ptr == NULL) {
-    vbmeta_hash = NULL;
+/* Parses a Signature from |aftl_blob| into leaf->signature.
+ * Returns false if an error occurred during the parsing */
+static bool parse_signature(SignedVBMetaPrimaryAnnotationLeaf* leaf,
+                            uint8_t** aftl_blob,
+                            uint8_t* blob_end) {
+  Signature* signature = (Signature*)avb_calloc(sizeof(Signature));
+  if (!signature) {
+    avb_error("Failed to allocate signature.\n");
     return false;
   }
-  /* Jump past the vbmeta_hash identifier */
-  vbmeta_ptr += vbmeta_id_size;
-  if (vbmeta_ptr[0] == '"') {
-    vbmeta_base64_size = 1;
-    while (vbmeta_ptr[vbmeta_base64_size] != '"' &&
-           vbmeta_base64_size <= AVB_AFTL_HASH_SIZE * 4 / 3 + 1) {
-      vbmeta_base64_size++;
-    }
-    vbmeta_base64 = (uint8_t*)avb_calloc(vbmeta_base64_size + 1);
-    if (vbmeta_base64 == NULL) {
-      vbmeta_hash = NULL;
-      return false;
-    }
-    avb_memcpy(vbmeta_base64, vbmeta_ptr + 1, vbmeta_base64_size);
-    base64_decode(vbmeta_base64, vbmeta_base64_size, vbmeta_hash, vbmeta_size);
-    avb_free(vbmeta_base64);
-  } else {
-    vbmeta_hash = NULL;
+  leaf->signature = signature;
+
+  if (!read_u8(&(signature->hash_algorithm), aftl_blob, blob_end)) {
+    avb_error("Unable to parse the hash algorithm.\n");
+    return false;
+  }
+  if (signature->hash_algorithm >= _AVB_AFTL_HASH_ALGORITHM_NUM) {
+    avb_error("Unexpect hash algorithm in leaf signature.\n");
     return false;
   }
 
+  if (!read_u8(&(signature->signature_algorithm), aftl_blob, blob_end)) {
+    avb_error("Unable to parse the signature algorithm.\n");
+    return false;
+  }
+  if (signature->signature_algorithm >= _AVB_AFTL_SIGNATURE_ALGORITHM_NUM) {
+    avb_error("Unexpect signature algorithm in leaf signature.\n");
+    return false;
+  }
+
+  if (!read_u16(&(signature->signature_size), aftl_blob, blob_end)) {
+    avb_error("Unable to parse the signature size.\n");
+    return false;
+  }
+  if (!read_mem(&(signature->signature),
+                signature->signature_size,
+                aftl_blob,
+                blob_end)) {
+    avb_error("Unable to parse signature.\n");
+    return false;
+  }
   return true;
 }
 
-/* Allocates and populates a FirmwareInfo element in an
+/* Parses an VBMetaPrimaryAnnotation from |aftl_blob| into leaf->annotation.
+ * Returns false if an error occurred during the parsing */
+static bool parse_annotation(SignedVBMetaPrimaryAnnotationLeaf* leaf,
+                             uint8_t** aftl_blob,
+                             uint8_t* blob_end) {
+  VBMetaPrimaryAnnotation* annotation =
+      (VBMetaPrimaryAnnotation*)avb_calloc(sizeof(VBMetaPrimaryAnnotation));
+  if (!annotation) {
+    avb_error("Failed to allocate annotation.\n");
+    return false;
+  }
+  leaf->annotation = annotation;
+
+  if (!read_u8(&(annotation->vbmeta_hash_size), aftl_blob, blob_end)) {
+    avb_error("Unable to parse VBMeta hash size.\n");
+    return false;
+  }
+  if (annotation->vbmeta_hash_size != AVB_AFTL_HASH_SIZE) {
+    avb_error("Unexpected VBMeta hash size.\n");
+    return false;
+  }
+  if (!read_mem(&(annotation->vbmeta_hash),
+                annotation->vbmeta_hash_size,
+                aftl_blob,
+                blob_end)) {
+    avb_error("Unable to parse VBMeta hash.\n");
+    return false;
+  }
+
+  if (!read_u8(&(annotation->version_incremental_size), aftl_blob, blob_end)) {
+    avb_error("Unable to parse version incremental size.\n");
+    return false;
+  }
+  if (!read_mem(&(annotation->version_incremental),
+                annotation->version_incremental_size,
+                aftl_blob,
+                blob_end)) {
+    avb_error("Unable to parse version incremental.\n");
+    return false;
+  }
+
+  if (!read_u8(
+          &(annotation->manufacturer_key_hash_size), aftl_blob, blob_end)) {
+    avb_error("Unable to parse manufacturer key hash size.\n");
+    return false;
+  }
+  if (!read_mem(&(annotation->manufacturer_key_hash),
+                annotation->manufacturer_key_hash_size,
+                aftl_blob,
+                blob_end)) {
+    avb_error("Unable to parse manufacturer key hash.\n");
+    return false;
+  }
+
+  if (!read_u16(&(annotation->description_size), aftl_blob, blob_end)) {
+    avb_error("Unable to parse description size.\n");
+    return false;
+  }
+  if (!read_mem(&(annotation->description),
+                annotation->description_size,
+                aftl_blob,
+                blob_end)) {
+    avb_error("Unable to parse description.\n");
+    return false;
+  }
+  return true;
+}
+
+/* Allocates and populates a SignedVBMetaPrimaryAnnotationLeaf element in an
    AftlIcpEntry from a binary blob.
    The blob is expected to be pointing to the beginning of a
-   serialized FirmwareInfo element of an AftlIcpEntry.
-   The aftl_blob argument is updated to point to the area after the
-   FirmwareInfo leaf. */
-static bool parse_firmware_info(AftlIcpEntry* icp_entry, uint8_t** aftl_blob) {
-  /* Copy in the fw_info leaf bytes from the blob. */
-  /* Parse out and decode in the vbmeta_hash value from the fw_info
-     leaf bytes. */
-  icp_entry->fw_info_leaf.json_data =
-      (uint8_t*)avb_calloc(icp_entry->fw_info_leaf_size);
-  if (icp_entry->fw_info_leaf.json_data == NULL) {
-    avb_error("Failed to allocate for FirmwareInfo leaf.\n");
-    free_aftl_icp_entry(icp_entry);
-    return false;
-  }
-  avb_memcpy(icp_entry->fw_info_leaf.json_data,
-             *aftl_blob,
-             icp_entry->fw_info_leaf_size);
-  *aftl_blob += icp_entry->fw_info_leaf_size;
+   serialized SignedVBMetaPrimaryAnnotationLeaf element of an AftlIcpEntry.
+   The aftl_blob argument is updated to point to the area after the leaf. */
+static bool parse_annotation_leaf(AftlIcpEntry* icp_entry,
+                                  uint8_t** aftl_blob) {
+  SignedVBMetaPrimaryAnnotationLeaf* leaf;
+  uint8_t* blob_end = *aftl_blob + icp_entry->annotation_leaf_size;
 
-  icp_entry->fw_info_leaf.vbmeta_hash_size = AVB_AFTL_HASH_SIZE;
-  icp_entry->fw_info_leaf.vbmeta_hash =
-      (uint8_t*)avb_calloc(icp_entry->fw_info_leaf.vbmeta_hash_size);
-  if (icp_entry->fw_info_leaf.vbmeta_hash == NULL) {
-    avb_error("Failed to allocate vbmeta hash.\n");
-    free_aftl_icp_entry(icp_entry);
-    return false;
-  }
-  if (!find_and_decode_vbmeta_hash(icp_entry->fw_info_leaf.vbmeta_hash,
-                                   icp_entry->fw_info_leaf.vbmeta_hash_size,
-                                   icp_entry->fw_info_leaf.json_data,
-                                   icp_entry->fw_info_leaf_size)) {
-    avb_error("Could not parse vbmeta_hash out of FirmwareInfo leaf.\n");
-    free_aftl_icp_entry(icp_entry);
-    return false;
-  }
+  avb_assert(*aftl_blob < blob_end);
 
+  leaf = (SignedVBMetaPrimaryAnnotationLeaf*)avb_calloc(
+      sizeof(SignedVBMetaPrimaryAnnotationLeaf));
+  if (!leaf) {
+    avb_error("Failed to allocate for annotation leaf.\n");
+    return false;
+  }
+  /* The leaf will be free'd within the free_aftl_icp_entry() */
+  icp_entry->annotation_leaf = leaf;
+  if (!read_u8(&(leaf->version), aftl_blob, blob_end)) {
+    avb_error("Unable to parse version.\n");
+    return false;
+  }
+  if (leaf->version != 1) {
+    avb_error("Unexpected leaf version.\n");
+    return false;
+  }
+  if (!read_u64(&(leaf->timestamp), aftl_blob, blob_end)) {
+    avb_error("Unable to parse timestamp.\n");
+    return false;
+  }
+  if (!read_u8(&(leaf->leaf_type), aftl_blob, blob_end)) {
+    avb_error("Unable to parse version.\n");
+    return false;
+  }
+  if (leaf->leaf_type != AVB_AFTL_SIGNED_VBMETA_PRIMARY_ANNOTATION_LEAF) {
+    avb_error("Unexpected leaf type.\n");
+    return false;
+  }
+  if (!parse_signature(leaf, aftl_blob, blob_end)) {
+    avb_error("Unable to parse signature.\n");
+    return false;
+  }
+  if (!parse_annotation(leaf, aftl_blob, blob_end)) {
+    avb_error("Unable to parse annotation.\n");
+    return false;
+  }
   return true;
 }
 
@@ -591,18 +655,20 @@ AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size) {
     avb_free(icp_entry);
     return NULL;
   }
-  /* Copy in the FirmwareInfo leaf size field. */
-  if (!read_u32(&(icp_entry->fw_info_leaf_size), aftl_blob, blob_end)) {
-    avb_error("Unable to parse firmware info leaf size.\n");
+
+  /* Copy in the annotation leaf size field. */
+  if (!read_u32(&(icp_entry->annotation_leaf_size), aftl_blob, blob_end)) {
+    avb_error("Unable to parse annotation leaf size.\n");
     avb_free(icp_entry);
     return NULL;
   }
-  if (icp_entry->fw_info_leaf_size == 0 ||
-      icp_entry->fw_info_leaf_size > AVB_AFTL_MAX_FW_INFO_SIZE) {
-    avb_error("Invalid FirmwareInfo leaf size.\n");
+  if (icp_entry->annotation_leaf_size == 0 ||
+      icp_entry->annotation_leaf_size > AVB_AFTL_MAX_ANNOTATION_SIZE) {
+    avb_error("Invalid annotation leaf size.\n");
     avb_free(icp_entry);
     return NULL;
   }
+
   /* Copy the log root signature size field. */
   if (!read_u16(&(icp_entry->log_root_sig_size), aftl_blob, blob_end)) {
     avb_error("Unable to parse log root signature size.\n");
@@ -672,14 +738,27 @@ AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size) {
     return NULL;
   }
 
-  /* Populate the FirmwareInfo elements. */
-  if (*aftl_blob + icp_entry->fw_info_leaf_size < *aftl_blob ||
-      *aftl_blob + icp_entry->fw_info_leaf_size > blob_end) {
+  /* Populate the annotation leaf. */
+  if (*aftl_blob + icp_entry->annotation_leaf_size < *aftl_blob ||
+      *aftl_blob + icp_entry->annotation_leaf_size > blob_end) {
     avb_error("Invalid AftlImage.\n");
     free_aftl_icp_entry(icp_entry);
     return NULL;
   }
-  if (!parse_firmware_info(icp_entry, aftl_blob)) return NULL;
+  icp_entry->annotation_leaf_raw =
+      (uint8_t*)avb_calloc(icp_entry->annotation_leaf_size);
+  if (!icp_entry->annotation_leaf_raw) {
+    avb_error("Failure to allocate annotation leaf.\n");
+    free_aftl_icp_entry(icp_entry);
+    return NULL;
+  }
+  avb_memcpy(icp_entry->annotation_leaf_raw,
+             *aftl_blob,
+             icp_entry->annotation_leaf_size);
+  if (!parse_annotation_leaf(icp_entry, aftl_blob)) {
+    free_aftl_icp_entry(icp_entry);
+    return NULL;
+  }
 
   /* Allocate and copy the log root signature from the blob. */
   if (*aftl_blob + icp_entry->log_root_sig_size < *aftl_blob ||
@@ -722,6 +801,7 @@ AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size) {
 AftlImage* parse_aftl_image(uint8_t* aftl_blob, size_t aftl_blob_size) {
   AftlImage* image;
   AftlImageHeader* image_header;
+  AftlIcpEntry* entry;
   size_t image_size;
   size_t i;
   size_t remaining_size;
@@ -766,7 +846,12 @@ AftlImage* parse_aftl_image(uint8_t* aftl_blob, size_t aftl_blob_size) {
   aftl_blob += sizeof(AftlImageHeader);
   remaining_size = aftl_blob_size - sizeof(AftlImageHeader);
   for (i = 0; i < image->header.icp_count && remaining_size > 0; i++) {
-    image->entries[i] = parse_icp_entry(&aftl_blob, &remaining_size);
+    entry = parse_icp_entry(&aftl_blob, &remaining_size);
+    if (!entry) {
+      free_aftl_image(image);
+      return NULL;
+    }
+    image->entries[i] = entry;
   }
 
   return image;
@@ -779,11 +864,30 @@ void free_aftl_icp_entry(AftlIcpEntry* icp_entry) {
     /* Free the log_url and log_root_signature elements if they exist. */
     if (icp_entry->log_url) avb_free(icp_entry->log_url);
     if (icp_entry->log_root_signature) avb_free(icp_entry->log_root_signature);
-    /* Free the FirmwareInfo elements if they exist. */
-    if (icp_entry->fw_info_leaf.json_data)
-      avb_free(icp_entry->fw_info_leaf.json_data);
-    if (icp_entry->fw_info_leaf.vbmeta_hash)
-      avb_free(icp_entry->fw_info_leaf.vbmeta_hash);
+    /* Free the annotation elements if they exist. */
+    if (icp_entry->annotation_leaf) {
+      if (icp_entry->annotation_leaf->signature) {
+        if (icp_entry->annotation_leaf->signature->signature) {
+          avb_free(icp_entry->annotation_leaf->signature->signature);
+        }
+        avb_free(icp_entry->annotation_leaf->signature);
+      }
+      if (icp_entry->annotation_leaf->annotation) {
+        if (icp_entry->annotation_leaf->annotation->vbmeta_hash)
+          avb_free(icp_entry->annotation_leaf->annotation->vbmeta_hash);
+        if (icp_entry->annotation_leaf->annotation->version_incremental)
+          avb_free(icp_entry->annotation_leaf->annotation->version_incremental);
+        if (icp_entry->annotation_leaf->annotation->manufacturer_key_hash)
+          avb_free(
+              icp_entry->annotation_leaf->annotation->manufacturer_key_hash);
+        if (icp_entry->annotation_leaf->annotation->description)
+          avb_free(icp_entry->annotation_leaf->annotation->description);
+        avb_free(icp_entry->annotation_leaf->annotation);
+      }
+      avb_free(icp_entry->annotation_leaf);
+    }
+    if (icp_entry->annotation_leaf_raw)
+      avb_free(icp_entry->annotation_leaf_raw);
     /* Free the TrillianLogRoot elements if they exist. */
     if (icp_entry->log_root_descriptor.metadata)
       avb_free(icp_entry->log_root_descriptor.metadata);

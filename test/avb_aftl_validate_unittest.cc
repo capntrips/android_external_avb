@@ -33,8 +33,15 @@
 
 namespace {
 
-const char kAftlKeyBytesPath[] = "test/data/aftl_key_bytes.bin";
-const char kAftlLogSigPath[] = "test/data/aftl_log_sig.bin";
+/* Public part of testkey_rsa4096.pem, in the AvbRsaPublicKey format. Generated
+ * using:
+ *   $ openssl rsa -in testkey_rsa4096.pem -pubout -out testkey_rsa4096_pub.pem
+ *   $ avbtool extract_public_key --key testkey_rsa4096_pub.pem --output \
+ *     testkey_rsa4096_pub.bin.
+ */
+const char kKeyBytesPath[] = "test/data/testkey_rsa4096_pub.bin";
+/* Example VBMeta. Its hash should match the value kVBMetaHash defined below. */
+const char kVBMetaPath[] = "test/data/aftl_input_vbmeta.img";
 
 } /* namespace */
 
@@ -46,58 +53,107 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
   AvbAftlValidateTest() {}
   ~AvbAftlValidateTest() {}
   void SetUp() override {
-    uint8_t kAftlJsonData[] =
-        "{\"timestamp\":{\"seconds\":1581533076,\"nanos\":884246745},\"Value\":"
-        "{\"FwInfo\":{\"info\":{\"info\":{\"vbmeta_hash\":"
-        "\"mS461dkWuKtPENmqaVQpg/"
-        "xoHUPNsqRvnrh1uLUkKCQ=\",\"version_incremental\":\"1\",\"manufacturer_"
-        "key_hash\":\"JkjCeRzSiHsHxxiVVieHNEvd9bsehav59qmB4BRvYGs=\"},\"info_"
-        "signature\":{\"hash_algorithm\":4,\"signature_algorithm\":1,"
-        "\"signature\":\"YqMyK9rOly4dG+"
-        "QX3qXwkCedZK8w8iXHX90i0OXV4reCNS8xP51scQoh/"
-        "SINWjJQ3hDjIfveQ0SRtY748GeNfrajCDslRAce8f48M3B9Jf5RezbY/MA4ZE/"
-        "IfgTQp6sFLPp2xM+RoPd/GMHtEP0zc98+0/7hsDC7wZeGip7HoxGGiaWqpy+zkp/"
-        "NpD4aSEIz5gtvBisPI/blQbyPoH6cfNT9rJLvzfHIa6Cp/xpZoY7e2EUH/"
-        "XoG6cJGDC3ddPxuLISITQ6ddZkpyhTcA5+xSN8zJxjei1EQOk02Oo9Bqs4srIuO1o/"
-        "b91bTteykCK6ScCMt/rSsfxW6N9o/KvNSOr/"
-        "csXyIBkeHQZ952MaD8vGNX3NkE+FdOEXBr6AWdAwIuHsjVK1uSp+nR/"
-        "kQ2NuXnALXTsM1nB70rnUYdD0cC8OIHvJs9JvV4ATJ/"
-        "SQAoGIDdk1up7w6y7+QOtXC+Dd2Y6aul96xiqDRrdza0ZyEzOBPIssNq34dVR+k7+"
-        "jofkMsDD/"
-        "VT3Ngec17SeZUFfKj1Uv1z6bt6fusfv6Veb84ch0Yx5elLXNfnvvguF0z5qZp+"
-        "AjlkUEbhI5sRKrE9v1wV/IFiwYuHNMX3NBuKpx+8e7SXwZodXRBeocpSlA/"
-        "Qf8dtomxAALZrB30HSOzYavMs/4=\"}}}}}";
-    uint8_t kLogRootDescriptorHeader[] =
+    /* Generate an artificial inclusion proof with its own annotation. The
+     * annotation matches the kVBMetaPath file. It is signed using the
+     * testkey_rsa4096.pem key. */
+    /* We define the constants below as string literals (to be able to annotate
+     * the bytes). We keep their sizes in a separate variable as sizeof will
+     * include the final null byte that is automatically appended. */
+    const uint8_t kAnnotationLeafHeader[] =
+        "\x01"                              // Version
+        "\x00\x00\x00\x00\x00\x00\x00\x00"  // Timestamp
+        "\x01";                             // Leaf Type
+    const size_t kAnnotationLeafHeaderSize = sizeof(kAnnotationLeafHeader) - 1;
+    const uint8_t kSignature[] =
+        "\x00"   // Hash Type
+        "\x00"   // Signature Type
+        "\x00";  // Signature size
+    const size_t kSignatureSize = sizeof(kSignature) - 1;
+    const uint8_t kAnnotationHeader[] = "\x20";  // VBMeta hash size
+    const size_t kAnnotationHeaderSize = sizeof(kAnnotationHeader) - 1;
+    /* This is the SHA256 hash of the image at kVBMetaPath */
+    const uint8_t kVBMetaHash[] =
+        "\x34\x1c\x6c\xf2\x4b\xc1\xe6\x4a\xb1\x03\xa0\xee\xe1\x9d\xee\x9c"
+        "\x35\x34\xdb\x07\x17\x29\xb4\xad\xd0\xce\xa0\xbd\x52\x92\x54\xec";
+    const uint8_t kAnnotationFooter[] =
+        "\x03"      // Version incremental size
+        "123"       // Version incremental
+        "\x00"      // Manufacturer key hash size
+        "\x00\x05"  // Description size
+        "abcde";    // Description
+    const size_t kAnnotationFooterSize = sizeof(kAnnotationFooter) - 1;
+    const uint8_t kLogRootDescriptorHeader[] =
         "\x00\x01"                          // Version
         "\x00\x00\x00\x00\x00\x00\x00\x03"  // Tree size
         "\x20";                             // Root hash size
-    /* We define kLogRootDescriptorHeader as a string literal (to be able to
-     * annotate the bytes). Do not count the final null byte that is
-     * automatically appended */
-    size_t kLogRootDescriptorHeaderSize = sizeof(kLogRootDescriptorHeader) - 1;
-    uint8_t kLogRootDescriptorHash[] =
-        "\x5a\xb3\x43\x21\x8f\x54\x4d\x05\x46\x34\x62\x86\x2f\xa8\xf8\x6e"
-        "\x3b\xa3\x19\x2d\xe9\x9c\xb2\xab\x8e\x09\xd8\x55\xc3\xde\x34\xd6";
-    uint8_t kLogRootDescriptorFooter[] =
+    const size_t kLogRootDescriptorHeaderSize =
+        sizeof(kLogRootDescriptorHeader) - 1;
+    const uint8_t kLogRootDescriptorRootHash[] =
+        "\x40\x79\x2f\xf1\xcb\xfc\xd1\x8a\x13\x70\x90\xaf\x6a\x16\x4d\xa9"
+        "\x36\x80\x99\xb3\xf9\x7f\x99\x13\x3e\x07\xff\xbc\x73\x42\xfc\xc7";
+    const uint8_t kLogRootDescriptorFooter[] =
         "\x00\x00\x00\x00\x13\x36\x4b\xff"  // Timestamp
         "\x00\x00\x00\x00\x00\x00\x00\x00"  // Revision
         "\x00\x00";                         // Metadata size
-    size_t kLogRootDescriptorFooterSize = sizeof(kLogRootDescriptorFooter) - 1;
+    const size_t kLogRootDescriptorFooterSize =
+        sizeof(kLogRootDescriptorFooter) - 1;
+    /* Signature of the log root descriptor.
+     *   $ openssl dgst -sha256 -sign testkey_rsa4096.pem \
+     *   -out kLogRootHashSignature log_root_descriptor_raw
+     * log_root_descriptor_raw is defined as the concatenation:
+     * kLogRootDescriptorHeader || kLogRootDescriptorRootHash ||
+     * kLogRootDescriptorFooter */
+    const uint8_t kLogRootHashSignature[] = {
+        0x55, 0x1d, 0xd3, 0x13, 0x3c, 0x41, 0xde, 0x67, 0x79, 0xf1, 0xc6, 0xad,
+        0x72, 0x10, 0xff, 0xfb, 0x6d, 0xac, 0xc1, 0x1c, 0x06, 0x2a, 0x3e, 0xa8,
+        0xd9, 0xf3, 0x8c, 0x9c, 0x67, 0xbe, 0x1e, 0x8e, 0xe1, 0x02, 0xf6, 0xdb,
+        0xd2, 0x5c, 0x31, 0x4b, 0x26, 0xad, 0x9a, 0xd1, 0xf5, 0x7d, 0xb9, 0x6b,
+        0x4b, 0xf1, 0x7a, 0x89, 0x9d, 0xf0, 0x17, 0xb4, 0xee, 0xb2, 0x08, 0x0d,
+        0xd8, 0x99, 0xac, 0x7b, 0x34, 0x1f, 0xd1, 0x9c, 0x2e, 0x0c, 0xd1, 0xb1,
+        0x42, 0x34, 0xf2, 0x65, 0xbb, 0x79, 0x7a, 0xac, 0x23, 0x37, 0xec, 0xfc,
+        0xff, 0xbf, 0x66, 0x51, 0xed, 0x3e, 0xa7, 0x45, 0x3a, 0xf9, 0x72, 0xaa,
+        0x01, 0x3c, 0xfd, 0x59, 0x01, 0x67, 0x67, 0xb4, 0x57, 0x23, 0xb6, 0x7e,
+        0x59, 0x82, 0xb3, 0x98, 0xa2, 0x57, 0xd4, 0x64, 0x83, 0xaa, 0x02, 0x17,
+        0x87, 0xfd, 0xa2, 0xe2, 0x3b, 0xa8, 0xf5, 0xc2, 0xfb, 0xce, 0x7f, 0x59,
+        0x72, 0x10, 0xc5, 0x11, 0x81, 0x80, 0x20, 0x4a, 0x3e, 0xf9, 0x85, 0x2e,
+        0x44, 0x94, 0x87, 0xec, 0xfa, 0x2e, 0x8f, 0x75, 0x00, 0x6f, 0x52, 0x1b,
+        0x4d, 0x5c, 0xfc, 0xe4, 0x1f, 0xe2, 0x94, 0xbc, 0x8c, 0xe8, 0x7f, 0x74,
+        0x14, 0x2f, 0x66, 0x8e, 0xfb, 0x11, 0x34, 0xde, 0x80, 0x21, 0x92, 0xc3,
+        0x52, 0xa7, 0xf7, 0x5e, 0x49, 0x53, 0x21, 0x7d, 0x8b, 0xa2, 0xcb, 0x84,
+        0x80, 0x64, 0x0d, 0xd7, 0xd0, 0x6d, 0x6f, 0x2a, 0x98, 0x57, 0x3b, 0x95,
+        0xa1, 0x63, 0x39, 0x00, 0x22, 0x9e, 0x5a, 0x75, 0x07, 0x10, 0x1f, 0x7e,
+        0xdb, 0x05, 0x5d, 0x3d, 0x76, 0x75, 0x3c, 0x1a, 0xd4, 0x1e, 0x8d, 0x6e,
+        0xce, 0x57, 0xd6, 0xce, 0x23, 0xc0, 0x23, 0x4c, 0xcb, 0x10, 0xec, 0x59,
+        0x22, 0x64, 0x57, 0x33, 0x1c, 0x3f, 0xa9, 0x43, 0x97, 0xc1, 0xc0, 0x93,
+        0x5a, 0x16, 0x80, 0x51, 0x56, 0x28, 0x98, 0x33, 0xee, 0x1a, 0xf8, 0x38,
+        0x7a, 0xaa, 0xdb, 0x43, 0x39, 0x90, 0x9e, 0x74, 0xb7, 0x9f, 0xfe, 0xa5,
+        0x84, 0x69, 0xf5, 0x77, 0x80, 0x92, 0xec, 0x06, 0x06, 0xe0, 0xd2, 0x98,
+        0x34, 0x66, 0x25, 0xc3, 0x7c, 0x89, 0x78, 0x3a, 0x0b, 0x48, 0x49, 0x37,
+        0x46, 0x07, 0xc4, 0xc8, 0x04, 0x72, 0x45, 0x60, 0x36, 0x98, 0x2d, 0x47,
+        0xfe, 0xba, 0x74, 0xb9, 0xb0, 0xe4, 0xf5, 0x45, 0xa0, 0xfb, 0x4a, 0x53,
+        0xe0, 0x16, 0x6a, 0x6b, 0x82, 0xcc, 0x33, 0x1c, 0x3c, 0x64, 0xe0, 0x90,
+        0x3c, 0x59, 0xfa, 0x04, 0x51, 0xe0, 0xe8, 0xaa, 0xe9, 0x92, 0x43, 0x04,
+        0x2a, 0x49, 0xd4, 0xdf, 0xac, 0x1d, 0x46, 0x44, 0xad, 0x65, 0x62, 0xaf,
+        0x44, 0x16, 0xb0, 0x05, 0x56, 0x2b, 0xa4, 0xad, 0x4c, 0x7e, 0xbd, 0x04,
+        0x95, 0xcb, 0xce, 0x0e, 0xf6, 0xd5, 0x4b, 0x3a, 0xc0, 0xde, 0x1e, 0xf8,
+        0xfa, 0xf5, 0x73, 0x4a, 0x6d, 0xc2, 0x4a, 0xe1, 0xaf, 0xae, 0xd8, 0x31,
+        0x23, 0x16, 0x5d, 0x15, 0x41, 0xe6, 0xbf, 0x4a, 0xe0, 0xf3, 0xdd, 0x74,
+        0x32, 0x96, 0x64, 0x4c, 0x16, 0x7d, 0xd3, 0xad, 0x21, 0x47, 0x2b, 0x17,
+        0xb9, 0xf3, 0x84, 0x38, 0x80, 0x60, 0xb6, 0xcb, 0x24, 0x45, 0x24, 0x90,
+        0x74, 0xe9, 0x50, 0xea, 0x2e, 0x1f, 0xc2, 0x74, 0x36, 0xa2, 0xf5, 0xd7,
+        0x24, 0xb3, 0xa1, 0x1f, 0xd3, 0x39, 0x61, 0x67, 0x37, 0xe4, 0x2a, 0x20,
+        0x67, 0x95, 0x53, 0x9d, 0xd4, 0xdb, 0x4f, 0xa6, 0xb8, 0x7f, 0x91, 0xb2,
+        0xc5, 0x6f, 0x71, 0x3c, 0x86, 0xc8, 0x36, 0x8d, 0xa4, 0x4d, 0x53, 0x6b,
+        0x3f, 0xe6, 0xce, 0xf1, 0x7a, 0xa2, 0x2e, 0x53, 0x80, 0x4c, 0x52, 0x9d,
+        0x3e, 0xd7, 0xec, 0x47, 0x4a, 0xfa, 0x84, 0xa5, 0x9a, 0x2f, 0x7b, 0xfc,
+        0xfc, 0xe8, 0xa4, 0x09, 0xfb, 0xb5, 0xb7, 0xf2};
     BaseAvbToolTest::SetUp();
 
     /* Read in test data from the key and log_sig binaries. */
-    base::GetFileSize(base::FilePath(kAftlKeyBytesPath), &key_size_);
-    if (key_size_ != AVB_AFTL_PUB_KEY_SIZE) return;
-    key_bytes_ = (uint8_t*)avb_malloc(key_size_);
-    if (!key_bytes_) return;
-    base::ReadFile(
-        base::FilePath(kAftlKeyBytesPath), (char*)key_bytes_, key_size_);
-    base::GetFileSize(base::FilePath(kAftlLogSigPath), &log_sig_size_);
-    if (log_sig_size_ != AVB_AFTL_SIGNATURE_SIZE) return;
-    log_sig_bytes_ = (uint8_t*)avb_malloc(log_sig_size_);
-    if (!log_sig_bytes_) return;
-    base::ReadFile(
-        base::FilePath(kAftlLogSigPath), (char*)log_sig_bytes_, log_sig_size_);
+    ASSERT_TRUE(
+        base::ReadFileToString(base::FilePath(kKeyBytesPath), &key_bytes_));
+
+    /* Allocate and populate the inclusion proof */
     icp_entry_ = (AftlIcpEntry*)avb_malloc(sizeof(AftlIcpEntry));
     if (!icp_entry_) return;
     icp_entry_->log_root_descriptor.version = 1;
@@ -107,9 +163,9 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
     icp_entry_->log_root_descriptor.revision = 0;
     icp_entry_->log_root_descriptor.metadata_size = 0;
     icp_entry_->log_root_descriptor.metadata = NULL;
-    icp_entry_->log_root_descriptor_size =
-        icp_entry_->log_root_descriptor.root_hash_size +
-        icp_entry_->log_root_descriptor.metadata_size + 29;
+    icp_entry_->log_root_descriptor_size = kLogRootDescriptorHeaderSize +
+                                           AVB_AFTL_HASH_SIZE +
+                                           kLogRootDescriptorFooterSize;
     icp_entry_->log_root_descriptor_raw =
         (uint8_t*)avb_malloc(icp_entry_->log_root_descriptor_size);
     if (!icp_entry_->log_root_descriptor_raw) {
@@ -119,7 +175,7 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
            kLogRootDescriptorHeader,
            kLogRootDescriptorHeaderSize);
     memcpy(icp_entry_->log_root_descriptor_raw + kLogRootDescriptorHeaderSize,
-           kLogRootDescriptorHash,
+           kLogRootDescriptorRootHash,
            AVB_AFTL_HASH_SIZE);
     memcpy(icp_entry_->log_root_descriptor_raw + kLogRootDescriptorHeaderSize +
                AVB_AFTL_HASH_SIZE,
@@ -130,31 +186,61 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
     if (!icp_entry_->log_root_descriptor.root_hash) return;
     /* Copy the hash from within the raw version */
     memcpy(icp_entry_->log_root_descriptor.root_hash,
-           kLogRootDescriptorHash,
+           kLogRootDescriptorRootHash,
            AVB_AFTL_HASH_SIZE);
+    icp_entry_->log_root_sig_size = AVB_AFTL_SIGNATURE_SIZE;
+    icp_entry_->log_root_signature =
+        (uint8_t*)avb_malloc(AVB_AFTL_SIGNATURE_SIZE);
+    memcpy(icp_entry_->log_root_signature,
+           kLogRootHashSignature,
+           AVB_AFTL_SIGNATURE_SIZE);
 
-    icp_entry_->fw_info_leaf_size = sizeof(kAftlJsonData);
-    icp_entry_->fw_info_leaf.vbmeta_hash_size = AVB_AFTL_HASH_SIZE;
-    icp_entry_->fw_info_leaf.vbmeta_hash =
-        (uint8_t*)avb_malloc(AVB_AFTL_HASH_SIZE);
-    if (!icp_entry_->fw_info_leaf.vbmeta_hash) {
-      return;
-    }
-    memcpy(icp_entry_->fw_info_leaf.vbmeta_hash,
-           "\x65\xec\x58\x83\x43\x62\x8e\x81\x4d\xc7\x75\xa8\xcb\x77\x1f\x46"
-           "\x81\xcc\x79\x6f\xba\x32\xf0\x68\xc7\x17\xce\x2e\xe2\x14\x4d\x39",
+    /* Allocate the annotation leaf */
+    icp_entry_->annotation_leaf_size =
+        kAnnotationLeafHeaderSize + kSignatureSize + kAnnotationHeaderSize +
+        AVB_AFTL_HASH_SIZE + kAnnotationFooterSize;
+    icp_entry_->annotation_leaf =
+        (SignedVBMetaPrimaryAnnotationLeaf*)avb_calloc(
+            sizeof(SignedVBMetaPrimaryAnnotationLeaf));
+    if (!icp_entry_->annotation_leaf) return;
+    icp_entry_->annotation_leaf->version = 1;
+    icp_entry_->annotation_leaf->timestamp = 0;
+    icp_entry_->annotation_leaf->leaf_type =
+        AVB_AFTL_SIGNED_VBMETA_PRIMARY_ANNOTATION_LEAF;
+    icp_entry_->annotation_leaf->annotation =
+        (VBMetaPrimaryAnnotation*)avb_calloc(sizeof(VBMetaPrimaryAnnotation));
+    if (!icp_entry_->annotation_leaf->annotation) return;
+    icp_entry_->annotation_leaf->annotation->vbmeta_hash_size =
+        AVB_AFTL_HASH_SIZE;
+    icp_entry_->annotation_leaf->annotation->vbmeta_hash =
+        (uint8_t*)avb_calloc(AVB_AFTL_HASH_SIZE);
+    if (!icp_entry_->annotation_leaf->annotation->vbmeta_hash) return;
+    memcpy(icp_entry_->annotation_leaf->annotation->vbmeta_hash,
+           kVBMetaHash,
            AVB_AFTL_HASH_SIZE);
-    icp_entry_->fw_info_leaf.json_data =
-        (uint8_t*)avb_calloc(icp_entry_->fw_info_leaf_size);
-    if (icp_entry_->fw_info_leaf.json_data == NULL) {
-      avb_free(icp_entry_->fw_info_leaf.vbmeta_hash);
-      return;
-    }
-    memcpy(icp_entry_->fw_info_leaf.json_data,
-           kAftlJsonData,
-           icp_entry_->fw_info_leaf_size);
+    icp_entry_->annotation_leaf_raw =
+        (uint8_t*)avb_calloc(icp_entry_->annotation_leaf_size);
+    if (!icp_entry_->annotation_leaf_raw) return;
+    memcpy(icp_entry_->annotation_leaf_raw,
+           kAnnotationLeafHeader,
+           kAnnotationLeafHeaderSize);
+    memcpy(icp_entry_->annotation_leaf_raw + kAnnotationLeafHeaderSize,
+           kSignature,
+           kSignatureSize);
+    memcpy(icp_entry_->annotation_leaf_raw + kAnnotationLeafHeaderSize +
+               kSignatureSize,
+           kAnnotationHeader,
+           kAnnotationHeaderSize);
+    memcpy(icp_entry_->annotation_leaf_raw + kAnnotationLeafHeaderSize +
+               kSignatureSize + kAnnotationHeaderSize,
+           kVBMetaHash,
+           AVB_AFTL_HASH_SIZE);
+    memcpy(icp_entry_->annotation_leaf_raw + kAnnotationLeafHeaderSize +
+               kSignatureSize + kAnnotationHeaderSize + AVB_AFTL_HASH_SIZE,
+           kAnnotationFooter,
+           kAnnotationFooterSize);
+
     icp_entry_->leaf_index = 2;
-
     icp_entry_->proofs =
         (uint8_t(*)[AVB_AFTL_HASH_SIZE])avb_calloc(AVB_AFTL_HASH_SIZE);
     memcpy(icp_entry_->proofs[0],
@@ -166,59 +252,52 @@ class AvbAftlValidateTest : public BaseAvbToolTest {
 
   void TearDown() override {
     if (icp_entry_) {
-      if (icp_entry_->fw_info_leaf.json_data)
-        avb_free(icp_entry_->fw_info_leaf.json_data);
-      if (icp_entry_->fw_info_leaf.vbmeta_hash)
-        avb_free(icp_entry_->fw_info_leaf.vbmeta_hash);
+      if (icp_entry_->annotation_leaf_raw)
+        avb_free(icp_entry_->annotation_leaf_raw);
+      if (icp_entry_->annotation_leaf) {
+        if (icp_entry_->annotation_leaf->annotation) {
+          if (icp_entry_->annotation_leaf->annotation->vbmeta_hash)
+            avb_free(icp_entry_->annotation_leaf->annotation->vbmeta_hash);
+          avb_free(icp_entry_->annotation_leaf->annotation);
+        }
+        avb_free(icp_entry_->annotation_leaf);
+      }
       if (icp_entry_->log_root_descriptor.root_hash)
         avb_free(icp_entry_->log_root_descriptor.root_hash);
       if (icp_entry_->log_root_descriptor_raw)
         avb_free(icp_entry_->log_root_descriptor_raw);
+      if (icp_entry_->log_root_signature)
+        avb_free(icp_entry_->log_root_signature);
       if (icp_entry_->proofs) avb_free(icp_entry_->proofs);
       avb_free(icp_entry_);
     }
-    avb_free(key_bytes_);
-    avb_free(log_sig_bytes_);
     BaseAvbToolTest::TearDown();
   }
 
  protected:
   AftlIcpEntry* icp_entry_;
-  uint8_t* key_bytes_;
-  uint8_t* log_sig_bytes_;
-  int64_t key_size_;
-  int64_t log_sig_size_;
+  std::string key_bytes_;
 };
 
-TEST_F(AvbAftlValidateTest, AvbAftlVerifySignature) {
-  icp_entry_->log_root_sig_size = AVB_AFTL_SIGNATURE_SIZE;
-  icp_entry_->log_root_signature =
-      (uint8_t*)avb_malloc(AVB_AFTL_SIGNATURE_SIZE);
-  memcpy(
-      icp_entry_->log_root_signature, log_sig_bytes_, AVB_AFTL_SIGNATURE_SIZE);
+TEST_F(AvbAftlValidateTest, VerifyEntrySignature) {
   EXPECT_EQ(true,
-            avb_aftl_verify_entry_signature(key_bytes_, key_size_, icp_entry_));
-  avb_free(icp_entry_->log_root_signature);
+            avb_aftl_verify_entry_signature(
+                (uint8_t*)key_bytes_.data(), key_bytes_.size(), icp_entry_));
 }
 
-TEST_F(AvbAftlValidateTest, AvbAftlVerifyIcpRootHash) {
-  /* Initialize the icp_entry components used with the test. */
+TEST_F(AvbAftlValidateTest, VerifyIcpRootHash) {
   EXPECT_EQ(true, avb_aftl_verify_icp_root_hash(icp_entry_));
 }
 
-// TODO(b/154115873): reenable this test
-TEST_F(AvbAftlValidateTest, DISABLED_AftlVerifyVbmetaHash) {
-  GenerateVBMetaImage("vbmeta.img",
-                      "SHA256_RSA4096",
-                      0,
-                      base::FilePath("test/data/testkey_rsa4096.pem"));
-
+TEST_F(AvbAftlValidateTest, VerifyVbmetaHash) {
+  std::string vbmeta;
+  ASSERT_TRUE(base::ReadFileToString(base::FilePath(kVBMetaPath), &vbmeta));
   EXPECT_EQ(true,
             avb_aftl_verify_vbmeta_hash(
-                vbmeta_image_.data(), vbmeta_image_.size(), icp_entry_));
+                (uint8_t*)vbmeta.data(), vbmeta.size(), icp_entry_));
 }
 
-TEST_F(AvbAftlValidateTest, AvbAftlRootFromIcp) {
+TEST_F(AvbAftlValidateTest, RootFromIcp) {
   /* Tests from trillian root_from_icp functionality:
      https://github.com/google/trillian/blob/master/merkle/log_verifier_test.go
   */
@@ -305,7 +384,7 @@ TEST_F(AvbAftlValidateTest, AvbAftlRootFromIcp) {
       << "Failed on test #4";
 }
 
-TEST_F(AvbAftlValidateTest, AvbAftlChainInner) {
+TEST_F(AvbAftlValidateTest, ChainInner) {
   uint8_t hash[AVB_AFTL_HASH_SIZE];
   uint8_t seed[AVB_AFTL_HASH_SIZE];
   uint8_t proof[4][AVB_AFTL_HASH_SIZE];
@@ -364,7 +443,7 @@ TEST_F(AvbAftlValidateTest, AvbAftlChainInner) {
       << " and leaf_index 3";
 }
 
-TEST_F(AvbAftlValidateTest, AvbAftlChainBorderRight) {
+TEST_F(AvbAftlValidateTest, ChainBorderRight) {
   uint8_t hash[AVB_AFTL_HASH_SIZE];
   uint8_t seed[AVB_AFTL_HASH_SIZE];
   uint8_t proof[2][AVB_AFTL_HASH_SIZE];
@@ -394,7 +473,7 @@ TEST_F(AvbAftlValidateTest, AvbAftlChainBorderRight) {
          "\"7890abcdefghijklmnopqrstuvwxyz12\"]";
 }
 
-TEST_F(AvbAftlValidateTest, AvbAftlRFC6962HashChildren) {
+TEST_F(AvbAftlValidateTest, RFC6962HashChildren) {
   uint8_t hash[AVB_AFTL_HASH_SIZE];
 
   avb_aftl_rfc6962_hash_children((uint8_t*)"", 0, (uint8_t*)"", 0, hash);
@@ -419,7 +498,7 @@ TEST_F(AvbAftlValidateTest, AvbAftlRFC6962HashChildren) {
       << "Failed on inputs \"abcd\" and \"efgh\"";
 }
 
-TEST_F(AvbAftlValidateTest, AvbAftlRFC6962HashLeaf) {
+TEST_F(AvbAftlValidateTest, RFC6962HashLeaf) {
   uint8_t hash[AVB_AFTL_HASH_SIZE];
   avb_aftl_rfc6962_hash_leaf((uint8_t*)"", 0, hash);
   EXPECT_EQ("6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
@@ -431,7 +510,7 @@ TEST_F(AvbAftlValidateTest, AvbAftlRFC6962HashLeaf) {
       << "Failed on input \"abcdefg\"";
 }
 
-TEST_F(AvbAftlValidateTest, AvbAftlSha256) {
+TEST_F(AvbAftlValidateTest, Sha256) {
   /* Computed with:
    *
    * $ echo -n foobar |sha256sum
