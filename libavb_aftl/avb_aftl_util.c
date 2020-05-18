@@ -361,8 +361,10 @@ static bool parse_trillian_log_root_descriptor(AftlIcpEntry* icp_entry,
                                                size_t aftl_blob_remaining) {
   avb_assert(icp_entry);
   avb_assert(aftl_blob);
-  avb_assert(aftl_blob_remaining >= AVB_AFTL_MIN_TLRD_SIZE);
   uint8_t* blob_end = *aftl_blob + aftl_blob_remaining;
+  if (*aftl_blob > blob_end) {
+    return false;
+  }
 
   /* Copy in the version field from the blob. */
   if (!read_u16(
@@ -563,8 +565,9 @@ static bool parse_annotation_leaf(AftlIcpEntry* icp_entry,
                                   uint8_t** aftl_blob) {
   SignedVBMetaPrimaryAnnotationLeaf* leaf;
   uint8_t* blob_end = *aftl_blob + icp_entry->annotation_leaf_size;
-
-  avb_assert(*aftl_blob < blob_end);
+  if (*aftl_blob > blob_end) {
+    return false;
+  }
 
   leaf = (SignedVBMetaPrimaryAnnotationLeaf*)avb_calloc(
       sizeof(SignedVBMetaPrimaryAnnotationLeaf));
@@ -612,8 +615,9 @@ AftlIcpEntry* parse_icp_entry(uint8_t** aftl_blob, size_t* remaining_size) {
   AftlIcpEntry* icp_entry;
   uint8_t* blob_start = *aftl_blob;
   uint8_t* blob_end = *aftl_blob + *remaining_size;
-
-  avb_assert(blob_start < blob_end);
+  if (*aftl_blob > blob_end) {
+    return NULL;
+  }
 
   if (*remaining_size < AVB_AFTL_MIN_AFTL_ICP_ENTRY_SIZE) {
     avb_error("Invalid AftlImage\n");
@@ -807,7 +811,10 @@ AftlImage* parse_aftl_image(uint8_t* aftl_blob, size_t aftl_blob_size) {
   size_t remaining_size;
 
   /* Ensure the blob is at least large enough for an AftlImageHeader */
-  avb_assert(aftl_blob_size >= sizeof(AftlImageHeader));
+  if (aftl_blob_size < sizeof(AftlImageHeader)) {
+    avb_error("Invalid image header.\n");
+    return NULL;
+  }
   image_header = (AftlImageHeader*)aftl_blob;
   /* Check for the magic value for an AftlImageHeader. */
   if (image_header->magic != AVB_AFTL_MAGIC) {
@@ -816,9 +823,11 @@ AftlImage* parse_aftl_image(uint8_t* aftl_blob, size_t aftl_blob_size) {
   }
   /* Extract the size out of the header. */
   image_size = avb_be32toh(image_header->image_size);
-  if (image_size > AVB_AFTL_MAX_AFTL_IMAGE_SIZE) return NULL;
-  avb_assert(image_size >= sizeof(AftlImageHeader) &&
-             image_size < AVB_AFTL_MAX_AFTL_IMAGE_SIZE);
+  if (image_size < sizeof(AftlImageHeader) ||
+      image_size > AVB_AFTL_MAX_AFTL_IMAGE_SIZE) {
+    avb_error("Invalid image size.\n");
+    return NULL;
+  }
   image = (AftlImage*)avb_calloc(sizeof(AftlImage));
   if (!image) {
     avb_error("Failed allocation for AftlImage.\n");
