@@ -258,6 +258,26 @@ cc_library_static {
     ],
 }
 
+cc_fuzz {
+    name: "libavb_aftl_fuzzer",
+    defaults: ["avb_defaults"],
+    // The fuzzing entry point is declared and defined in the same file.
+    // Overwrite the behaviour introduced by avb_defaults.
+    cflags: [
+        "-Wno-missing-prototypes",
+    ],
+    srcs: [
+        "test/avb_aftl_fuzz.cc",
+    ],
+    static_libs: ["libavb", "libavb_aftl"],
+    host_supported: true,
+    corpus: ["test/corpus/*"],
+    fuzz_config: {
+        cc: ["tweek@google.com", "jpm@google.com"],
+        componentid: 685985,
+    }
+}
+
 cc_library_host_static {
     name: "libavb_atx_host",
     defaults: ["avb_defaults"],
