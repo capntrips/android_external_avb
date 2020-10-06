@@ -667,21 +667,21 @@ Devices can be configured to create additional `vbmeta` partitions as
 [chained partitions](#The-VBMeta-struct) in order to update a subset of
 partitions without changing the top-level `vbmeta` partition. For example,
 the following variables create `vbmeta_system.img` as a chained `vbmeta`
-image that contains the hash-tree descriptors for `system.img` and
-`system_ext.img`. `vbmeta_system.img` itself will be signed by the specified
+image that contains the hash-tree descriptors for `system.img`, `system_ext.img`
+and `product.img`. `vbmeta_system.img` itself will be signed by the specified
 key and algorithm.
 
-    BOARD_AVB_VBMETA_SYSTEM := system system_ext
+    BOARD_AVB_VBMETA_SYSTEM := system system_ext product
     BOARD_AVB_VBMETA_SYSTEM_KEY_PATH := external/avb/test/data/testkey_rsa2048.pem
     BOARD_AVB_VBMETA_SYSTEM_ALGORITHM := SHA256_RSA2048
     BOARD_AVB_VBMETA_SYSTEM_ROLLBACK_INDEX_LOCATION := 1
 
-Note that the hash-tree descriptors for `system.img` and `system_ext.img`
-will be included only in `vbmeta_system.img`, but not `vbmeta.img`. With
-the above setup, partitions `system.img`, `system_ext.img` and
-`vbmeta_system.img` can be updated independently - but as a group - of the
-rest of the partitions, *or* as part of the traditional updates that
-update all the partitions.
+Note that the hash-tree descriptors for `system.img`, `system_ext.img` and
+`product.img` will be included only in `vbmeta_system.img`, but not
+`vbmeta.img`. With the above setup, partitions `system.img`, `system_ext.img`,
+`product.img` and `vbmeta_system.img` can be updated independently - but as a
+group - of the rest of the partitions, *or* as part of the traditional updates
+that update all the partitions.
 
 Currently build system supports building chained `vbmeta` images of
 `vbmeta_system.img` (`BOARD_AVB_VBMETA_SYSTEM`) and `vbmeta_vendor.img`
