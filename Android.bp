@@ -335,8 +335,15 @@ cc_test_host {
         "img2simg",
         "avbtool",
     ],
+    test_options: {
+        unit_test: true,
+    },
+    compile_multilib: "first",
     data: [
+        ":img2simg",
+        ":simg2img",
         "avbtool",
+        ":fec",
         "test/avbtool_signing_helper_test.py",
         "test/avbtool_signing_helper_with_files_test.py",
         "test/data/*",
