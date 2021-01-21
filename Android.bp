@@ -88,7 +88,13 @@ python_binary_host {
         },
         py3: {
             enabled: true,
-            embedded_launcher: true,
+        },
+    },
+    // Need both lib to be used as data for cc_test (which default to "both")
+    compile_multilib: "both",
+    multilib: {
+        lib32: {
+            suffix: "32",
         },
     },
 }
