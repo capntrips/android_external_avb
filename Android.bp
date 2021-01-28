@@ -88,7 +88,7 @@ python_binary_host {
         },
         py3: {
             enabled: true,
-	    embedded_launcher: true,
+            embedded_launcher: true,
         },
     },
     compile_multilib: "first",
