@@ -155,7 +155,9 @@ python_test_host {
     data: [
         "test/data/**/*.*",
     ],
-    test_suites: ["general-tests"],
+    test_options: {
+        unit_test: true,
+    },
     version: {
         py2: {
             enabled: false,
