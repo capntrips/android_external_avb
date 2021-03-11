@@ -1335,7 +1335,7 @@ out:
 
 static bool has_system_partition(AvbOps* ops, const char* ab_suffix) {
   char part_name[AVB_PART_NAME_MAX_SIZE];
-  char* system_part_name = "system";
+  const char* system_part_name = "system";
   char guid_buf[37];
   AvbIOResult io_ret;
 
