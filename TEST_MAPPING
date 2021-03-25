@@ -1,8 +1,0 @@
-{
-  "postsubmit": [
-    {
-      "name": "libavb_host_unittest",
-      "host": true
-    }
-  ]
-}
