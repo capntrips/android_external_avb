@@ -50,3 +50,13 @@ python_test_host {
     },
     test_config: "at_auth_unlock_unittest.xml",
 }
+
+filegroup {
+    name: "avb_testkey_rsa4096",
+    srcs: ["data/testkey_rsa4096.pem"],
+}
+
+filegroup {
+    name: "avb_testkey_rsa2048",
+    srcs: ["data/testkey_rsa2048.pem"],
+}
