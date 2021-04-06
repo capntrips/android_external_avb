@@ -276,7 +276,7 @@ class PixelFactoryImageVerifier(object):
     """Extracts the build fingerprint from the system.img.
     Args:
       image_dir: The folder containing the unpacked factory image partitions,
-	    which contains a vbmeta.img patition.
+        which contains a vbmeta.img patition.
 
     Returns:
       The build fingerprint string, e.g.
@@ -285,7 +285,7 @@ class PixelFactoryImageVerifier(object):
     os.chdir(image_dir)
     args = ['grep',
             '-a',
-            'ro\.build\.fingerprint=google/.*/release-keys',
+            'ro\..*build\.fingerprint=google/.*/release-keys',
             'system.img']
 
     result, output = self._run_command(
