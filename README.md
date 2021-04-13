@@ -1033,6 +1033,26 @@ then `androidboot.veritymode` is set to **disabled** and
 `androidboot.veritymode.managed` and `androidboot.vbmeta.invalidate_on_error`
 are unset.
 
+The different values of `hashtree_error_mode` parameter in the `avb_slot_verify()`
+function can be categorized into three groups:
+
+* `AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE`, which needs `CONFIG_DM_VERITY_AVB`
+  in the kernel config for the kernel to invalidate the current slot and
+  restart. This is kept here for legacy Android Things devices and is not
+  recommended for other device form factors.
+
+* The bootloader handles the switch between `AVB_HASHTREE_ERROR_MODE_RESTART`
+  and `AVB_HASHTREE_ERROR_MODE_EIO`. This would need a persistent storage on the
+  device to store the vbmeta digest, so the bootloader can detect if a device
+  ever gets an update or not. Once the new OS is installed and if the device is
+  in **EIO** mode, the bootloader should switch back to **RESTART** mode.
+
+* `AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO`: `libavb` helps the
+  bootloader manage **EIO**/**RESTART** state transition. The bootloader needs
+  to implement the callbacks of `AvbOps->read_persistent_value()` and
+  `AvbOps->write_persistent_value()` for `libavb` to store the vbmeta digest to
+  detect whether a new OS is installed.
+
 ### Which mode should I use for my device?
 
 This depends entirely on the device, how the device is intended to be
