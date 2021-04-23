@@ -1014,6 +1014,11 @@ be handled through the `hashtree_error_mode` parameter in the
    be used for **ONLY** diagnostics and debugging. It cannot be used
    unless verification errors are allowed.
 
+* `AVB_HASHTREE_ERROR_MODE_PANIC` means that the OS will **panic** without
+  the current slot being invalidated. Be careful using this mode as it may
+  introduce boot panic if the same hashtree verification error is hit on
+  every boot. This mode is available since: 1.7.0 (kernel 5.9)
+
 The value passed in `hashtree_error_mode` is essentially just passed on through
 to the HLOS through the the `androidboot.veritymode`,
 `androidboot.veritymode.managed`, and `androidboot.vbmeta.invalidate_on_error`
@@ -1026,6 +1031,7 @@ kernel command-line parameters in the following way:
 | `AVB_HASHTREE_ERROR_MODE_EIO` | **eio** | (unset) | (unset) |
 | `AVB_HASHTREE_ERROR_MODE_MANAGED_RESTART_AND_EIO` | **eio** or **enforcing** | **yes** | (unset) |
 | `AVB_HASHTREE_ERROR_MODE_LOGGING` | **ignore_corruption** | (unset) | (unset) |
+| `AVB_HASHTREE_ERROR_MODE_PANIC` | **panicking** | (unset) | (unset) |
 
 The only exception to this table is that if the
 `AVB_VBMETA_IMAGE_FLAGS_HASHTREE_DISABLED` flag is set in the top-level vbmeta,
