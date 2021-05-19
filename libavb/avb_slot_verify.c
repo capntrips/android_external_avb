@@ -1706,7 +1706,7 @@ const char* avb_slot_verify_result_to_string(AvbSlotVerifyResult result) {
   return ret;
 }
 
-void avb_slot_verify_data_calculate_vbmeta_digest(AvbSlotVerifyData* data,
+void avb_slot_verify_data_calculate_vbmeta_digest(const AvbSlotVerifyData* data,
                                                   AvbDigestType digest_type,
                                                   uint8_t* out_digest) {
   bool ret = false;
