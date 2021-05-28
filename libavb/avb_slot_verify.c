@@ -468,6 +468,7 @@ out:
     loaded_partition->data_size = image_size;
     loaded_partition->data = image_buf;
     loaded_partition->preloaded = image_preloaded;
+    loaded_partition->verify_result = ret;
     image_buf = NULL;
   }
 
