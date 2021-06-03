@@ -907,6 +907,13 @@ if (is_slot_is_marked_as_successful(slot->ab_suffix)) {
 }
 ```
 
+This logic should ideally be implemented outside of the HLOS. One
+possible implementation is to update rollback indices in the
+bootloader when booting into a successful slot. This means that
+when booting into a new OS not yet marked as successful, the
+rollback indices would not be updated. The first reboot after the
+slot succeeded would trigger an update of the rollback indices.
+
 For an HLOS where it's possible to roll back to a previous version,
 `stored_rollback_index[n]` should be set to the largest possible value
 allowing all bootable slots to boot. This approach is implemented in
