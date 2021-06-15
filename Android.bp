@@ -147,81 +147,6 @@ python_binary_host {
     compile_multilib: "first",
 }
 
-python_library_host {
-    name: "aftl_proto",
-    srcs: [
-        "proto/api.proto",
-        "proto/crypto/sigpb/sigpb.proto",
-        "proto/crypto/keyspb/keyspb.proto",
-        "proto/trillian.proto",
-    ],
-    proto: {
-        include_dirs: [
-            "external/protobuf/src",
-        ],
-        local_include_dirs: [
-            "proto",
-        ],
-        canonical_path_from_root: false,
-    },
-    version: {
-        py2: {
-            enabled: false,
-        },
-        py3: {
-            enabled: true,
-        },
-    },
-}
-
-python_binary_host {
-    name: "aftltool",
-    srcs: [
-        "aftltool.py",
-        "avbtool.py",
-    ],
-    libs: [
-        "aftl_proto",
-    ],
-    main: "aftltool.py",
-    version: {
-        py2: {
-            enabled: false,
-        },
-        py3: {
-            enabled: true,
-        },
-    },
-}
-
-python_test_host {
-    name: "aftltool_test",
-    main: "aftltool_test.py",
-    srcs: [
-        "aftltool.py",
-        "aftltool_test.py",
-        "avbtool.py",
-    ],
-    libs: [
-        "aftl_proto",
-    ],
-    data: [
-        "test/data/**/*.*",
-    ],
-    test_options: {
-        unit_test: true,
-    },
-    version: {
-        py2: {
-            enabled: false,
-        },
-        py3: {
-            enabled: true,
-        },
-    },
-}
-
-// Build libavb - this is a static library that depends
 // on only libc and doesn't drag in any other dependencies.
 cc_library_static {
     name: "libavb",
@@ -303,54 +228,6 @@ cc_library_host_static {
     srcs: ["libavb_ab/avb_ab_flow.c"],
 }
 
-cc_library_static {
-    name: "libavb_aftl",
-    defaults: [
-        "avb_defaults",
-        "avb_sources",
-        "avb_crypto_ops_impl_boringssl",
-    ],
-    host_supported: true,
-    recovery_available: true,
-    header_libs: ["avb_headers"],
-    export_header_lib_headers: ["avb_headers"],
-    cflags: [
-        "-fno-stack-protector",
-    ],
-    srcs: [
-        "libavb_aftl/avb_aftl_util.c",
-        "libavb_aftl/avb_aftl_validate.c",
-        "libavb_aftl/avb_aftl_verify.c",
-    ],
-}
-
-cc_fuzz {
-    name: "libavb_aftl_fuzzer",
-    defaults: ["avb_defaults"],
-    // The fuzzing entry point is declared and defined in the same file.
-    // Overwrite the behaviour introduced by avb_defaults.
-    cflags: [
-        "-Wno-missing-prototypes",
-    ],
-    srcs: [
-        "test/avb_aftl_fuzz.cc",
-    ],
-    static_libs: [
-        "libavb",
-        "libavb_aftl",
-    ],
-    shared_libs: ["libcrypto"],
-    host_supported: true,
-    corpus: ["test/corpus/*"],
-    fuzz_config: {
-        cc: [
-            "tweek@google.com",
-            "jpm@google.com",
-        ],
-        componentid: 685985,
-    },
-}
-
 cc_library_host_static {
     name: "libavb_atx_host",
     defaults: [
@@ -413,7 +290,6 @@ cc_defaults {
     static_libs: [
         "libavb",
         "libavb_ab_host",
-        "libavb_aftl",
         "libavb_atx_host",
         "libavb_things_example",
         "libgmock_host",
@@ -430,9 +306,6 @@ cc_defaults {
     ],
     srcs: [
         "test/avb_ab_flow_unittest.cc",
-        "test/avb_aftl_util_unittest.cc",
-        "test/avb_aftl_validate_unittest.cc",
-        "test/avb_aftl_verify_unittest.cc",
         "test/avb_atx_validate_unittest.cc",
         "test/avb_atx_slot_verify_unittest.cc",
         "test/avb_crypto_ops_unittest.cc",
