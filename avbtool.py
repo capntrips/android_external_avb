@@ -1377,6 +1377,9 @@ class AvbHashtreeDescriptor(AvbDescriptor):
                    'L' +  # flags
                    str(RESERVED) + 's')  # reserved
 
+  FLAGS_DO_NOT_USE_AB = (1 << 0)
+  FLAGS_CHECK_AT_MOST_ONCE = (1 << 1)
+
   def __init__(self, data=None):
     """Initializes a new hashtree descriptor.
 
@@ -2832,7 +2835,11 @@ class Avb(object):
     c += ' {}'.format(ht.root_digest.hex())                 # root_digest
     c += ' {}'.format(ht.salt.hex())                        # salt
     if ht.fec_num_roots > 0:
-      c += ' 10'  # number of optional args
+      if ht.flags & AvbHashtreeDescriptor.FLAGS_CHECK_AT_MOST_ONCE:
+        c += ' 11'  # number of optional args
+        c += ' check_at_most_once'
+      else:
+        c += ' 10'  # number of optional args
       c += ' $(ANDROID_VERITY_MODE)'
       c += ' ignore_zero_blocks'
       c += ' use_fec_from_device PARTUUID=$(ANDROID_SYSTEM_PARTUUID)'
@@ -2843,7 +2850,11 @@ class Avb(object):
       c += ' fec_blocks {}'.format(ht.fec_offset // ht.data_block_size)
       c += ' fec_start {}'.format(ht.fec_offset // ht.data_block_size)
     else:
-      c += ' 2'  # number of optional args
+      if ht.flags & AvbHashtreeDescriptor.FLAGS_CHECK_AT_MOST_ONCE:
+        c += ' 3'  # number of optional args
+        c += ' check_at_most_once'
+      else:
+        c += ' 2'  # number of optional args
       c += ' $(ANDROID_VERITY_MODE)'
       c += ' ignore_zero_blocks'
     c += '" root=/dev/dm-0'
@@ -3532,7 +3543,7 @@ class Avb(object):
                           output_vbmeta_image, do_not_append_vbmeta_image,
                           print_required_libavb_version,
                           use_persistent_root_digest, do_not_use_ab,
-                          no_hashtree):
+                          no_hashtree, check_at_most_once):
     """Implements the 'add_hashtree_footer' command.
 
     See https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity for
@@ -3576,13 +3587,15 @@ class Avb(object):
       use_persistent_root_digest: Use a persistent root digest on device.
       do_not_use_ab: The partition does not use A/B.
       no_hashtree: Do not append hashtree. Set size in descriptor as zero.
+      check_at_most_once: Set to verify data blocks only the first time they are read
+        from the data device.
 
     Raises:
       AvbError: If an argument is incorrect or adding the hashtree footer
           failed.
     """
     required_libavb_version_minor = 0
-    if use_persistent_root_digest or do_not_use_ab:
+    if use_persistent_root_digest or do_not_use_ab or check_at_most_once:
       required_libavb_version_minor = 1
     if rollback_index_location > 0:
       required_libavb_version_minor = 2
@@ -3713,9 +3726,11 @@ class Avb(object):
       ht_desc.partition_name = partition_name
       ht_desc.salt = salt
       if do_not_use_ab:
-        ht_desc.flags |= 1  # AVB_HASHTREE_DESCRIPTOR_FLAGS_DO_NOT_USE_AB
+        ht_desc.flags |= AvbHashtreeDescriptor.FLAGS_DO_NOT_USE_AB
       if not use_persistent_root_digest:
         ht_desc.root_digest = root_digest
+      if check_at_most_once:
+        ht_desc.flags |= AvbHashtreeDescriptor.FLAGS_CHECK_AT_MOST_ONCE
 
       # Write the hash tree
       padding_needed = (round_to_multiple(len(hash_tree), image.block_size) -
@@ -4404,6 +4419,9 @@ class AvbTool(object):
     sub_parser.add_argument('--no_hashtree',
                             action='store_true',
                             help='Do not append hashtree')
+    sub_parser.add_argument('--check_at_most_once',
+                            action='store_true',
+                            help='Set to verify data block only once')
     self._add_common_args(sub_parser)
     self._add_common_footer_args(sub_parser)
     sub_parser.set_defaults(func=self.add_hashtree_footer)
@@ -4784,7 +4802,8 @@ class AvbTool(object):
         args.print_required_libavb_version,
         args.use_persistent_digest,
         args.do_not_use_ab,
-        args.no_hashtree)
+        args.no_hashtree,
+        args.check_at_most_once)
 
   def erase_footer(self, args):
     """Implements the 'erase_footer' sub-command."""

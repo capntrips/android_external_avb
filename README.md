@@ -429,7 +429,8 @@ hashtree is also appended to the image.
         [--calc_max_image_size]                                                    \
         [--do_not_use_ab]                                                          \
         [--no_hashtree]                                                            \
-        [--use_persistent_digest]
+        [--use_persistent_digest]                                                  \
+        [--check_at_most_once]
 
 Valid values for `HASH_ALG` above include `sha1`, `sha256`, and `blake2b-256`.
 
@@ -1119,7 +1120,9 @@ part of the boot process to remind the user that the custom key is in use.
 
 ### Version 1.2
 
-Version 1.2 adds support for the `rollback_index_location` field of the main vbmeta header.
+Version 1.2 adds support for the following:
+* `rollback_index_location` field of the main vbmeta header.
+* `check_at_most_once` parameter of dm-verity in a hashtree descriptor.
 
 ### Version 1.1
 
