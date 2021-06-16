@@ -1950,6 +1950,59 @@ TEST_F(AvbToolTest, AddHashtreeFooterNoSizeWrongSize) {
                  path.value().c_str());
 }
 
+TEST_F(AvbToolTest, AddHashtreeFooterWithCheckAtMostOnce) {
+  size_t partition_size = 10 * 1024 * 1024;
+  base::FilePath path = GenerateImage("digest_location", partition_size / 2);
+  EXPECT_COMMAND(0,
+                 "./avbtool add_hashtree_footer --salt d00df00d "
+                 "--hash_algorithm sha256 --image %s "
+                 "--partition_size %d --partition_name foobar "
+                 "--algorithm SHA256_RSA2048 "
+                 "--key test/data/testkey_rsa2048.pem "
+                 "--internal_release_string \"\" "
+                 "--check_at_most_once",
+                 path.value().c_str(),
+                 (int)partition_size);
+  // There are two important bits here we're expecting with --check_at_most_once:
+  //   Minimum libavb version = 1.1
+  //   Hashtree descriptor -> Flags = 2
+  ASSERT_EQ(
+      "Footer version:           1.0\n"
+      "Image size:               10485760 bytes\n"
+      "Original image size:      5242880 bytes\n"
+      "VBMeta offset:            5337088\n"
+      "VBMeta size:              1344 bytes\n"
+      "--\n"
+      "Minimum libavb version:   1.1\n"
+      "Header Block:             256 bytes\n"
+      "Authentication Block:     320 bytes\n"
+      "Auxiliary Block:          768 bytes\n"
+      "Public key (sha1):        cdbb77177f731920bbe0a0f94f84d9038ae0617d\n"
+      "Algorithm:                SHA256_RSA2048\n"
+      "Rollback Index:           0\n"
+      "Flags:                    0\n"
+      "Rollback Index Location:  0\n"
+      "Release String:           ''\n"
+      "Descriptors:\n"
+      "    Hashtree descriptor:\n"
+      "      Version of dm-verity:  1\n"
+      "      Image Size:            5242880 bytes\n"
+      "      Tree Offset:           5242880\n"
+      "      Tree Size:             45056 bytes\n"
+      "      Data Block Size:       4096 bytes\n"
+      "      Hash Block Size:       4096 bytes\n"
+      "      FEC num roots:         2\n"
+      "      FEC offset:            5287936\n"
+      "      FEC size:              49152 bytes\n"
+      "      Hash Algorithm:        sha256\n"
+      "      Partition Name:        foobar\n"
+      "      Salt:                  d00df00d\n"
+      "      Root Digest:           "
+      "d0e31526f5a3f8e3f59acf726bd31ae7861ee78f9baa9195356bf479c6f9119d\n"
+      "      Flags:                 2\n",
+      InfoImage(path));
+}
+
 TEST_F(AvbToolTest, KernelCmdlineDescriptor) {
   base::FilePath vbmeta_path =
       testdir_.Append("vbmeta_kernel_cmdline_desc.bin");
@@ -3118,7 +3171,7 @@ class AvbToolTest_PrintRequiredVersion : public AvbToolTest {
     std::string extra_args;
     if (target_required_minor_version == 1) {
       // The --do_not_use_ab option will require 1.1.
-      extra_args = "--do_not_use_ab";
+      extra_args = "--do_not_use_ab --check_at_most_once";
     } else if (target_required_minor_version == 2) {
       extra_args = "--rollback_index_location 2";
     }
