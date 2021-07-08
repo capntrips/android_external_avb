@@ -231,7 +231,6 @@ cc_library_static {
         "avb_crypto_ops_impl_boringssl",
     ],
     host_supported: true,
-    ramdisk_available: true,
     recovery_available: true,
     header_libs: [
         "avb_headers",
@@ -504,7 +503,6 @@ cc_library {
 cc_library_headers {
     name: "avb_headers",
     host_supported: true,
-    ramdisk_available: true,
     recovery_available: true,
     export_include_dirs: ["."],
     target: {
