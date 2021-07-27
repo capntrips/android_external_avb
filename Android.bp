@@ -157,6 +157,7 @@ cc_library_static {
     ],
     host_supported: true,
     ramdisk_available: true,
+    vendor_ramdisk_available: true,
     recovery_available: true,
     header_libs: [
         "avb_headers",
@@ -378,6 +379,7 @@ cc_library_headers {
     name: "avb_headers",
     host_supported: true,
     ramdisk_available: true,
+    vendor_ramdisk_available: true,
     recovery_available: true,
     export_include_dirs: ["."],
     target: {
