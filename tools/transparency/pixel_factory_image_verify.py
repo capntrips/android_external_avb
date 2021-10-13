@@ -325,7 +325,8 @@ class PixelFactoryImageVerifier(object):
   def _run_command(self, args, success_msg, fail_msg):
     """Runs command line tools."""
     p = subprocess.Popen(args, stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         encoding='utf-8')
     pout, _ = p.communicate()
     if p.wait() == 0:
       print(success_msg)
