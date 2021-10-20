@@ -114,7 +114,7 @@ class PixelFactoryImageVerifier(object):
 
     with open('payload.txt', 'w') as f_out:
       f_out.write(fingerprint.strip() + '\n')
-      f_out.write(vbmeta_digest.strip() + '\n\n')
+      f_out.write(vbmeta_digest.strip() + '\n')
     print('A corresponding "payload.txt" file has been created.')
     sys.exit(0)
 
@@ -264,7 +264,7 @@ class PixelFactoryImageVerifier(object):
       which contains a vbmeta.img patition.
 
     Returns:
-      True if the VBMeta protected parititions verify.
+      True if the VBMeta protected partitions verify.
     """
     os.chdir(image_dir)
     args = [self.avbtool_path,
@@ -305,7 +305,7 @@ class PixelFactoryImageVerifier(object):
       return None
 
   def _calculate_vbmeta_digest(self, image_dir):
-    """Calculates the VBMeta Digest for given parititions using avbtool.
+    """Calculates the VBMeta Digest for given partitions using avbtool.
 
     Args:
       image_dir: The folder containing the unpacked factory image partitions,
