@@ -4093,6 +4093,14 @@ def generate_hash_tree(image, image_size, block_size, hash_alg_name, salt,
   hash_src_offset = 0
   hash_src_size = image_size
   level_num = 0
+
+  # If there is only one block, returns the top-level hash directly.
+  if hash_src_size == block_size:
+    hasher = create_avb_hashtree_hasher(hash_alg_name, salt)
+    image.seek(0)
+    hasher.update(image.read(block_size))
+    return hasher.digest(), bytes(hash_ret)
+
   while hash_src_size > block_size:
     level_output_list = []
     remaining = hash_src_size
