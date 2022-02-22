@@ -3434,10 +3434,8 @@ class Avb(object):
       original_image_size = image.image_size
 
     if dynamic_partition_size:
-      partition_size = original_image_size + max_metadata_size
-
-      # Round up to block size.
-      partition_size -= partition_size % -image.block_size
+      partition_size = round_to_multiple(
+          original_image_size + max_metadata_size, image.block_size)
 
     max_image_size = partition_size - max_metadata_size
     if partition_size % image.block_size != 0:
