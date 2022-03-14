@@ -168,7 +168,7 @@ cc_library_static {
         linux: {
             srcs: ["libavb/avb_sysdeps_posix.c"],
         },
-        linux_glibc: {
+        host_linux: {
             cflags: ["-fno-stack-protector"],
         },
     },
