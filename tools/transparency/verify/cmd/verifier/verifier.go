@@ -20,14 +20,12 @@
 package main
 
 import (
-	// Using "flag" and "log" and not their "google3/base/go/" counterparts is
-	// intended in order to reduce google3 dependencies. This code will live in
-	// https://android.googlesource.com/platform/external/avb/+/master/tools/transparency/.
+	"bytes"
 	"crypto/sha256"
 	"flag"
-	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/google/binary_transparency/verifier/internal/checkpoint"
 	"github.com/google/binary_transparency/verifier/internal/tiles"
@@ -48,20 +46,27 @@ const (
 var logPubKey []byte
 
 var (
-	imageInfoIndex = flag.Int64("image_info_index", -1, "Index representing the image of interest within the image_info.txt log file. Must be in the [0, logSize) range.")
-	payloadPath    = flag.String("payload_path", "", "Path to the payload describing the image of interest.")
-	logBaseURL     = flag.String("log_base_url", "https://developers.google.com/android/binary_transparency", "Base url for the verifiable log files.")
+	payloadPath = flag.String("payload_path", "", "Path to the payload describing the image of interest.")
+	logBaseURL  = flag.String("log_base_url", "https://developers.google.com/android/binary_transparency", "Base url for the verifiable log files.")
 )
 
 func main() {
 	flag.Parse()
 
-	if *imageInfoIndex < 0 {
-		log.Fatal("must specify the image_info_index, in the [0, logSize) range, for the image of interest")
-	}
 	if *payloadPath == "" {
 		log.Fatal("must specify the payload_path for the image payload")
 	}
+	b, err := os.ReadFile(*payloadPath)
+	if err != nil {
+		log.Fatalf("unable to open file %q: %v", *payloadPath, err)
+	}
+	// Payload should not contain excessive leading or trailing whitespace.
+	payloadBytes := bytes.TrimSpace(b)
+	payloadBytes = append(payloadBytes, '\n')
+	if string(b) != string(payloadBytes) {
+		log.Printf("Reformatted payload content from %q to %q", b, payloadBytes)
+	}
+
 
 	v, err := checkpoint.NewVerifier(logPubKey, KeyNameForVerifier)
 	if err != nil {
@@ -72,41 +77,43 @@ func main() {
 		log.Fatalf("error reading checkpoint for log(%s): %v", *logBaseURL, err)
 	}
 
-	logSize := int64(root.Size)
-	if *imageInfoIndex >= logSize {
-		log.Fatalf("leaf_index must be in the [0, logSize) range: logSize=%d", logSize)
+	m, err := tiles.ImageInfosIndex(*logBaseURL)
+	if err != nil {
+		log.Fatalf("failed to load image info map to find log index: %v", err)
 	}
+	imageInfoIndex, ok := m[string(payloadBytes)]
+	if !ok {
+		log.Fatalf("failed to find payload %q in %s", string(payloadBytes), filepath.Join(*logBaseURL, "image_info.txt"))
+	}
+
 	var th tlog.Hash
 	copy(th[:], root.Hash)
 
+	logSize := int64(root.Size)
 	r := tiles.HashReader{URL: *logBaseURL}
-	rp, err := tlog.ProveRecord(logSize, *imageInfoIndex, r)
+	rp, err := tlog.ProveRecord(logSize, imageInfoIndex, r)
 	if err != nil {
 		log.Fatalf("error in tlog.ProveRecord: %v", err)
 	}
 
-	leafHash, err := payloadHash(*payloadPath)
+	leafHash, err := payloadHash(payloadBytes)
 	if err != nil {
 		log.Fatalf("error hashing payload: %v", err)
 	}
 
-	if err := tlog.CheckRecord(rp, logSize, th, *imageInfoIndex, leafHash); err != nil {
+	if err := tlog.CheckRecord(rp, logSize, th, imageInfoIndex, leafHash); err != nil {
 		log.Fatalf("FAILURE: inclusion check error in tlog.CheckRecord: %v", err)
 	} else {
 		log.Print("OK. inclusion check success")
 	}
 }
 
-// payloadHash returns the hash for the payload located at path p.
-func payloadHash(p string) (tlog.Hash, error) {
-	var hash tlog.Hash
-	f, err := os.ReadFile(p)
-	if err != nil {
-		return hash, fmt.Errorf("unable to open file %q: %v", p, err)
-	}
-	l := append([]byte{LeafHashPrefix}, f...)
+// payloadHash returns the hash of the payload.
+func payloadHash(p []byte) (tlog.Hash, error) {
+	l := append([]byte{LeafHashPrefix}, p...)
 	h := sha256.Sum256(l)
-	copy(hash[:], h[:])
 
+	var hash tlog.Hash
+	copy(hash[:], h[:])
 	return hash, nil
 }

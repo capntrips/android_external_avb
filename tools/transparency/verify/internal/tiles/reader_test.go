@@ -141,3 +141,42 @@ func TestReadHashesCachedTile(t *testing.T) {
 		t.Errorf("wrong ReadHashes result: got %X, want %X", got[0], wantHash)
 	}
 }
+
+func TestParseImageInfosIndex(t *testing.T) {
+	for _, tc := range []struct {
+		desc       string
+		imageInfos string
+		want       map[string]int64
+		wantErr    bool
+	}{
+		{
+			desc:       "size 2",
+			imageInfos: "0\nbuild_fingerprint0\nimage_digest0\n\n1\nbuild_fingerprint1\nimage_digest1\n",
+			wantErr:    false,
+			want: map[string]int64{
+				"build_fingerprint0\nimage_digest0\n": 0,
+				"build_fingerprint1\nimage_digest1\n": 1,
+			},
+		},
+		{
+			desc:       "invalid log entry (no newlines)",
+			imageInfos: "0build_fingerprintimage_digest",
+			wantErr:    true,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			got, err := parseImageInfosIndex(tc.imageInfos)
+			if err != nil && !tc.wantErr {
+				t.Fatalf("parseImageInfosIndex(%s) received unexpected err %q", tc.imageInfos, err)
+			}
+
+			if err == nil && tc.wantErr {
+				t.Fatalf("parseImageInfosIndex(%s) did not return err, expected err", tc.imageInfos)
+			}
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("parseImageInfosIndex returned unexpected diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

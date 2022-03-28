@@ -1,6 +1,6 @@
 # Verifier of Binary Transparency for Pixel Factory Images
 
-This repository contains code to read the transparency log for [Binary Transparency for Pixel Factory Images](https://developers.google.com/android/binary_transparency/pixel).
+This repository contains code to read the transparency log for [Binary Transparency for Pixel Factory Images](https://developers.google.com/android/binary_transparency/pixel). See the particular section for this tool [here](https://developers.google.com/android/binary_transparency/pixel#verifying-image-inclusion-inclusion-proof).
 
 ## Files and Directories
 * `cmd/verifier/`
@@ -16,21 +16,19 @@ An executable named `verifier` should be produced upon successful build.
 ## Usage
 The verifier uses the checkpoint and the log contents (found at the [tile directory](https://developers.google.com/android/binary_transparency/tile)) to check that your image payload is in the transparency log, i.e. that it is published by Google.
 
-To run the verifier after you have built it in the preious section:
+To run the verifier after you have built it in the previous section:
 ```
-$ ./verifier --payload_path=${PAYLOAD_PATH} --image_info_index=${IMAGE_INFO_INDEX}
+$ ./verifier --payload_path=${PAYLOAD_PATH}
 ```
 
-### Inputs
-The verifier takes two inputs: `payload_path` and `image_info_index`.
+### Input
+The verifier takes a `payload_path` as input.
 
 Each Pixel Factory image corresponds to a [payload](https://developers.google.com/android/binary_transparency/pixel#log-content) stored in the transparency log, the format of which is:
 ```
 <build_fingerprint>\n<vbmeta_digest>\n
 ```
 See [here](https://developers.google.com/android/binary_transparency/pixel#construct-the-payload-for-verification) for a few methods detailing how to extract this payload from an image.
-
-Set `image_info_index` to the index of your payload of interest in this list: [image\_info.txt](https://developers.google.com/android/binary_transparency/image_info.txt).
 
 ### Output
 The output of the command is written to stdout:
