@@ -21,7 +21,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"flag"
 	"log"
 	"os"
@@ -96,7 +95,7 @@ func main() {
 		log.Fatalf("error in tlog.ProveRecord: %v", err)
 	}
 
-	leafHash, err := payloadHash(payloadBytes)
+	leafHash, err := tiles.PayloadHash(payloadBytes)
 	if err != nil {
 		log.Fatalf("error hashing payload: %v", err)
 	}
@@ -108,12 +107,3 @@ func main() {
 	}
 }
 
-// payloadHash returns the hash of the payload.
-func payloadHash(p []byte) (tlog.Hash, error) {
-	l := append([]byte{LeafHashPrefix}, p...)
-	h := sha256.Sum256(l)
-
-	var hash tlog.Hash
-	copy(hash[:], h[:])
-	return hash, nil
-}
