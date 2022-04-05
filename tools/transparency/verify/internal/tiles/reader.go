@@ -2,6 +2,7 @@
 package tiles
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,13 @@ import (
 type HashReader struct {
 	URL string
 }
+
+
+// Domain separation prefix for Merkle tree hashing with second preimage
+// resistance similar to that used in RFC 6962.
+const (
+	leafHashPrefix = 0
+)
 
 // ReadHashes implements tlog.HashReader's ReadHashes.
 // See: https://pkg.go.dev/golang.org/x/mod/sumdb/tlog#HashReader.
@@ -103,4 +111,14 @@ func readFromURL(base, suffix string) ([]byte, error) {
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+// PayloadHash returns the hash of the payload.
+func PayloadHash(p []byte) (tlog.Hash, error) {
+	l := append([]byte{leafHashPrefix}, p...)
+	h := sha256.Sum256(l)
+
+	var hash tlog.Hash
+	copy(hash[:], h[:])
+	return hash, nil
 }
