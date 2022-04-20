@@ -26,8 +26,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/binary_transparency/verifier/internal/checkpoint"
-	"github.com/google/binary_transparency/verifier/internal/tiles"
+	"android.googlesource.com/platform/external/avb.git/tools/transparency/verify/internal/checkpoint"
+	"android.googlesource.com/platform/external/avb.git/tools/transparency/verify/internal/tiles"
 	"golang.org/x/mod/sumdb/tlog"
 
 	_ "embed"
